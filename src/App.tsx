@@ -18,6 +18,7 @@ import AdminDashboard from './pages/admin/AdminDashboard'
 import TournamentAdmin from './pages/admin/TournamentAdmin'
 import TournamentEdit from './pages/admin/TournamentEdit'
 import LeagueAdmin from './pages/admin/LeagueAdmin'
+import DoubleRegAdmin from './pages/admin/DoubleRegAdmin'
 import ClubAdmin from './pages/admin/ClubAdmin'
 import UserAdmin from './pages/admin/UserAdmin'
 import LeagueMatchScoresheet from './pages/admin/LeagueMatchScoresheet'
@@ -75,6 +76,7 @@ export default function App() {
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />
               <Route path="/admin/klubi" element={<AdminRoute><ClubAdmin /></AdminRoute>} />
               <Route path="/admin/uporabniki" element={<AdminRoute><UserAdmin /></AdminRoute>} />
+              <Route path="/admin/dvojna-registracija" element={<AdminRoute><DoubleRegAdmin /></AdminRoute>} />
 
               {/* 404 */}
               <Route path="*" element={

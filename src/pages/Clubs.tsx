@@ -105,7 +105,8 @@ export function ClubDetail() {
     if (!id) return
     Promise.all([
       supabase.from('clubs').select('*').eq('id', id).single(),
-      supabase.from('users').select('*').eq('club_id', id).order('full_name'),
+      supabase.from('users').select('*').eq('club_id', id).order('full_name')
+        .then(r => ({ data: (r.data ?? []).filter((u: { id: string }) => !u.id.startsWith('a2230001-0000-4000-800')) })),
     ]).then(([{ data: c }, { data: m }]) => {
       setClub(c as Club)
       setMembers((m ?? []) as UserProfile[])

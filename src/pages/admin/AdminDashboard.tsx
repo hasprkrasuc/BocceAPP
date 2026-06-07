@@ -26,6 +26,13 @@ export default function AdminDashboard() {
       desc: 'Sezone, ekipe, razpored krogov, vnos rezultatov',
       color: 'border-bocce-gold hover:bg-bocce-gold/5',
     },
+    {
+      to: '/admin/dvojna-registracija',
+      icon: '🔄',
+      title: 'Dvojne registracije',
+      desc: 'Pregled in odobritev vlog za dvojno registracijo mladih igralcev',
+      color: 'border-blue-300 hover:bg-blue-50',
+    },
     ...(isSuperAdmin ? [{
       to: '/admin/uporabniki',
       icon: '👤',

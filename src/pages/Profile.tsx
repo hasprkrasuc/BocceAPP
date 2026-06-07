@@ -2,7 +2,12 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../supabase'
-import type { UserProfile, LeagueFixture } from '../types'
+import type { UserProfile, LeagueFixture, DoubleRegistration, LeagueTeam, LeagueSeason } from '../types'
+import {
+  isAgeEligible, calcAge, tiersCompatible,
+  DOUBLE_REG_MAX_AGE,
+  DR_TIER_LABELS, DR_STATUS_COLORS, DR_STATUS_LABELS,
+} from '../engines/doubleRegistration'
 
 interface JudgeFixture extends LeagueFixture {
   home_team?: { club_name: string }
@@ -27,6 +32,19 @@ export default function Profile() {
   const [chiefFixtures, setChiefFixtures] = useState<JudgeFixture[]>([])
   const [judgeFixtures, setJudgeFixtures] = useState<JudgeFixture[]>([])
 
+  // ── Dvojna registracija ─────────────────────────────────────
+  type TeamWithSeason = LeagueTeam & { season: Pick<LeagueSeason, 'id' | 'name' | 'tier' | 'category' | 'year'> }
+  const [myTeams, setMyTeams] = useState<TeamWithSeason[]>([])
+  const [eligibleTeams, setEligibleTeams] = useState<TeamWithSeason[]>([])
+  const [doubleRegs, setDoubleRegs] = useState<DoubleRegistration[]>([])
+  const [drLoading, setDrLoading] = useState(false)
+  const [drSubmitting, setDrSubmitting] = useState(false)
+  const [selectedSecondary, setSelectedSecondary] = useState('')
+  const [drMsg, setDrMsg] = useState('')
+
+  const currentYear = new Date().getFullYear() - 1  // sezona 2025/26 → year=2025
+  const ageEligible = isAgeEligible(profile?.date_of_birth)
+
   useEffect(() => {
     if (!user) return
     const select = '*, home_team:league_teams!league_fixtures_home_team_id_fkey(club_name), away_team:league_teams!league_fixtures_away_team_id_fkey(club_name), season:league_seasons(name)'
@@ -37,7 +55,75 @@ export default function Profile() {
       setChiefFixtures((chief ?? []) as JudgeFixture[])
       setJudgeFixtures((judgeOf ?? []) as JudgeFixture[])
     })
+
+    // Naloži podatke za dvojno registracijo
+    loadDoubleRegData()
   }, [user?.id])
+
+  async function loadDoubleRegData() {
+    if (!user) return
+    setDrLoading(true)
+    try {
+      // 1. Moje ekipe v tekoči sezoni
+      const { data: tpData } = await supabase
+        .from('league_team_players')
+        .select('league_team_id, league_teams(id, club_name, season_id, season:league_seasons(id, name, tier, category, year))')
+        .eq('player_id', user.id)
+
+      const teams: TeamWithSeason[] = (tpData ?? [])
+        .map((tp: { league_teams: TeamWithSeason }) => tp.league_teams)
+        .filter(t => t?.season?.year === currentYear && t?.season?.category === 'men')
+
+      setMyTeams(teams)
+
+      // 2. Ekipe za katere BI lahko dvojno registriral (različen tier, združljiv)
+      const myTiers = new Set(teams.map(t => t.season.tier))
+      const { data: allTeams } = await supabase
+        .from('league_teams')
+        .select('id, club_name, season_id, season:league_seasons(id, name, tier, category, year)')
+        .eq('season:league_seasons.year', currentYear)
+        .eq('season:league_seasons.category', 'men')
+
+      const eligible = (allTeams ?? [] as TeamWithSeason[])
+        .filter((t: TeamWithSeason) =>
+          t?.season?.year === currentYear &&
+          t?.season?.category === 'men' &&
+          !teams.some(my => my.id === t.id) &&
+          [...myTiers].some(myTier => tiersCompatible(myTier, t.season.tier))
+        )
+      setEligibleTeams(eligible as TeamWithSeason[])
+
+      // 4. Obstoječe dvojne registracije
+      const { data: drData } = await supabase
+        .from('double_registrations')
+        .select('*, primary_team:league_teams!primary_team_id(id, club_name, season:league_seasons(name, tier)), secondary_team:league_teams!secondary_team_id(id, club_name, season:league_seasons(name, tier))')
+        .eq('player_id', user.id)
+        .order('requested_at', { ascending: false })
+      setDoubleRegs((drData ?? []) as DoubleRegistration[])
+    } finally {
+      setDrLoading(false)
+    }
+  }
+
+  async function submitDoubleReg() {
+    if (!user || !selectedSecondary || myTeams.length === 0) return
+    setDrSubmitting(true); setDrMsg('')
+    const primaryTeam = myTeams[0]
+    const { error } = await supabase.from('double_registrations').insert({
+      player_id:          user.id,
+      primary_team_id:    primaryTeam.id,
+      secondary_team_id:  selectedSecondary,
+      season_id:          primaryTeam.season.id,
+    })
+    if (error) {
+      setDrMsg(`❌ ${error.message}`)
+    } else {
+      setDrMsg('✓ Vloga za dvojno registracijo je bila oddana. Čaka na odobritev.')
+      setSelectedSecondary('')
+      loadDoubleRegData()
+    }
+    setDrSubmitting(false)
+  }
 
   function set(field: keyof ProfileForm) {
     return (e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, [field]: e.target.value }))
@@ -174,6 +260,105 @@ export default function Profile() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* ── Dvojna registracija ─────────────────────────────── */}
+      {profile?.role && profile.role !== 'judge' && (
+        <div className="mt-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-3">Dvojna registracija</h2>
+
+          {drLoading ? (
+            <div className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+          ) : (() => {
+            const age = calcAge(profile?.date_of_birth)
+            const ageOk = ageEligible
+            const eligible = ageOk && myTeams.length > 0
+
+            return (
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
+                {/* Status upravičenosti — samo starost + primarna ekipa */}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className={`rounded-xl p-3 border text-center ${ageOk ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <p className="text-xs text-gray-500 mb-1">Starost</p>
+                    <p className={`font-semibold ${ageOk ? 'text-green-700' : 'text-gray-500'}`}>
+                      {age !== null ? `${age} let` : 'Ni podatka'}
+                    </p>
+                    <p className="text-xs text-gray-400">Pogoj: do {DOUBLE_REG_MAX_AGE} let</p>
+                  </div>
+                  <div className={`rounded-xl p-3 border text-center ${myTeams.length > 0 ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <p className="text-xs text-gray-500 mb-1">Primarna ekipa</p>
+                    <p className={`font-semibold text-sm ${myTeams.length > 0 ? 'text-green-700' : 'text-gray-500'}`}>
+                      {myTeams.length > 0 ? myTeams.map(t => `${t.club_name} (${DR_TIER_LABELS[t.season.tier] ?? t.season.tier})`).join(', ') : 'Ni ekipe'}
+                    </p>
+                  </div>
+                </div>
+
+                {eligible ? (
+                  <>
+                    <p className="text-sm text-green-700 font-medium bg-green-50 rounded-lg px-3 py-2">
+                      ✓ Upravičen si do dvojne registracije
+                    </p>
+
+                    {/* Forma za novo vlogo */}
+                    {doubleRegs.filter(dr => dr.status !== 'rejected').length === 0 && (
+                      <div className="space-y-3">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Izberi sekundarno ekipo (drug rang):
+                        </label>
+                        <select
+                          value={selectedSecondary}
+                          onChange={e => setSelectedSecondary(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none"
+                        >
+                          <option value="">— Izberi ekipo —</option>
+                          {eligibleTeams.map(t => (
+                            <option key={t.id} value={t.id}>
+                              {t.club_name} ({DR_TIER_LABELS[t.season.tier] ?? t.season.tier})
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={submitDoubleReg}
+                          disabled={!selectedSecondary || drSubmitting}
+                          className="bg-bocce-green text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 hover:bg-bocce-green-light transition-colors"
+                        >
+                          {drSubmitting ? 'Pošiljam...' : 'Oddaj vlogo za dvojno registracijo'}
+                        </button>
+                        {drMsg && (
+                          <p className={`text-sm rounded-lg px-3 py-2 ${drMsg.startsWith('❌') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                            {drMsg}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Obstoječe vloge */}
+                    {doubleRegs.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Moje vloge</p>
+                        {doubleRegs.map(dr => (
+                          <div key={dr.id} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+                            <div className="flex-1 text-sm text-gray-700">
+                              {dr.primary_team?.club_name} → {dr.secondary_team?.club_name}
+                            </div>
+                            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${DR_STATUS_COLORS[dr.status]}`}>
+                              {DR_STATUS_LABELS[dr.status]}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                    {!ageOk
+                      ? `Dvojna registracija je na voljo samo za igralce do ${DOUBLE_REG_MAX_AGE} let.`
+                      : 'Nisi razporejen v nobeno ligaško ekipo v tekoči sezoni.'}
+                  </p>
+                )}
+              </div>
+            )
+          })()}
         </div>
       )}
     </div>

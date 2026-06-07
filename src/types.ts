@@ -209,6 +209,26 @@ export interface LeagueFixture {
   away_team?: LeagueTeam
 }
 
+// ─── Dvojna registracija ─────────────────────────────────────────────────────
+
+export type DoubleRegStatus = 'pending' | 'approved' | 'rejected'
+
+export interface DoubleRegistration {
+  id: string
+  player_id: string
+  primary_team_id: string
+  secondary_team_id: string
+  season_id: string
+  status: DoubleRegStatus
+  requested_at: string
+  resolved_at: string | null
+  resolved_by: string | null
+  notes: string | null
+  player?: UserProfile
+  primary_team?: LeagueTeam & { season?: Pick<LeagueSeason, 'id' | 'name' | 'tier' | 'category'> }
+  secondary_team?: LeagueTeam & { season?: Pick<LeagueSeason, 'id' | 'name' | 'tier' | 'category'> }
+}
+
 export interface PlayerStatistics {
   id: string
   player_id: string
