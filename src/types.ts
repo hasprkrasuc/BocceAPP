@@ -46,6 +46,15 @@ export interface UserProfile {
   date_of_birth?: string | null
   photo_url?: string | null
   gender?: string | null
+  // Razširjeni osebni podatki (iz BZS registracije)
+  emso?: string | null
+  birth_city?: string | null
+  birth_country?: string | null
+  citizenship?: string | null
+  address_street?: string | null
+  address_house?: string | null
+  address_postal?: string | null
+  address_country?: string | null
 }
 
 export interface Tournament {
