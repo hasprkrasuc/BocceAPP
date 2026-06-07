@@ -1,0 +1,17 @@
+﻿# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables (Supabase keys)
+.env
+.env.local
+*.local
+
+# Claude Code config
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
