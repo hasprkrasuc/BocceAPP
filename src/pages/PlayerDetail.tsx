@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
-import type { UserProfile, PlayerStatistics } from '../types'
+import { useAuth } from '../contexts/AuthContext'
+import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
+import { isAgeEligible, calcAge, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
 
 interface LeagueEntry {
   id: string
@@ -11,9 +13,11 @@ interface LeagueEntry {
 
 export default function PlayerDetail() {
   const { id } = useParams<{ id: string }>()
+  const { isAdmin } = useAuth()
   const [player, setPlayer] = useState<UserProfile | null>(null)
   const [stats, setStats] = useState<PlayerStatistics[]>([])
   const [leagues, setLeagues] = useState<LeagueEntry[]>([])
+  const [doubleRegs, setDoubleRegs] = useState<DoubleRegistration[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -25,7 +29,12 @@ export default function PlayerDetail() {
         .from('league_team_players')
         .select('id, league_team:league_teams(club_name, season:league_seasons(name, year, category))')
         .eq('player_id', id),
-    ]).then(([{ data: p }, { data: s }, { data: l }]) => {
+      supabase
+        .from('double_registrations')
+        .select('*, primary_team:league_teams!primary_team_id(club_name, season:league_seasons(name,tier)), secondary_team:league_teams!secondary_team_id(club_name, season:league_seasons(name,tier))')
+        .eq('player_id', id)
+        .order('requested_at', { ascending: false }),
+    ]).then(([{ data: p }, { data: s }, { data: l }, { data: dr }]) => {
       setPlayer(p as UserProfile)
       setStats((s ?? []) as PlayerStatistics[])
       const entries: LeagueEntry[] = ((l ?? []) as any[])
@@ -37,6 +46,7 @@ export default function PlayerDetail() {
         }))
         .sort((a, b) => b.season.year - a.season.year)
       setLeagues(entries)
+      setDoubleRegs((dr ?? []) as DoubleRegistration[])
       setLoading(false)
     })
   }, [id])
@@ -49,6 +59,8 @@ export default function PlayerDetail() {
   if (!player) return <div className="text-center py-12 text-gray-400">Igralec ni najden</div>
 
   const birthYear = player.date_of_birth ? player.date_of_birth.slice(0, 4) : null
+  const age = calcAge(player.date_of_birth)
+  const drEligible = isAgeEligible(player.date_of_birth)
   const categoryLabel: Record<string, string> = {
     men: 'Člani', women: 'Članice', u18: 'U-18', u18_women: 'U-18 ž.', u15: 'U-15', u12: 'U-12',
   }
@@ -138,6 +150,58 @@ export default function PlayerDetail() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Dvojna registracija */}
+      {(drEligible || doubleRegs.length > 0) && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Dvojna registracija</h2>
+            {drEligible && (
+              <span className="text-xs bg-bocce-green/10 text-bocce-green border border-bocce-green/20 px-2.5 py-1 rounded-full font-medium">
+                ✓ Upravičen ({age} let)
+              </span>
+            )}
+          </div>
+
+          {doubleRegs.length > 0 ? (
+            <div className="space-y-2">
+              {doubleRegs.map(dr => (
+                <div key={dr.id} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+                  <div className="flex-1 text-sm">
+                    <span className="text-gray-600">Primarni klub:</span>{' '}
+                    <span className="font-medium">{(dr.primary_team as any)?.club_name}</span>
+                    {(dr.primary_team as any)?.season?.tier && (
+                      <span className="text-xs text-gray-400 ml-1">
+                        ({DR_TIER_LABELS[(dr.primary_team as any).season.tier] ?? ''})
+                      </span>
+                    )}
+                    <span className="mx-2 text-gray-300">→</span>
+                    <span className="font-medium">{(dr.secondary_team as any)?.club_name}</span>
+                    {(dr.secondary_team as any)?.season?.tier && (
+                      <span className="text-xs text-gray-400 ml-1">
+                        ({DR_TIER_LABELS[(dr.secondary_team as any).season.tier] ?? ''})
+                      </span>
+                    )}
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ${DR_STATUS_COLORS[dr.status]}`}>
+                    {DR_STATUS_LABELS[dr.status]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">Ni oddane vloge za dvojno registracijo.</p>
+              {isAdmin && (
+                <Link to="/admin/dvojna-registracija"
+                  className="text-xs bg-bocce-green text-white px-3 py-1.5 rounded-lg hover:bg-bocce-green-light transition-colors">
+                  Upravljaj →
+                </Link>
+              )}
+            </div>
+          )}
         </div>
       )}
 
