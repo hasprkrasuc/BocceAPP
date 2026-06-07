@@ -262,103 +262,24 @@ export default function Profile() {
           )}
         </div>
       )}
-      {/* ── Dvojna registracija ─────────────────────────────── */}
-      {profile?.role && profile.role !== 'judge' && (
+      {/* ── Dvojna registracija — samo prikaz statusa ──────── */}
+      {doubleRegs.length > 0 && (
         <div className="mt-6">
           <h2 className="text-lg font-bold text-gray-800 mb-3">Dvojna registracija</h2>
-
-          {drLoading ? (
-            <div className="h-24 bg-gray-100 rounded-xl animate-pulse" />
-          ) : (() => {
-            const age = calcAge(profile?.date_of_birth)
-            const ageOk = ageEligible
-            const eligible = ageOk && myTeams.length > 0
-
-            return (
-              <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
-                {/* Status upravičenosti — samo starost + primarna ekipa */}
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div className={`rounded-xl p-3 border text-center ${ageOk ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                    <p className="text-xs text-gray-500 mb-1">Starost</p>
-                    <p className={`font-semibold ${ageOk ? 'text-green-700' : 'text-gray-500'}`}>
-                      {age !== null ? `${age} let` : 'Ni podatka'}
-                    </p>
-                    <p className="text-xs text-gray-400">Pogoj: do {DOUBLE_REG_MAX_AGE} let</p>
-                  </div>
-                  <div className={`rounded-xl p-3 border text-center ${myTeams.length > 0 ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                    <p className="text-xs text-gray-500 mb-1">Primarna ekipa</p>
-                    <p className={`font-semibold text-sm ${myTeams.length > 0 ? 'text-green-700' : 'text-gray-500'}`}>
-                      {myTeams.length > 0 ? myTeams.map(t => `${t.club_name} (${DR_TIER_LABELS[t.season.tier] ?? t.season.tier})`).join(', ') : 'Ni ekipe'}
-                    </p>
-                  </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-2">
+            {doubleRegs.map(dr => (
+              <div key={dr.id} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+                <div className="flex-1 text-sm text-gray-700">
+                  <span className="font-medium">{dr.primary_team?.club_name}</span>
+                  <span className="mx-2 text-gray-400">→</span>
+                  <span className="font-medium">{dr.secondary_team?.club_name}</span>
                 </div>
-
-                {eligible ? (
-                  <>
-                    <p className="text-sm text-green-700 font-medium bg-green-50 rounded-lg px-3 py-2">
-                      ✓ Upravičen si do dvojne registracije
-                    </p>
-
-                    {/* Forma za novo vlogo */}
-                    {doubleRegs.filter(dr => dr.status !== 'rejected').length === 0 && (
-                      <div className="space-y-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Izberi sekundarno ekipo (drug rang):
-                        </label>
-                        <select
-                          value={selectedSecondary}
-                          onChange={e => setSelectedSecondary(e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none"
-                        >
-                          <option value="">— Izberi ekipo —</option>
-                          {eligibleTeams.map(t => (
-                            <option key={t.id} value={t.id}>
-                              {t.club_name} ({DR_TIER_LABELS[t.season.tier] ?? t.season.tier})
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={submitDoubleReg}
-                          disabled={!selectedSecondary || drSubmitting}
-                          className="bg-bocce-green text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 hover:bg-bocce-green-light transition-colors"
-                        >
-                          {drSubmitting ? 'Pošiljam...' : 'Oddaj vlogo za dvojno registracijo'}
-                        </button>
-                        {drMsg && (
-                          <p className={`text-sm rounded-lg px-3 py-2 ${drMsg.startsWith('❌') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-                            {drMsg}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Obstoječe vloge */}
-                    {doubleRegs.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Moje vloge</p>
-                        {doubleRegs.map(dr => (
-                          <div key={dr.id} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
-                            <div className="flex-1 text-sm text-gray-700">
-                              {dr.primary_team?.club_name} → {dr.secondary_team?.club_name}
-                            </div>
-                            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${DR_STATUS_COLORS[dr.status]}`}>
-                              {DR_STATUS_LABELS[dr.status]}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-                    {!ageOk
-                      ? `Dvojna registracija je na voljo samo za igralce do ${DOUBLE_REG_MAX_AGE} let.`
-                      : 'Nisi razporejen v nobeno ligaško ekipo v tekoči sezoni.'}
-                  </p>
-                )}
+                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${DR_STATUS_COLORS[dr.status]}`}>
+                  {DR_STATUS_LABELS[dr.status]}
+                </span>
               </div>
-            )
-          })()}
+            ))}
+          </div>
         </div>
       )}
     </div>
