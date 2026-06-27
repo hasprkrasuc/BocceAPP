@@ -78,12 +78,13 @@ function computeStats(disciplines: LeagueSeasonDiscipline[], forms: Record<strin
 }
 
 // Player select — shows team roster as dropdown options with constraint info
-function PlayerSelect({ value, onChange, roster, stats, currentDiscType, isTechnical, useBlock2Rule }: {
+function PlayerSelect({ value, onChange, roster, stats, currentDiscType, currentBlock, isTechnical, useBlock2Rule }: {
   value: string
   onChange: (v: string) => void
   roster: RosterPlayer[]
   stats: Record<string, PlayerStats>
   currentDiscType: DisciplineType
+  currentBlock: number | null
   isTechnical: boolean
   useBlock2Rule: boolean
 }) {
@@ -112,11 +113,17 @@ function PlayerSelect({ value, onChange, roster, stats, currentDiscType, isTechn
       {roster.map(p => {
         const s = stats[p.playerId] || EMPTY_STATS
         const e = evalPlayer(s, useBlock2Rule)
-        const atMax = e.atMax && value !== p.playerId
+        let blocked = e.atMax && value !== p.playerId
+        // Kontekstno: ali bi dodajanje TE discipline ostalo veljavno?
+        // (npr. Štafeta dopolni par Hitrostno+Štafeta → max postane 4)
+        if (blocked && useBlock2Rule) {
+          const withThis = evaluatePlayerLineup([...s.discs, { discipline_type: currentDiscType, block_number: currentBlock }])
+          if (!withThis.countViolation) blocked = false
+        }
         const techWarn = !useBlock2Rule && wouldViolateTech(p.playerId) && value !== p.playerId
         return (
-          <option key={p.playerId} value={p.playerId} disabled={atMax}>
-            {p.name}{s.count > 0 ? ` (${s.count}/${e.maxAllowed})` : ''}{techWarn ? ' ⚠' : ''}{atMax ? ' — max' : ''}
+          <option key={p.playerId} value={p.playerId} disabled={blocked}>
+            {p.name}{s.count > 0 ? ` (${s.count}/${e.maxAllowed})` : ''}{techWarn ? ' ⚠' : ''}{blocked ? ' — max' : ''}
           </option>
         )
       })}
@@ -622,12 +629,12 @@ export default function LeagueMatchScoresheet() {
                           {f.homePlayers.map((p, i) => (
                             <PlayerSelect key={i} value={p} onChange={v => setPlayer(disc.id, 'home', i, v)}
                               roster={homeRoster} stats={homeStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
                           ))}
                           {disc.has_reserve && (
                             <PlayerSelect value={f.homeReserve} onChange={v => setFormField(disc.id, 'homeReserve', v)}
                               roster={homeRoster} stats={homeStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={false} useBlock2Rule={useBlock2Rule} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={false} useBlock2Rule={useBlock2Rule} />
                           )}
                         </div>
 
@@ -650,12 +657,12 @@ export default function LeagueMatchScoresheet() {
                           {f.awayPlayers.map((p, i) => (
                             <PlayerSelect key={i} value={p} onChange={v => setPlayer(disc.id, 'away', i, v)}
                               roster={awayRoster} stats={awayStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
                           ))}
                           {disc.has_reserve && (
                             <PlayerSelect value={f.awayReserve} onChange={v => setFormField(disc.id, 'awayReserve', v)}
                               roster={awayRoster} stats={awayStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={false} useBlock2Rule={useBlock2Rule} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={false} useBlock2Rule={useBlock2Rule} />
                           )}
                         </div>
                       </div>
