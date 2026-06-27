@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
-import { isAgeEligible, calcAge, tiersCompatible, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
+import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
 
 interface LeagueEntry {
   id: string
@@ -53,25 +53,32 @@ export default function PlayerDetail() {
       setLeagues(entries)
       setDoubleRegs((dr ?? []) as DoubleRegistration[])
 
-      // Ekipe za dvojno reg (admin)
+      // Ekipe za dvojno reg (admin) — spolno-zavedno (moški / ženske)
       const currentYear = new Date().getFullYear() - 1
+      const playerGender = (p as UserProfile)?.gender
+      const playerCat = isFemale(playerGender) ? 'women' : 'men'
       const { data: tpData } = await supabase
         .from('league_team_players')
         .select('league_team_id, league_teams(id, club_name, season_id, season:league_seasons(id, tier, year, category))')
         .eq('player_id', (p as UserProfile)?.id ?? id)
       const playerTeams = ((tpData ?? []) as any[])
         .map(tp => tp.league_teams)
-        .filter(t => t?.season?.year === currentYear && t?.season?.category === 'men')
+        .filter(t => t?.season?.year === currentYear && t?.season?.category === playerCat)
       setMyTeams(playerTeams.map((t: any) => ({ id: t.id, tier: t.season.tier, season_id: t.season_id })))
 
       const { data: allTeams } = await supabase
         .from('league_teams')
         .select('id, club_name, season:league_seasons(id, tier, year, category)')
-      const eligible = ((allTeams ?? []) as any[])
-        .filter(t => t?.season?.year === currentYear && t?.season?.category === 'men'
-          && !playerTeams.some((my: any) => my.id === t.id)
-          && playerTeams.some((my: any) => tiersCompatible(my.season?.tier, t.season?.tier)))
-      setEligibleTeams(eligible.map((t: any) => ({ id: t.id, club_name: t.club_name, tier: t.season?.tier, season_id: t.season?.id })))
+      const candidates = ((allTeams ?? []) as any[]).filter(t => t?.season?.year === currentYear)
+      const eligibleRefs = eligibleSecondaryTeams(
+        playerGender,
+        playerTeams.map((t: any) => ({ id: t.id, tier: t.season?.tier })),
+        candidates.map((t: any) => ({ id: t.id, tier: t.season?.tier, category: t.season?.category })),
+      )
+      const eligibleIds = new Set(eligibleRefs.map(r => r.id))
+      setEligibleTeams(candidates
+        .filter((t: any) => eligibleIds.has(t.id))
+        .map((t: any) => ({ id: t.id, club_name: t.club_name, tier: t.season?.tier, season_id: t.season?.id })))
 
       setLoading(false)
     })
@@ -277,7 +284,11 @@ export default function PlayerDetail() {
           )}
 
           {isAdmin && drEligible && myTeams.length === 0 && (
-            <p className="text-sm text-gray-400 italic">Igralec ni v nobeni moški ekipi tekoče sezone.</p>
+            <p className="text-sm text-gray-400 italic">
+              {isFemale(player.gender)
+                ? 'Igralka ni v nobeni ženski ekipi tekoče sezone.'
+                : 'Igralec ni v nobeni moški ekipi tekoče sezone.'}
+            </p>
           )}
         </div>
       )}

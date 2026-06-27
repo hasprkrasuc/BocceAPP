@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../supabase'
 import type { UserProfile, LeagueFixture, DoubleRegistration, LeagueTeam, LeagueSeason } from '../types'
 import {
-  isAgeEligible, calcAge, tiersCompatible,
+  isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams,
   DOUBLE_REG_MAX_AGE,
   DR_TIER_LABELS, DR_STATUS_COLORS, DR_STATUS_LABELS,
 } from '../engines/doubleRegistration'
@@ -70,28 +70,28 @@ export default function Profile() {
         .select('league_team_id, league_teams(id, club_name, season_id, season:league_seasons(id, name, tier, category, year))')
         .eq('player_id', user.id)
 
+      const playerCat = isFemale(profile?.gender) ? 'women' : 'men'
       const teams: TeamWithSeason[] = (tpData ?? [])
         .map((tp: { league_teams: TeamWithSeason }) => tp.league_teams)
-        .filter(t => t?.season?.year === currentYear && t?.season?.category === 'men')
+        .filter(t => t?.season?.year === currentYear && t?.season?.category === playerCat)
 
       setMyTeams(teams)
 
-      // 2. Ekipe za katere BI lahko dvojno registriral (različen tier, združljiv)
-      const myTiers = new Set(teams.map(t => t.season.tier))
+      // 2. Ekipe za katere BI lahko dvojno registriral (spolno-zavedno pravilo)
       const { data: allTeams } = await supabase
         .from('league_teams')
         .select('id, club_name, season_id, season:league_seasons(id, name, tier, category, year)')
         .eq('season:league_seasons.year', currentYear)
-        .eq('season:league_seasons.category', 'men')
 
-      const eligible = (allTeams ?? [] as TeamWithSeason[])
-        .filter((t: TeamWithSeason) =>
-          t?.season?.year === currentYear &&
-          t?.season?.category === 'men' &&
-          !teams.some(my => my.id === t.id) &&
-          [...myTiers].some(myTier => tiersCompatible(myTier, t.season.tier))
-        )
-      setEligibleTeams(eligible as TeamWithSeason[])
+      const candidates = ((allTeams ?? []) as any[])
+        .filter(t => t?.season?.year === currentYear)
+      const eligibleRefs = eligibleSecondaryTeams(
+        profile?.gender,
+        teams.map(t => ({ id: t.id, tier: t.season.tier })),
+        candidates.map((t: any) => ({ id: t.id, tier: t.season?.tier, category: t.season?.category })),
+      )
+      const eligibleIds = new Set(eligibleRefs.map(r => r.id))
+      setEligibleTeams(candidates.filter((t: any) => eligibleIds.has(t.id)) as TeamWithSeason[])
 
       // 4. Obstoječe dvojne registracije
       const { data: drData } = await supabase
