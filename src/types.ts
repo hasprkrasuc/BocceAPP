@@ -12,7 +12,7 @@ export type GroupStatus = 'pending' | 'in_progress' | 'completed'
 export type LeagueSeasonStatus = 'draft' | 'active' | 'completed'
 export type LeagueCategory = 'men' | 'women' | 'u18' | 'u18_women' | 'u15' | 'u14' | 'u12' | 'mixed'
 export type LeagueTier = 'super_liga' | '1_liga' | '2_liga_zahod' | '2_liga_vzhod' | 'obz'
-export type DisciplineType = 'trojka' | 'dvojka' | 'posamezno' | 'krog' | 'hitrostno' | 'natancno' | 'blazanje' | 'stafeta' | 'podaljsek'
+export type DisciplineType = 'trojka' | 'dvojka' | 'posamezno' | 'krog' | 'hitrostno' | 'natancno' | 'blizanje' | 'stafeta' | 'podaljsek'
 export type FixtureStatus = 'scheduled' | 'completed'
 
 // ─── Database row types ──────────────────────────────────────────────────────

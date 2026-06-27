@@ -38,7 +38,7 @@ const DISC_WEIGHT: Partial<Record<DisciplineType, number>> = {
   trojka:     0.50,
   stafeta:    0.50,
   natancno:   0.50,
-  blazanje:   0.50,
+  blizanje:   0.50,
   hitrostno:  0.50,
   podaljsek:  0.50,
 }
