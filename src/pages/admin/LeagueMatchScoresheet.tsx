@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import { getAutoPlayground, getBlok4Playground, BLOK4_DISCIPLINES } from '../../engines/leaguePlaygrounds'
 import type { LeagueFixture, LeagueSeasonDiscipline, LeagueMatchResult, LeagueMatchDisciplineResult, DisciplineType, UserProfile } from '../../types'
+import { evaluatePlayerLineup, seasonUsesBlock2Rule, type LineupDisc } from '../../engines/leagueLineup'
 
 const TECHNICAL_TYPES: DisciplineType[] = ['stafeta', 'hitrostno', 'natancno']
 
@@ -23,6 +24,22 @@ interface PlayerStats {
   count: number
   techTypes: Set<DisciplineType>
   hasAllTechTypes: boolean
+  discs: LineupDisc[]
+}
+
+const EMPTY_STATS: PlayerStats = { count: 0, techTypes: new Set(), hasAllTechTypes: false, discs: [] }
+
+/**
+ * Učinkovita ocena igralca: pri ženski 1. ligi (useRule) velja pravilo bloka 2
+ * (max 4 le ob Hitrostno+Štafeta, sicer max 3; v bloku 2 le ta par); sicer staro
+ * pravilo (max 3, ne vse 3 tehnične discipline).
+ */
+function evalPlayer(s: PlayerStats, useRule: boolean) {
+  if (useRule) {
+    const e = evaluatePlayerLineup(s.discs)
+    return { maxAllowed: e.maxAllowed, atMax: s.count >= e.maxAllowed, countViolation: e.countViolation, anyViolation: !e.ok }
+  }
+  return { maxAllowed: 3, atMax: s.count >= 3, countViolation: s.count > 3, anyViolation: s.hasAllTechTypes || s.count > 3 }
 }
 
 function calcPoints(h: string, a: string): [0 | 1 | 2, 0 | 1 | 2] | null {
@@ -41,8 +58,9 @@ function computeStats(disciplines: LeagueSeasonDiscipline[], forms: Record<strin
   const stats: Record<string, PlayerStats> = {}
   function add(name: string, disc: LeagueSeasonDiscipline) {
     if (!name.trim()) return
-    if (!stats[name]) stats[name] = { count: 0, techTypes: new Set(), hasAllTechTypes: false }
+    if (!stats[name]) stats[name] = { count: 0, techTypes: new Set(), hasAllTechTypes: false, discs: [] }
     stats[name].count++
+    stats[name].discs.push({ discipline_type: disc.discipline_type, block_number: disc.block_number ?? null })
     if (TECHNICAL_TYPES.includes(disc.discipline_type as DisciplineType)) {
       stats[name].techTypes.add(disc.discipline_type as DisciplineType)
     }
@@ -60,13 +78,15 @@ function computeStats(disciplines: LeagueSeasonDiscipline[], forms: Record<strin
 }
 
 // Player select — shows team roster as dropdown options with constraint info
-function PlayerSelect({ value, onChange, roster, stats, currentDiscType, isTechnical }: {
+function PlayerSelect({ value, onChange, roster, stats, currentDiscType, currentBlock, isTechnical, useBlock2Rule }: {
   value: string
   onChange: (v: string) => void
   roster: RosterPlayer[]
   stats: Record<string, PlayerStats>
   currentDiscType: DisciplineType
+  currentBlock: number | null
   isTechnical: boolean
+  useBlock2Rule: boolean
 }) {
   if (roster.length === 0) {
     return (
@@ -91,12 +111,19 @@ function PlayerSelect({ value, onChange, roster, stats, currentDiscType, isTechn
         value ? 'border-gray-300' : 'border-gray-200 text-gray-400'}`}>
       <option value="">— izberi —</option>
       {roster.map(p => {
-        const s = stats[p.playerId] || { count: 0, techTypes: new Set(), hasAllTechTypes: false }
-        const atMax = s.count >= 3 && value !== p.playerId
-        const techWarn = wouldViolateTech(p.playerId) && value !== p.playerId
+        const s = stats[p.playerId] || EMPTY_STATS
+        const e = evalPlayer(s, useBlock2Rule)
+        let blocked = e.atMax && value !== p.playerId
+        // Kontekstno: ali bi dodajanje TE discipline ostalo veljavno?
+        // (npr. Štafeta dopolni par Hitrostno+Štafeta → max postane 4)
+        if (blocked && useBlock2Rule) {
+          const withThis = evaluatePlayerLineup([...s.discs, { discipline_type: currentDiscType, block_number: currentBlock }])
+          if (!withThis.countViolation) blocked = false
+        }
+        const techWarn = !useBlock2Rule && wouldViolateTech(p.playerId) && value !== p.playerId
         return (
-          <option key={p.playerId} value={p.playerId} disabled={atMax}>
-            {p.name}{s.count > 0 ? ` (${s.count}/3)` : ''}{techWarn ? ' ⚠' : ''}{atMax ? ' — max' : ''}
+          <option key={p.playerId} value={p.playerId} disabled={blocked}>
+            {p.name}{s.count > 0 ? ` (${s.count}/${e.maxAllowed})` : ''}{techWarn ? ' ⚠' : ''}{blocked ? ' — max' : ''}
           </option>
         )
       })}
@@ -230,24 +257,28 @@ export default function LeagueMatchScoresheet() {
 
   const homeStats = useMemo(() => computeStats(disciplines, forms, 'home'), [disciplines, forms])
   const awayStats = useMemo(() => computeStats(disciplines, forms, 'away'), [disciplines, forms])
+  const useBlock2Rule = useMemo(
+    () => seasonUsesBlock2Rule(disciplines.map(d => ({ discipline_type: d.discipline_type, block_number: d.block_number ?? null }))),
+    [disciplines],
+  )
 
   // Validation errors
   const violations = useMemo(() => {
     const errs: string[] = []
     const resolveName = (id: string, roster: RosterPlayer[]) =>
       roster.find(p => p.playerId === id)?.name ?? id
-    for (const [id, s] of Object.entries(homeStats)) {
-      const name = resolveName(id, homeRoster)
-      if (s.count > 3) errs.push(`${name} (dom.): nastopa v ${s.count} disciplinah (max 3)`)
-      if (s.hasAllTechTypes) errs.push(`${name} (dom.): nastopa v vseh 3 tehničnih disciplinah`)
+    const check = (stats: Record<string, PlayerStats>, roster: RosterPlayer[], suff: string) => {
+      for (const [id, s] of Object.entries(stats)) {
+        const name = resolveName(id, roster)
+        const e = evalPlayer(s, useBlock2Rule)
+        if (e.countViolation) errs.push(`${name} (${suff}): nastopa v ${s.count} disciplinah (max ${e.maxAllowed})`)
+        if (!useBlock2Rule && s.hasAllTechTypes) errs.push(`${name} (${suff}): nastopa v vseh 3 tehničnih disciplinah`)
+      }
     }
-    for (const [id, s] of Object.entries(awayStats)) {
-      const name = resolveName(id, awayRoster)
-      if (s.count > 3) errs.push(`${name} (gost.): nastopa v ${s.count} disciplinah (max 3)`)
-      if (s.hasAllTechTypes) errs.push(`${name} (gost.): nastopa v vseh 3 tehničnih disciplinah`)
-    }
+    check(homeStats, homeRoster, 'dom.')
+    check(awayStats, awayRoster, 'gost.')
     return errs
-  }, [homeStats, awayStats, homeRoster, awayRoster])
+  }, [homeStats, awayStats, homeRoster, awayRoster, useBlock2Rule])
 
   async function save() {
     if (!fixtureId) return
@@ -327,26 +358,27 @@ export default function LeagueMatchScoresheet() {
         <p className="text-xs font-semibold text-gray-500 mb-2">{label}</p>
         <div className="space-y-1">
           {roster.map(p => {
-            const s = stats[p.playerId] || { count: 0, techTypes: new Set(), hasAllTechTypes: false }
-            const atMax = s.count >= 3
-            const techViolation = s.hasAllTechTypes
+            const s = stats[p.playerId] || EMPTY_STATS
+            const e = evalPlayer(s, useBlock2Rule)
+            const violation = e.anyViolation
+            const violationTitle = e.countViolation ? `Preveč disciplin (max ${e.maxAllowed})!` : 'Vse 3 tehnične discipline!'
             return (
-              <div key={p.playerId} className={`flex items-center justify-between py-1 px-2 rounded-lg ${techViolation ? 'bg-red-50' : atMax ? 'bg-amber-50' : 'bg-gray-50'}`}>
-                <span className={`text-xs ${techViolation || atMax ? 'font-medium' : ''} text-gray-700`}>{p.name}</span>
+              <div key={p.playerId} className={`flex items-center justify-between py-1 px-2 rounded-lg ${violation ? 'bg-red-50' : e.atMax ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                <span className={`text-xs ${violation || e.atMax ? 'font-medium' : ''} text-gray-700`}>{p.name}</span>
                 <div className="flex items-center gap-1.5 ml-2 shrink-0">
                   <span className={`text-xs font-mono px-1.5 py-0.5 rounded-full font-semibold ${
                     s.count === 0 ? 'bg-gray-200 text-gray-400' :
-                    atMax ? 'bg-red-100 text-red-600' :
-                    s.count === 2 ? 'bg-amber-100 text-amber-700' :
+                    violation ? 'bg-red-100 text-red-600' :
+                    e.atMax ? 'bg-amber-100 text-amber-700' :
                     'bg-bocce-lime/20 text-bocce-lime'}`}>
-                    {s.count}/3
+                    {s.count}/{e.maxAllowed}
                   </span>
                   {s.count > 0 && (
                     <span className="text-xs text-gray-400">
                       {[...s.techTypes].map(t => t === 'stafeta' ? 'Š' : t === 'hitrostno' ? 'H' : 'N').join('·')}
                     </span>
                   )}
-                  {techViolation && <span className="text-red-500 text-xs font-bold" title="Vse 3 tehnične discipline!">⚠</span>}
+                  {violation && <span className="text-red-500 text-xs font-bold" title={violationTitle}>⚠</span>}
                 </div>
               </div>
             )
@@ -475,7 +507,9 @@ export default function LeagueMatchScoresheet() {
         {rosterOpen && (
           <div className="px-5 pb-5 border-t border-gray-100">
             <p className="text-xs text-gray-400 mt-3 mb-4">
-              Vsak igralec može nastopiti v max <strong>3 disciplinah</strong>. Oznaka tehničnih tipov: <strong>Š</strong>=štafeta · <strong>H</strong>=hitrostno · <strong>N</strong>=natančno — ne sme nastopiti v vseh treh.
+              {useBlock2Rule
+                ? <>Igralka lahko nastopi v max <strong>3 disciplinah</strong>; izjemoma <strong>4</strong>, le če v 2. bloku igra <strong>Hitrostno + Štafeta</strong>. Pri 3 disciplinah je kombinacija v 2. bloku prosta.</>
+                : <>Vsak igralec more nastopiti v max <strong>3 disciplinah</strong>. Oznaka tehničnih tipov: <strong>Š</strong>=štafeta · <strong>H</strong>=hitrostno · <strong>N</strong>=natančno — ne sme nastopiti v vseh treh.</>}
             </p>
             <div className="grid sm:grid-cols-2 gap-6">
               <RosterColumn roster={homeRoster} stats={homeStats} label={fixture.home_team?.club_name ?? 'Domači'} />
@@ -595,12 +629,12 @@ export default function LeagueMatchScoresheet() {
                           {f.homePlayers.map((p, i) => (
                             <PlayerSelect key={i} value={p} onChange={v => setPlayer(disc.id, 'home', i, v)}
                               roster={homeRoster} stats={homeStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={isTech} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
                           ))}
                           {disc.has_reserve && (
                             <PlayerSelect value={f.homeReserve} onChange={v => setFormField(disc.id, 'homeReserve', v)}
                               roster={homeRoster} stats={homeStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={false} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={false} useBlock2Rule={useBlock2Rule} />
                           )}
                         </div>
 
@@ -623,12 +657,12 @@ export default function LeagueMatchScoresheet() {
                           {f.awayPlayers.map((p, i) => (
                             <PlayerSelect key={i} value={p} onChange={v => setPlayer(disc.id, 'away', i, v)}
                               roster={awayRoster} stats={awayStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={isTech} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
                           ))}
                           {disc.has_reserve && (
                             <PlayerSelect value={f.awayReserve} onChange={v => setFormField(disc.id, 'awayReserve', v)}
                               roster={awayRoster} stats={awayStats}
-                              currentDiscType={disc.discipline_type as DisciplineType} isTechnical={false} />
+                              currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={false} useBlock2Rule={useBlock2Rule} />
                           )}
                         </div>
                       </div>

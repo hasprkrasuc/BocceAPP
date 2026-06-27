@@ -1,15 +1,28 @@
 /**
  * DVOJNA REGISTRACIJA — engine
  *
- * Pravila:
+ * MOŠKI:
  * - Igralec star ≤ 23 let
- * - Vsaj 14 nastopov (discipline) v moški konkurenci v tekoči sezoni
  * - Dovoljene kombinacije tier-ov:
  *     super_liga ↔ 1_liga        ✅
  *     super_liga ↔ 2_liga_zahod  ✅
  *     super_liga ↔ 2_liga_vzhod  ✅
  *     1_liga     ↔ 2_liga_*      ❌ (isti termin)
  *     isti tier                  ❌
+ *
+ * ŽENSKE:
+ * - Brez starostne omejitve
+ * - Brez tier omejitve — pogosto klub nima ženske ekipe v ligi,
+ *   zato igralka nastopa za drug klub (npr. Skala Sežana → ŽBK Hrast)
+ * - Admin direktno dodeli
+ *
+ * ─── STANJE IMPLEMENTACIJE (TODO) ───────────────────────────────
+ * Spodnja koda uveljavlja le MOŠKO pravilo. Znana odstopanja:
+ *   1. ŽENSKE: neimplementirano — Profile.tsx in PlayerDetail.tsx
+ *      filtrirata samo `category === 'men'`, dodelitev pa je vezana
+ *      na drEligible (≤23). Žensk trenutno ni mogoče dvojno registrirati.
+ *   2. tiersCompatible() ne uveljavi pogoja "vsaj eden super_liga"
+ *      (preverja le, da nista oba nižja tier-a) — glej opombo pri funkciji.
  */
 
 export const DOUBLE_REG_MAX_AGE = 23
@@ -28,6 +41,37 @@ export function tiersCompatible(tier1: string, tier2: string): boolean {
   // 1. liga in 2. liga igrajo ob istem terminu
   if (LOWER_TIERS.has(tier1) && LOWER_TIERS.has(tier2)) return false
   return true
+}
+
+/** Ali je igralec/ka ženskega spola? (shranjeni gender: 'Ž' / 'M') */
+export function isFemale(gender: string | null | undefined): boolean {
+  if (!gender) return false
+  const g = gender.trim().toLowerCase()
+  return g === 'ž' || g === 'z' || g === 'f' || g === 'w'
+      || g.startsWith('žen') || g.startsWith('zen') || g === 'female'
+}
+
+export interface DRTeamRef { id: string; tier: string; category: string }
+
+/**
+ * Ekipe, v katere je dovoljena dvojna registracija (sekundarna ekipa).
+ * - MOŠKI:  druga moška ekipa združljivega ranga (tiersCompatible)
+ * - ŽENSKE: samo 1. liga – članice (category 'women', tier '1_liga')
+ * Starostni pogoj (≤23) se preverja ločeno z isAgeEligible — velja za oba spola.
+ * Ekipe, kjer je igralec/ka že vpisan/a, so izločene.
+ */
+export function eligibleSecondaryTeams<T extends DRTeamRef>(
+  gender: string | null | undefined,
+  myTeams: { id: string; tier: string }[],
+  allTeams: T[],
+): T[] {
+  const myIds = new Set(myTeams.map(t => t.id))
+  if (isFemale(gender)) {
+    return allTeams.filter(t => t.category === 'women' && t.tier === '1_liga' && !myIds.has(t.id))
+  }
+  return allTeams.filter(t =>
+    t.category === 'men' && !myIds.has(t.id) &&
+    myTeams.some(mt => tiersCompatible(mt.tier, t.tier)))
 }
 
 /** Izračun starosti iz datuma rojstva */

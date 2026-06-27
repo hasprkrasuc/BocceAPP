@@ -1,6 +1,6 @@
 import type { LeagueTier } from '../types'
 
-export type DisciplineType = 'trojka' | 'dvojka' | 'posamezno' | 'krog' | 'hitrostno' | 'natancno' | 'blazanje' | 'stafeta' | 'podaljsek'
+export type DisciplineType = 'trojka' | 'dvojka' | 'posamezno' | 'krog' | 'hitrostno' | 'natancno' | 'blizanje' | 'stafeta' | 'podaljsek'
 
 export interface DisciplineTemplate {
   name: string
