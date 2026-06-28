@@ -23,6 +23,9 @@ import ClubAdmin from './pages/admin/ClubAdmin'
 import UserAdmin from './pages/admin/UserAdmin'
 import LeagueMatchScoresheet from './pages/admin/LeagueMatchScoresheet'
 import LeagueMatchScoresheetDemo from './pages/admin/LeagueMatchScoresheetDemo'
+import Series from './pages/Series'
+import SeriesAdmin from './pages/admin/SeriesAdmin'
+import SeriesEdit from './pages/admin/SeriesEdit'
 
 const queryClient = new QueryClient()
 
@@ -59,6 +62,8 @@ export default function App() {
               <Route path="/statistika" element={<Statistics />} />
               <Route path="/arhiv" element={<Archive />} />
               <Route path="/rang" element={<LeagueRanking />} />
+              <Route path="/serije" element={<Series />} />
+              <Route path="/serija/:id" element={<Series />} />
 
               {/* Auth */}
               <Route path="/prijava" element={<Login />} />
@@ -77,6 +82,8 @@ export default function App() {
               <Route path="/admin/klubi" element={<AdminRoute><ClubAdmin /></AdminRoute>} />
               <Route path="/admin/uporabniki" element={<AdminRoute><UserAdmin /></AdminRoute>} />
               <Route path="/admin/dvojna-registracija" element={<AdminRoute><DoubleRegAdmin /></AdminRoute>} />
+              <Route path="/admin/serije" element={<AdminRoute><SeriesAdmin /></AdminRoute>} />
+              <Route path="/admin/serija/:id" element={<AdminRoute><SeriesEdit /></AdminRoute>} />
 
               {/* 404 */}
               <Route path="*" element={
