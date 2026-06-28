@@ -2,6 +2,7 @@ import { useEffect, useState, FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel } from '../../engines/tournament'
+import { isPairDiscipline } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile } from '../../types'
 
 type Tab = 'registrations' | 'draw' | 'knockout'
@@ -123,11 +124,13 @@ export default function TournamentEdit() {
 
   async function handleManualRegister(e: FormEvent) {
     e.preventDefault()
-    if (!addForm.player1 || !addForm.player2) { setMessage('❌ Izberi oba igralca'); return }
-    if (addForm.player1 === addForm.player2) { setMessage('❌ Igralca morata biti različna'); return }
+    const isPair = tournament?.discipline_type ? isPairDiscipline(tournament.discipline_type) : true
+    if (!addForm.player1) { setMessage('❌ Izberi igralca'); return }
+    if (isPair && !addForm.player2) { setMessage('❌ Izberi oba igralca'); return }
+    if (isPair && addForm.player1 === addForm.player2) { setMessage('❌ Igralca morata biti različna'); return }
     const alreadyRegistered = registrations.find(r =>
       r.player1_id === addForm.player1 || r.player2_id === addForm.player1 ||
-      r.player1_id === addForm.player2 || r.player2_id === addForm.player2
+      (isPair && (r.player1_id === addForm.player2 || r.player2_id === addForm.player2))
     )
     if (alreadyRegistered) { setMessage('❌ Eden od igralcev je že prijavljen'); return }
     setAddLoading(true)
@@ -135,7 +138,7 @@ export default function TournamentEdit() {
     const { error: err } = await supabase.from('tournament_registrations').insert({
       tournament_id: id,
       player1_id: addForm.player1,
-      player2_id: addForm.player2,
+      player2_id: isPair ? addForm.player2 : null,
       status: 'confirmed',
     })
     setAddLoading(false)
@@ -370,6 +373,8 @@ export default function TournamentEdit() {
   if (error) return <div className="text-center py-12 text-red-500">Napaka: {error}</div>
   if (!tournament) return <div className="text-center py-12 text-gray-400">Turnir ni najden</div>
 
+  const isPair = tournament?.discipline_type ? isPairDiscipline(tournament.discipline_type) : true
+
   const confirmed = registrations.filter(r => r.status === 'confirmed')
   const pending = registrations.filter(r => r.status === 'pending')
   const rejected = registrations.filter(r => r.status === 'rejected')
@@ -419,7 +424,7 @@ export default function TournamentEdit() {
             {showAddForm && (
               <form onSubmit={handleManualRegister}
                 className="bg-bocce-green/5 border border-bocce-green/20 rounded-xl p-4 space-y-3">
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className={`grid gap-3 ${isPair ? 'sm:grid-cols-2' : ''}`}>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Igralec 1 *</label>
                     <select
@@ -429,27 +434,29 @@ export default function TournamentEdit() {
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                       <option value="">Izberi igralca...</option>
                       {players.map(p => (
-                        <option key={p.id} value={p.id} disabled={p.id === addForm.player2}>
+                        <option key={p.id} value={p.id} disabled={isPair && p.id === addForm.player2}>
                           {p.full_name}{p.club ? ` — ${p.club}` : ''}
                         </option>
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Igralec 2 *</label>
-                    <select
-                      required
-                      value={addForm.player2}
-                      onChange={e => setAddForm(f => ({ ...f, player2: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
-                      <option value="">Izberi partnerja...</option>
-                      {players.map(p => (
-                        <option key={p.id} value={p.id} disabled={p.id === addForm.player1}>
-                          {p.full_name}{p.club ? ` — ${p.club}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {isPair && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Igralec 2 *</label>
+                      <select
+                        required
+                        value={addForm.player2}
+                        onChange={e => setAddForm(f => ({ ...f, player2: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                        <option value="">Izberi partnerja...</option>
+                        {players.map(p => (
+                          <option key={p.id} value={p.id} disabled={p.id === addForm.player1}>
+                            {p.full_name}{p.club ? ` — ${p.club}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button type="submit" disabled={addLoading}
