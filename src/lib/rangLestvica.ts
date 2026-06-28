@@ -77,6 +77,8 @@ export interface PlayerSeasonSummary {
   seasonId: string
   seasonName: string
   tier: string
+  year: number
+  status: string
   played: number
   matchPointsFor: number
   uspesnostPct: number
@@ -205,6 +207,8 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
           seasonId: season.id,
           seasonName: season.name,
           tier: season.tier,
+          year: season.year,
+          status: season.status,
           played: ps.totalPlayed,
           matchPointsFor: ps.totalMatchPointsFor,
           uspesnostPct: ps.totalPlayed > 0 ? ps.totalMatchPointsFor / (ps.totalPlayed * 2) : 0,

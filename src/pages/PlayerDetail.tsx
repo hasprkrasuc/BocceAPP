@@ -38,7 +38,7 @@ export default function PlayerDetail() {
     computeRangLestvica()
       .then(({ byCategory, seasonStatsByPlayer }) => {
         setRankInfo(findPlayerRankInCategories(byCategory, id))
-        setSeasonStats((seasonStatsByPlayer[id] ?? []).filter(s => s.active))
+        setSeasonStats(seasonStatsByPlayer[id] ?? [])
       })
       .catch(() => { setRankInfo(null); setSeasonStats([]) })
       .finally(() => setRangLoading(false))
@@ -113,6 +113,19 @@ export default function PlayerDetail() {
   const birthYear = player.date_of_birth ? player.date_of_birth.slice(0, 4) : null
   const age = calcAge(player.date_of_birth)
   const drEligible = isAgeEligible(player.date_of_birth)
+
+  // Prikaži aktivne sezone; če jih ni (aktualna sezona je zaključena), zadnjo zaključeno
+  const activeSeasons = seasonStats.filter(s => s.active)
+  const showActive = activeSeasons.length > 0
+  const displaySeasons = showActive
+    ? activeSeasons
+    : (() => {
+        const completed = seasonStats.filter(s => s.status === 'completed')
+        if (!completed.length) return []
+        const maxYear = Math.max(...completed.map(s => s.year))
+        return completed.filter(s => s.year === maxYear)
+      })()
+  const seasonCardTitle = showActive ? 'Aktualna sezona' : 'Zadnja sezona'
 
   async function approveDoubleReg() {
     if (!selectedSecondary || myTeams.length === 0) return
@@ -213,7 +226,7 @@ export default function PlayerDetail() {
       {/* Aktualna sezona + skupni rang */}
       <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-          <h2 className="text-lg font-semibold text-gray-800">Aktualna sezona</h2>
+          <h2 className="text-lg font-semibold text-gray-800">{seasonCardTitle}</h2>
           {rangLoading ? (
             <span className="text-xs text-gray-400">Nalagam rang…</span>
           ) : rankInfo ? (
@@ -226,7 +239,7 @@ export default function PlayerDetail() {
           )}
         </div>
 
-        {seasonStats.length > 0 ? (
+        {displaySeasons.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -239,7 +252,7 @@ export default function PlayerDetail() {
                 </tr>
               </thead>
               <tbody>
-                {seasonStats.map(s => (
+                {displaySeasons.map(s => (
                   <tr key={s.seasonId} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="py-2.5 pr-4 font-medium text-gray-800">
                       <Link to={`/liga/${s.seasonId}`} className="hover:text-bocce-green">{s.seasonName}</Link>
@@ -255,7 +268,7 @@ export default function PlayerDetail() {
           </div>
         ) : (
           <p className="text-sm text-gray-400 italic">
-            {rangLoading ? 'Nalagam…' : 'Ni statistike v aktualni sezoni.'}
+            {rangLoading ? 'Nalagam…' : 'Ni ligaške statistike.'}
           </p>
         )}
       </div>
