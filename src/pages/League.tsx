@@ -6,7 +6,9 @@ import LeagueTable from '../components/LeagueTable'
 import { calculateStandings, calculateGroupStandings, getFixturesByRound } from '../engines/league'
 import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
-import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueTier } from '../types'
+import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueTier, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline } from '../types'
+import { LeagueStatsPanel, LeagueRangPanel } from '../components/LeagueStats'
+import { resolvePlayerNames, type ResolvedPlayer } from '../lib/playerNames'
 
 const STATUS_LABELS: Record<LeagueSeasonStatus, string> = {
   draft: 'Osnutek', active: 'Aktivna', completed: 'Zaključena',
@@ -210,8 +212,11 @@ export function LeagueDetail() {
   const [season, setSeason] = useState<LeagueSeason | null>(null)
   const [teams, setTeams] = useState<LeagueTeam[]>([])
   const [fixtures, setFixtures] = useState<LeagueFixture[]>([])
-  const [tab, setTab] = useState<'standings' | 'fixtures' | 'teams'>('standings')
+  const [tab, setTab] = useState<'standings' | 'fixtures' | 'teams' | 'statistika' | 'rang'>('standings')
   const [loading, setLoading] = useState(true)
+  const [matchResults, setMatchResults] = useState<Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>>([])
+  const [disciplines, setDisciplines] = useState<LeagueSeasonDiscipline[]>([])
+  const [names, setNames] = useState<Map<string, ResolvedPlayer>>(new Map())
 
   useEffect(() => { load() }, [id])
 
@@ -235,6 +240,22 @@ export function LeagueDetail() {
     setSeason(s as LeagueSeason)
     setTeams((t ?? []) as LeagueTeam[])
     setFixtures((f ?? []) as LeagueFixture[])
+
+    const { data: discData } = await supabase.from('league_season_disciplines')
+      .select('*').eq('season_id', id).order('order_num')
+    setDisciplines((discData ?? []) as LeagueSeasonDiscipline[])
+
+    const { data: mrData } = await supabase.from('league_match_results')
+      .select('*, discipline_results:league_match_discipline_results(*)')
+      .in('fixture_id', (f ?? []).map((fx: { id: string }) => fx.id))
+    const results = (mrData ?? []) as Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>
+    setMatchResults(results)
+
+    const ids = results.flatMap(r => (r.discipline_results ?? [])
+      .flatMap(dr => [...(dr.home_players ?? []), ...(dr.away_players ?? [])]))
+      .filter(p => p && !p.startsWith('R: '))
+    setNames(await resolvePlayerNames(ids))
+
     setLoading(false)
   }
 
@@ -284,6 +305,8 @@ export function LeagueDetail() {
           { key: 'standings' as const, label: 'Lestvica' },
           { key: 'fixtures' as const, label: 'Razpored' },
           { key: 'teams' as const, label: `Ekipe (${teams.length})` },
+          { key: 'statistika' as const, label: 'Statistika' },
+          { key: 'rang' as const, label: 'Rang' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px
@@ -520,6 +543,16 @@ export function LeagueDetail() {
             </div>
           ))}
         </div>
+      )}
+
+      {tab === 'statistika' && season && (
+        <LeagueStatsPanel fixtures={fixtures} matchResults={matchResults}
+          disciplines={disciplines} teams={teams} names={names} />
+      )}
+
+      {tab === 'rang' && season && (
+        <LeagueRangPanel fixtures={fixtures} matchResults={matchResults}
+          disciplines={disciplines} teams={teams} names={names} tier={season.tier} />
       )}
     </div>
   )
