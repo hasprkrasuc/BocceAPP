@@ -150,6 +150,8 @@ export interface LeagueTeam {
   club_name: string
   short_name: string | null
   captain_id: string | null
+  /** Žrebana številka (1..N) za Bergerjev razpored; NULL = žreb še ni opravljen */
+  draw_number: number | null
   captain?: UserProfile
   league_team_players?: LeagueTeamPlayer[]
 }
