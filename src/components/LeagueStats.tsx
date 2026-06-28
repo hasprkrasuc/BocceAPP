@@ -142,8 +142,10 @@ export function LeagueStatsPanel({ fixtures, matchResults, disciplines, teams, n
 export function LeagueRangPanel({ fixtures, matchResults, disciplines, names, tier }: BaseProps & { tier: string }) {
   const ranking = useMemo(() => {
     const ps = aggregatePlayerStats(matchResults, fixtures, disciplines)
-    return ps.map(p => calculateRang(p, tier)).sort((a, b) => b.rang - a.rang)
-  }, [matchResults, fixtures, disciplines, tier])
+    return ps.map(p => calculateRang(p, tier))
+      .filter(r => !!names.get(r.playerId)?.club)   // odstrani tekmovalce brez kluba
+      .sort((a, b) => b.rang - a.rang)
+  }, [matchResults, fixtures, disciplines, tier, names])
 
   return (
     <table className="w-full text-sm">
