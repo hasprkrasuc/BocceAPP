@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import type { Club, UserProfile } from '../types'
 
 // ──────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ export function ClubDetail() {
     if (!id) return
     Promise.all([
       supabase.from('clubs').select('*').eq('id', id).single(),
-      supabase.from('users').select('*').eq('club_id', id).order('full_name'),
+      supabase.from('users').select(USER_PUBLIC_COLS).eq('club_id', id).order('full_name'),
     ]).then(([{ data: c }, { data: m }]) => {
       setClub(c as Club)
       setMembers((m ?? []) as UserProfile[])

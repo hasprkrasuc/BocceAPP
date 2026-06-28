@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import LeagueTable from '../components/LeagueTable'
 import { calculateStandings, calculateGroupStandings, getFixturesByRound } from '../engines/league'
@@ -229,7 +230,7 @@ export function LeagueDetail() {
     if (!id) return
     const [{ data: s }, { data: t }, { data: f }] = await Promise.all([
       supabase.from('league_seasons').select('*').eq('id', id).single(),
-      supabase.from('league_teams').select(`*, captain:users(*), league_team_players(*, player:users(*))`).eq('season_id', id),
+      supabase.from('league_teams').select(`*, captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`).eq('season_id', id),
       supabase.from('league_fixtures').select(`*, home_team:league_teams!league_fixtures_home_team_id_fkey(*), away_team:league_teams!league_fixtures_away_team_id_fkey(*)`).eq('season_id', id).order('round_number').order('scheduled_date'),
     ])
     setSeason(s as LeagueSeason)
