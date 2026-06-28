@@ -57,6 +57,18 @@ export interface UserProfile {
   address_country?: string | null
 }
 
+export type TournamentSeriesStatus = 'draft' | 'active' | 'completed'
+
+export interface TournamentSeries {
+  id: string
+  name: string
+  year: number
+  category: 'u14' | 'u18'
+  counting_results: number | null
+  status: TournamentSeriesStatus
+  created_at: string
+}
+
 export interface Tournament {
   id: string
   name: string
@@ -69,13 +81,15 @@ export interface Tournament {
   registration_deadline: string | null
   notes: string | null
   max_teams: number | null
+  series_id: string | null
+  discipline_type: DisciplineType | null
 }
 
 export interface TournamentRegistration {
   id: string
   tournament_id: string
   player1_id: string
-  player2_id: string
+  player2_id: string | null
   status: RegistrationStatus
   registered_at: string
   player1?: UserProfile
