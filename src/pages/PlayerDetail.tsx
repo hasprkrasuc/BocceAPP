@@ -5,8 +5,8 @@ import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
 import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
-import { computeRangLestvica, type PlayerSeasonSummary } from '../lib/rangLestvica'
-import { findPlayerRank, type PlayerRank } from '../lib/findPlayerRank'
+import { computeRangLestvica, RANG_CATEGORY_LABELS, type PlayerSeasonSummary, type RangCategory } from '../lib/rangLestvica'
+import { findPlayerRankInCategories, type CategoryPlayerRank } from '../lib/findPlayerRank'
 
 interface LeagueEntry {
   id: string
@@ -27,7 +27,7 @@ export default function PlayerDetail() {
   const [drSubmitting, setDrSubmitting] = useState(false)
   const [drMsg, setDrMsg] = useState('')
   const [loading, setLoading] = useState(true)
-  const [rankInfo, setRankInfo] = useState<PlayerRank | null>(null)
+  const [rankInfo, setRankInfo] = useState<CategoryPlayerRank | null>(null)
   const [seasonStats, setSeasonStats] = useState<PlayerSeasonSummary[]>([])
   const [rangLoading, setRangLoading] = useState(true)
 
@@ -36,8 +36,8 @@ export default function PlayerDetail() {
     if (!id) return
     setRangLoading(true)
     computeRangLestvica()
-      .then(({ rows, seasonStatsByPlayer }) => {
-        setRankInfo(findPlayerRank(rows, id))
+      .then(({ byCategory, seasonStatsByPlayer }) => {
+        setRankInfo(findPlayerRankInCategories(byCategory, id))
         setSeasonStats((seasonStatsByPlayer[id] ?? []).filter(s => s.active))
       })
       .catch(() => { setRankInfo(null); setSeasonStats([]) })
@@ -219,7 +219,7 @@ export default function PlayerDetail() {
           ) : rankInfo ? (
             <Link to="/rang"
               className="text-sm bg-bocce-green/10 text-bocce-green border border-bocce-green/20 px-3 py-1.5 rounded-full font-medium hover:bg-bocce-green/20 transition-colors">
-              Skupni rang: <strong>#{rankInfo.mesto}</strong> · {rankInfo.rang.toFixed(2)} t
+              Rang {RANG_CATEGORY_LABELS[rankInfo.category as RangCategory]}: <strong>#{rankInfo.mesto}</strong> · {rankInfo.rang.toFixed(2)} t
             </Link>
           ) : (
             <span className="text-xs text-gray-400">Ni uvrščen na rang lestvici</span>
