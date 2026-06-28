@@ -6,10 +6,16 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LIGA_KOEF, DEFAULT_LIGA_KOEF } from '../engines/leagueStats'
-import { computeRangLestvica, TIER_LABELS, type RangRow } from '../lib/rangLestvica'
+import {
+  computeRangLestvica, TIER_LABELS, RANG_CATEGORIES, RANG_CATEGORY_LABELS,
+  type RangRow, type RangCategory,
+} from '../lib/rangLestvica'
+
+const EMPTY_BY_CAT: Record<RangCategory, RangRow[]> = { men: [], women: [], u18: [], u14: [] }
 
 export function LeagueRanking() {
-  const [rows, setRows]               = useState<RangRow[]>([])
+  const [byCategory, setByCategory]   = useState<Record<RangCategory, RangRow[]>>(EMPTY_BY_CAT)
+  const [cat, setCat]                 = useState<RangCategory>('men')
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [expanded, setExpanded]       = useState<string | null>(null)
@@ -21,9 +27,9 @@ export function LeagueRanking() {
     setLoading(true)
     setError(null)
     try {
-      const { rows, cutoffLabel } = await computeRangLestvica()
+      const { byCategory, cutoffLabel } = await computeRangLestvica()
       setCutoffLabel(cutoffLabel)
-      setRows(rows)
+      setByCategory(byCategory)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Napaka pri nalaganju')
     } finally {
@@ -32,6 +38,7 @@ export function LeagueRanking() {
   }
 
   const toggleExpand = (id: string) => setExpanded(prev => prev === id ? null : id)
+  const rows = byCategory[cat]
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -46,6 +53,19 @@ export function LeagueRanking() {
             </span>
           )}
         </p>
+      </div>
+
+      {/* Category tabs */}
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+        {RANG_CATEGORIES.map(c => (
+          <button key={c} onClick={() => { setCat(c); setExpanded(null) }}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+              cat === c ? 'bg-bocce-green text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}>
+            {RANG_CATEGORY_LABELS[c]}
+            <span className="ml-1.5 text-xs opacity-70">{byCategory[c].length}</span>
+          </button>
+        ))}
       </div>
 
       {/* Formula legend */}

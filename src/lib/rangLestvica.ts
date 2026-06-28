@@ -1,8 +1,8 @@
 /**
  * RANG LESTVICA — izračun (liga + državna prvenstva, zadnjih 365 dni).
  *
- * Izvlečeno iz strani LeagueRanking, da ga lahko ponovno uporabi tudi stran
- * igralca (PlayerDetail) za "mesto + točke na skupni rang lestvici".
+ * Ločeno po kategoriji: Moški, Ženske, U18, U14. Vsaka lestvica šteje le
+ * sezone/prvenstva svoje kategorije.
  *
  * Liga rang:  rang = utežene match točke × ligaKoef × % uspešnosti
  * DP točke:   1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7 · 5.–8. m. 3 · 9.–16. m. 1
@@ -20,6 +20,24 @@ export const TIER_LABELS: Record<string, string> = {
   '1_liga':       '1. liga',
   '2_liga_zahod': '2. liga zahod',
   '2_liga_vzhod': '2. liga vzhod',
+}
+
+/** Kategorije rang lestvic. */
+export type RangCategory = 'men' | 'women' | 'u18' | 'u14'
+export const RANG_CATEGORIES: RangCategory[] = ['men', 'women', 'u18', 'u14']
+export const RANG_CATEGORY_LABELS: Record<RangCategory, string> = {
+  men: 'Moški', women: 'Ženske', u18: 'U18', u14: 'U14',
+}
+
+/** Preslika kategorijo sezone/prvenstva na rang kategorijo (ali null, če ne sodi v eno od štirih). */
+function toRangCategory(cat: string | null | undefined): RangCategory | null {
+  switch (cat) {
+    case 'men': return 'men'
+    case 'women': return 'women'
+    case 'u18': return 'u18'
+    case 'u14': return 'u14'
+    default: return null
+  }
 }
 
 /** Točke za PORAŽENCA izločilnega kroga (zmagovalec napreduje). */
@@ -67,9 +85,20 @@ export interface PlayerSeasonSummary {
 }
 
 export interface RangLestvica {
-  rows: RangRow[]
+  /** Razvrščene rang lestvice po kategoriji (Moški / Ženske / U18 / U14). */
+  byCategory: Record<RangCategory, RangRow[]>
   seasonStatsByPlayer: Record<string, PlayerSeasonSummary[]>
   cutoffLabel: string
+}
+
+type PlayerAcc = {
+  ligaRang: number
+  dpPts: number
+  totalPlayed: number
+  totalMatchPointsFor: number
+  ligaEntries: LigaEntry[]
+  champEntries: ChampEntry[]
+  clubName: string | null
 }
 
 function formatDate(iso: string): string {
@@ -77,7 +106,7 @@ function formatDate(iso: string): string {
   return `${parseInt(d)}. ${parseInt(m)}. ${y}`
 }
 
-/** Izračuna skupno rang lestvico + povzetke po sezonah za vsakega igralca. */
+/** Izračuna rang lestvice (po kategoriji) + povzetke po sezonah za vsakega igralca. */
 export async function computeRangLestvica(): Promise<RangLestvica> {
   const today = new Date()
   const cutoff = new Date(today)
@@ -87,29 +116,25 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   const currentYear = today.getFullYear()
   const cutoffLabel = `${formatDate(cutoffStr)} – ${formatDate(todayStr)}`
 
-  type PlayerAcc = {
-    ligaRang: number
-    dpPts: number
-    totalPlayed: number
-    totalMatchPointsFor: number
-    ligaEntries: LigaEntry[]
-    champEntries: ChampEntry[]
-    clubName: string | null
+  // Ločen akumulator na kategorijo
+  const accByCat: Record<RangCategory, Record<string, PlayerAcc>> = {
+    men: {}, women: {}, u18: {}, u14: {},
   }
-  const acc: Record<string, PlayerAcc> = {}
   const seasonStatsByPlayer: Record<string, PlayerSeasonSummary[]> = {}
 
-  function ensureAcc(pid: string) {
-    if (!acc[pid]) acc[pid] = {
+  function ensureAcc(cat: RangCategory, pid: string): PlayerAcc {
+    const m = accByCat[cat]
+    if (!m[pid]) m[pid] = {
       ligaRang: 0, dpPts: 0, totalPlayed: 0, totalMatchPointsFor: 0,
       ligaEntries: [], champEntries: [], clubName: null,
     }
+    return m[pid]
   }
 
   // ── Liga sezone ───────────────────────────────────────────────────────────
   const { data: seasons, error: sErr } = await supabase
     .from('league_seasons')
-    .select('id, name, tier, year, status, win_points, draw_points, loss_points, rounds_count')
+    .select('id, name, tier, category, year, status, win_points, draw_points, loss_points, rounds_count')
     .gte('year', currentYear - 2)
     .order('year', { ascending: false })
   if (sErr) throw sErr
@@ -168,19 +193,13 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     )
 
     for (const { season, fixtures, disciplines, matchResults, playerClub } of bundles) {
+      const cat = toRangCategory((season as { category?: string }).category)
       const playerStats = aggregatePlayerStats(matchResults, fixtures, disciplines)
       for (const ps of playerStats) {
         if (ps.totalPlayed === 0) continue
         const entry = calculateRang(ps, season.tier)
-        ensureAcc(ps.playerId)
-        acc[ps.playerId].ligaRang += entry.rang
-        acc[ps.playerId].totalPlayed += entry.totalPlayed
-        acc[ps.playerId].totalMatchPointsFor += entry.totalMatchPointsFor
-        acc[ps.playerId].ligaEntries.push({ name: season.name, tier: season.tier, rang: entry.rang })
-        if (!acc[ps.playerId].clubName && playerClub[ps.playerId]) {
-          acc[ps.playerId].clubName = playerClub[ps.playerId]
-        }
-        // Povzetek po sezoni (za stran igralca)
+
+        // Povzetek po sezoni (za stran igralca — neodvisno od kategorije)
         if (!seasonStatsByPlayer[ps.playerId]) seasonStatsByPlayer[ps.playerId] = []
         seasonStatsByPlayer[ps.playerId].push({
           seasonId: season.id,
@@ -192,6 +211,15 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
           rang: entry.rang,
           active: season.status === 'active',
         })
+
+        // Rang akumulacija samo za eno od štirih kategorij
+        if (!cat) continue
+        const a = ensureAcc(cat, ps.playerId)
+        a.ligaRang += entry.rang
+        a.totalPlayed += entry.totalPlayed
+        a.totalMatchPointsFor += entry.totalMatchPointsFor
+        a.ligaEntries.push({ name: season.name, tier: season.tier, rang: entry.rang })
+        if (!a.clubName && playerClub[ps.playerId]) a.clubName = playerClub[ps.playerId]
       }
     }
   }
@@ -199,7 +227,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   // ── Državna prvenstva ─────────────────────────────────────────────────────
   const { data: championships } = await supabase
     .from('tournaments')
-    .select('id, name, date')
+    .select('id, name, date, category')
     .eq('kind', 'championship')
     .eq('status', 'completed')
     .gte('date', cutoffStr)
@@ -207,6 +235,9 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
 
   if (championships?.length) {
     await Promise.all(championships.map(async champ => {
+      const champCat = toRangCategory((champ as { category?: string }).category)
+      if (!champCat) return
+
       const { data: matches } = await supabase
         .from('matches')
         .select(`
@@ -240,9 +271,9 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
           if (!reg) return
           for (const pid of [reg.player1_id, reg.player2_id]) {
             if (!pid) continue
-            ensureAcc(pid)
-            acc[pid].dpPts += pts
-            acc[pid].champEntries.push({ champName: champ.name, placeLabel, pts })
+            const a = ensureAcc(champCat!, pid)
+            a.dpPts += pts
+            a.champEntries.push({ champName: champ.name, placeLabel, pts })
           }
         }
 
@@ -260,10 +291,10 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     }))
   }
 
-  // ── Razreši imena & klube ─────────────────────────────────────────────────
-  const allIds = Object.keys(acc)
-  if (!allIds.length) return { rows: [], seasonStatsByPlayer, cutoffLabel }
-
+  // ── Razreši imena & klube (enkrat za vse kategorije) ──────────────────────
+  const allIds = Array.from(new Set(
+    RANG_CATEGORIES.flatMap(cat => Object.keys(accByCat[cat])),
+  ))
   const uuidIds = allIds.filter(id => UUID_RE.test(id))
   const { data: users } = uuidIds.length > 0
     ? await supabase.from('users').select('id, full_name, club, role').in('id', uuidIds)
@@ -271,31 +302,40 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   const playerUsers = (users ?? []).filter((u: { role?: string }) => u.role !== 'judge')
   const userMap = Object.fromEntries(playerUsers.map((u: { id: string; full_name: string | null; club: string | null }) => [u.id, u]))
 
-  const rows: RangRow[] = allIds
-    .filter(pid => acc[pid].totalPlayed > 0 || acc[pid].dpPts > 0)
-    .map(pid => {
-      const a = acc[pid]
-      const isUuid = UUID_RE.test(pid)
-      const user = isUuid ? userMap[pid] : null
-      const totalPossible = a.totalPlayed * 2
-      const club = a.clubName ?? user?.club ?? null
-      return {
-        playerId: pid,
-        displayName: user?.full_name ?? (isUuid ? `?? ${pid.slice(0, 8)}` : pid),
-        club,
-        rang: a.ligaRang + a.dpPts,
-        ligaRang: a.ligaRang,
-        dpPts: a.dpPts,
-        totalPlayed: a.totalPlayed,
-        totalMatchPointsFor: a.totalMatchPointsFor,
-        uspesnostPct: totalPossible > 0 ? a.totalMatchPointsFor / totalPossible : 0,
-        isUuid,
-        ligaEntries: a.ligaEntries.sort((x, y) => y.rang - x.rang),
-        champEntries: a.champEntries.sort((x, y) => y.pts - x.pts),
-      }
-    })
-    .filter(r => !!r.club)   // odstrani tekmovalce brez kluba (neregistrirani/prosto besedilo)
-    .sort((a, b) => b.rang - a.rang || b.totalPlayed - a.totalPlayed)
+  function buildRows(catAcc: Record<string, PlayerAcc>): RangRow[] {
+    return Object.keys(catAcc)
+      .filter(pid => catAcc[pid].totalPlayed > 0 || catAcc[pid].dpPts > 0)
+      .map(pid => {
+        const a = catAcc[pid]
+        const isUuid = UUID_RE.test(pid)
+        const user = isUuid ? userMap[pid] : null
+        const totalPossible = a.totalPlayed * 2
+        const club = a.clubName ?? user?.club ?? null
+        return {
+          playerId: pid,
+          displayName: user?.full_name ?? (isUuid ? `?? ${pid.slice(0, 8)}` : pid),
+          club,
+          rang: a.ligaRang + a.dpPts,
+          ligaRang: a.ligaRang,
+          dpPts: a.dpPts,
+          totalPlayed: a.totalPlayed,
+          totalMatchPointsFor: a.totalMatchPointsFor,
+          uspesnostPct: totalPossible > 0 ? a.totalMatchPointsFor / totalPossible : 0,
+          isUuid,
+          ligaEntries: a.ligaEntries.sort((x, y) => y.rang - x.rang),
+          champEntries: a.champEntries.sort((x, y) => y.pts - x.pts),
+        }
+      })
+      .filter(r => !!r.club)   // odstrani tekmovalce brez kluba (neregistrirani/prosto besedilo)
+      .sort((a, b) => b.rang - a.rang || b.totalPlayed - a.totalPlayed)
+  }
 
-  return { rows, seasonStatsByPlayer, cutoffLabel }
+  const byCategory: Record<RangCategory, RangRow[]> = {
+    men: buildRows(accByCat.men),
+    women: buildRows(accByCat.women),
+    u18: buildRows(accByCat.u18),
+    u14: buildRows(accByCat.u14),
+  }
+
+  return { byCategory, seasonStatsByPlayer, cutoffLabel }
 }
