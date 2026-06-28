@@ -44,13 +44,29 @@ export default function SeriesEdit() {
     load()
   }
 
+  async function changeStatus(status: TournamentSeries['status']) {
+    if (!series) return
+    await supabase.from('tournament_series').update({ status }).eq('id', series.id)
+    load()
+  }
+
   if (!series) return <div className="p-6">Nalagam…</div>
 
   return (
     <div className="max-w-4xl mx-auto p-6">
       <Link to="/admin/serije" className="text-sm text-gray-500">← Serije</Link>
       <h1 className="text-xl font-bold mb-1">{series.name}</h1>
-      <p className="text-xs text-gray-500 mb-6">{series.category.toUpperCase()} · {series.year} · {series.counting_results ? `najboljših ${series.counting_results}` : 'vsi štejejo'}</p>
+      <p className="text-xs text-gray-500 mb-4">{series.category.toUpperCase()} · {series.year} · {series.counting_results ? `najboljših ${series.counting_results}` : 'vsi štejejo'}</p>
+
+      <div className="flex items-center gap-2 mb-6">
+        <span className="text-xs text-gray-500">Status serije:</span>
+        <select value={series.status} onChange={e => changeStatus(e.target.value as TournamentSeries['status'])}
+          className="border rounded-lg px-2 py-1 text-xs bg-white">
+          <option value="draft">Osnutek (skrito javno)</option>
+          <option value="active">Aktivna (vidno javno)</option>
+          <option value="completed">Zaključena</option>
+        </select>
+      </div>
 
       <h2 className="font-semibold mb-2">Turnirji v seriji</h2>
       <form onSubmit={addTournament} className="bg-gray-50 border rounded-xl p-4 mb-4 flex flex-wrap gap-3 items-end">

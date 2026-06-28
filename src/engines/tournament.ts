@@ -259,6 +259,8 @@ export function nextKnockoutStage(
 export function teamDisplayName(registration: TournamentRegistration | null | undefined): string {
   if (!registration) return '???'
   const p1 = registration.player1?.full_name?.split(' ').at(-1) ?? '?'
+  // Posamezna disciplina: prijava nima drugega igralca → prikaži samo eno ime
+  if (!registration.player2_id && !registration.player2) return p1
   const p2 = registration.player2?.full_name?.split(' ').at(-1) ?? '?'
   return `${p1} / ${p2}`
 }
