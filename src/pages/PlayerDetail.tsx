@@ -5,6 +5,8 @@ import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
 import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
+import { computeRangLestvica, type PlayerSeasonSummary } from '../lib/rangLestvica'
+import { findPlayerRank, type PlayerRank } from '../lib/findPlayerRank'
 
 interface LeagueEntry {
   id: string
@@ -25,6 +27,22 @@ export default function PlayerDetail() {
   const [drSubmitting, setDrSubmitting] = useState(false)
   const [drMsg, setDrMsg] = useState('')
   const [loading, setLoading] = useState(true)
+  const [rankInfo, setRankInfo] = useState<PlayerRank | null>(null)
+  const [seasonStats, setSeasonStats] = useState<PlayerSeasonSummary[]>([])
+  const [rangLoading, setRangLoading] = useState(true)
+
+  // Skupni rang + statistika aktualnih sezon (iz deljenega izračuna rang lestvice)
+  useEffect(() => {
+    if (!id) return
+    setRangLoading(true)
+    computeRangLestvica()
+      .then(({ rows, seasonStatsByPlayer }) => {
+        setRankInfo(findPlayerRank(rows, id))
+        setSeasonStats((seasonStatsByPlayer[id] ?? []).filter(s => s.active))
+      })
+      .catch(() => { setRankInfo(null); setSeasonStats([]) })
+      .finally(() => setRangLoading(false))
+  }, [id])
 
   useEffect(() => {
     if (!id) return
@@ -192,6 +210,56 @@ export default function PlayerDetail() {
         </div>
       </div>
 
+      {/* Aktualna sezona + skupni rang */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h2 className="text-lg font-semibold text-gray-800">Aktualna sezona</h2>
+          {rangLoading ? (
+            <span className="text-xs text-gray-400">Nalagam rang…</span>
+          ) : rankInfo ? (
+            <Link to="/rang"
+              className="text-sm bg-bocce-green/10 text-bocce-green border border-bocce-green/20 px-3 py-1.5 rounded-full font-medium hover:bg-bocce-green/20 transition-colors">
+              Skupni rang: <strong>#{rankInfo.mesto}</strong> · {rankInfo.rang.toFixed(2)} t
+            </Link>
+          ) : (
+            <span className="text-xs text-gray-400">Ni uvrščen na rang lestvici</span>
+          )}
+        </div>
+
+        {seasonStats.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-left text-gray-600">
+                  <th className="py-2 pr-4 font-semibold">Liga</th>
+                  <th className="py-2 pr-4 font-semibold text-right">Možne</th>
+                  <th className="py-2 pr-4 font-semibold text-right">Točke</th>
+                  <th className="py-2 pr-4 font-semibold text-right">Uspešnost</th>
+                  <th className="py-2 font-semibold text-right">Rang</th>
+                </tr>
+              </thead>
+              <tbody>
+                {seasonStats.map(s => (
+                  <tr key={s.seasonId} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-2.5 pr-4 font-medium text-gray-800">
+                      <Link to={`/liga/${s.seasonId}`} className="hover:text-bocce-green">{s.seasonName}</Link>
+                    </td>
+                    <td className="py-2.5 pr-4 text-right text-gray-700">{s.played * 2}</td>
+                    <td className="py-2.5 pr-4 text-right font-semibold text-gray-800">{s.matchPointsFor}</td>
+                    <td className="py-2.5 pr-4 text-right text-gray-700">{(s.uspesnostPct * 100).toFixed(0)} %</td>
+                    <td className="py-2.5 text-right font-semibold text-bocce-green">{s.rang.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 italic">
+            {rangLoading ? 'Nalagam…' : 'Ni statistike v aktualni sezoni.'}
+          </p>
+        )}
+      </div>
+
       {/* League history */}
       {leagues.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
@@ -340,11 +408,6 @@ export default function PlayerDetail() {
         </div>
       )}
 
-      {stats.length === 0 && leagues.length === 0 && (
-        <div className="text-center py-8 text-gray-400 italic bg-white border border-gray-200 rounded-2xl">
-          Ni zabeležene statistike
-        </div>
-      )}
     </div>
   )
 }
