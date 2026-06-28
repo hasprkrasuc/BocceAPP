@@ -294,6 +294,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         champEntries: a.champEntries.sort((x, y) => y.pts - x.pts),
       }
     })
+    .filter(r => !!r.club)   // odstrani tekmovalce brez kluba (neregistrirani/prosto besedilo)
     .sort((a, b) => b.rang - a.rang || b.totalPlayed - a.totalPlayed)
 
   return { rows, seasonStatsByPlayer, cutoffLabel }
