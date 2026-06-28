@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
-import { generateRoundRobin } from '../../engines/league'
+import { bergerFixtures, MAX_BERGER_TEAMS } from '../../engines/berger'
 import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueCategory, LeagueTier, LeagueSeasonDiscipline, UserProfile, DisciplineType } from '../../types'
 
@@ -145,6 +145,8 @@ export default function LeagueAdmin() {
     const { data } = await supabase.from('league_teams')
       .select('*, captain:users(*), league_team_players(*, player:users(*))')
       .eq('season_id', selectedSeason.id)
+      .order('draw_number', { ascending: true, nullsFirst: false })
+      .order('club_name')
     setTeams((data ?? []) as LeagueTeam[])
   }
 
@@ -217,12 +219,30 @@ export default function LeagueAdmin() {
     loadTeams()
   }
 
+  /** Vnos žrebane številke ekipe (optimistično v UI + shrani v bazo). */
+  function changeDrawNumber(teamId: string, value: string) {
+    const n = value === '' ? null : Number(value)
+    setTeams(ts => ts.map(t => (t.id === teamId ? { ...t, draw_number: n } : t)))
+    supabase.from('league_teams').update({ draw_number: n }).eq('id', teamId)
+  }
+
   async function handleGenerateFixtures() {
     if (!selectedSeason || teams.length < 2) { setMessage('Premalo ekip za razpored'); return }
-    if (!window.confirm(`Ustvari razpored za ${teams.length} ekip? To bo izbrisalo obstoječe tekme!`)) return
+    if (teams.length > MAX_BERGER_TEAMS) {
+      setMessage(`Bergerjeva tabela je na voljo do ${MAX_BERGER_TEAMS} ekip (trenutno ${teams.length}).`)
+      return
+    }
+    // Razpored se sestavi po Bergerju iz žrebanih številk — preveri veljavnost žreba.
+    let fixtureList
+    try {
+      fixtureList = bergerFixtures(teams, selectedSeason.rounds_count > 1)
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
+      return
+    }
+    if (!window.confirm(`Ustvari Bergerjev razpored za ${teams.length} ekip? To bo izbrisalo obstoječe tekme!`)) return
     setLoading(true)
     await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id)
-    const fixtureList = generateRoundRobin(teams, selectedSeason.rounds_count > 1)
     for (const f of fixtureList) {
       await supabase.from('league_fixtures').insert({
         season_id: selectedSeason.id,
@@ -439,9 +459,17 @@ export default function LeagueAdmin() {
                 {teams.map(team => (
                   <div key={team.id} className="bg-white border border-gray-200 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <div>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1 text-xs text-gray-500" title="Žrebana številka">
+                          <span className="font-mono text-gray-400">#</span>
+                          <input type="number" min={1} max={teams.length}
+                            value={team.draw_number ?? ''}
+                            onChange={e => changeDrawNumber(team.id, e.target.value)}
+                            className="w-12 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center focus:ring-2 focus:ring-bocce-green outline-none"
+                            placeholder="–" />
+                        </label>
                         <span className="font-semibold text-gray-800">{team.club_name}</span>
-                        {team.short_name && <span className="ml-2 text-xs text-gray-400">({team.short_name})</span>}
+                        {team.short_name && <span className="ml-1 text-xs text-gray-400">({team.short_name})</span>}
                         {team.captain && <span className="ml-2 text-xs text-gray-500">Kapitan: {team.captain.full_name}</span>}
                       </div>
                       <button onClick={() => removeTeam(team.id)} className="text-xs text-red-400 hover:text-red-600">Izbriši</button>
@@ -621,9 +649,12 @@ export default function LeagueAdmin() {
                   {loading ? 'Generiram...' : fixtures.length > 0 ? '↺ Regeneriraj razpored' : 'Ustvari razpored'}
                 </button>
                 <span className="text-xs text-gray-500">
-                  {selectedSeason.rounds_count > 1 ? 'Dvokrožno' : 'Enokrožno'} · {teams.length} ekip
+                  Bergerjev sistem · {selectedSeason.rounds_count > 1 ? 'Dvokrožno' : 'Enokrožno'} · {teams.length} ekip
                 </span>
               </div>
+              <p className="text-xs text-gray-400 -mt-4 mb-6">
+                Razpored se sestavi po žrebanih številkah ekip (zavihek Ekipe → polje <span className="font-mono">#</span>).
+              </p>
 
               {Object.entries(byRound).sort(([a], [b]) => Number(a) - Number(b)).map(([round, rFixtures]) => (
                 <div key={round} className="mb-6">

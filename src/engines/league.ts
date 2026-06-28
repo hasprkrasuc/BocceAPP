@@ -67,64 +67,9 @@ export function calculateStandings(
   })
 }
 
-// ────────────────────────────────────────────────────────────────
-// GENERATE ROUND-ROBIN FIXTURES (home & away)
-// ────────────────────────────────────────────────────────────────
-type MinTeam = Pick<LeagueTeam, 'id' | 'club_name'>
-
-interface FixtureInput {
-  round_number: number
-  home_team_id: string
-  away_team_id: string
-  home_team: MinTeam
-  away_team: MinTeam
-}
-
-export function generateRoundRobin(teams: MinTeam[], doubleRound = true): FixtureInput[] {
-  const n = teams.length
-  const list: (MinTeam & { id: string })[] = [...teams]
-
-  if (n % 2 !== 0) list.push({ id: 'BYE', club_name: 'Prosta' })
-  const m = list.length
-  const numRounds = m - 1
-  const rounds: FixtureInput[][] = []
-
-  for (let round = 0; round < numRounds; round++) {
-    const pairs: FixtureInput[] = []
-    for (let i = 0; i < m / 2; i++) {
-      const home = list[i]
-      const away = list[m - 1 - i]
-      if (home.id !== 'BYE' && away.id !== 'BYE') {
-        pairs.push({
-          round_number: round + 1,
-          home_team_id: home.id,
-          away_team_id: away.id,
-          home_team: home,
-          away_team: away,
-        })
-      }
-    }
-    rounds.push(pairs)
-    list.splice(1, 0, list.pop()!)
-  }
-
-  if (doubleRound) {
-    const firstHalf = rounds.flat()
-    const secondHalf = rounds.flatMap((roundFixtures, roundIdx) =>
-      roundFixtures.map(f => ({
-        ...f,
-        round_number: numRounds + roundIdx + 1,
-        home_team_id: f.away_team_id,
-        away_team_id: f.home_team_id,
-        home_team: f.away_team,
-        away_team: f.home_team,
-      }))
-    )
-    return [...firstHalf, ...secondHalf]
-  }
-
-  return rounds.flat()
-}
+// Ligaški razpored po Bergerjevem sistemu je v engines/berger.ts
+// (bergerSchedule / bergerFixtures). Stari circle-metoda generator je odstranjen,
+// ker ni ustrezal Bergerjevi tabeli (Priloga B) za ≥6 ekip.
 
 // ────────────────────────────────────────────────────────────────
 // GET FIXTURES FOR A SPECIFIC ROUND

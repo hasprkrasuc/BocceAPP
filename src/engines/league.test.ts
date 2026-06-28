@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculateStandings, generateRoundRobin } from './league'
+import { calculateStandings } from './league'
 import type { LeagueTeam, LeagueFixture, LeagueSeason } from '../types'
 
 const makeSeason = (overrides?: Partial<LeagueSeason>): LeagueSeason => ({
@@ -93,39 +93,4 @@ describe('calculateStandings', () => {
   })
 })
 
-describe('generateRoundRobin', () => {
-  it('generates 6 fixtures for 4 teams single round', () => {
-    const teams = [makeTeam('a','A'), makeTeam('b','B'), makeTeam('c','C'), makeTeam('d','D')]
-    expect(generateRoundRobin(teams, false)).toHaveLength(6)
-  })
-
-  it('doubles fixture count for double round', () => {
-    const teams = [makeTeam('a','A'), makeTeam('b','B'), makeTeam('c','C'), makeTeam('d','D')]
-    const single = generateRoundRobin(teams, false)
-    const double = generateRoundRobin(teams, true)
-    expect(double).toHaveLength(single.length * 2)
-  })
-
-  it('reverses home/away in second half', () => {
-    const teams = [makeTeam('a','A'), makeTeam('b','B')]
-    const fixtures = generateRoundRobin(teams, true)
-    expect(fixtures).toHaveLength(2)
-    const [f1, f2] = fixtures
-    expect(f1.home_team_id).toBe(f2.away_team_id)
-    expect(f1.away_team_id).toBe(f2.home_team_id)
-  })
-
-  it('handles odd number of teams (adds BYE, excludes BYE matches)', () => {
-    const teams = [makeTeam('a','A'), makeTeam('b','B'), makeTeam('c','C')]
-    const fixtures = generateRoundRobin(teams, false)
-    expect(fixtures.every(f => f.home_team_id !== 'BYE' && f.away_team_id !== 'BYE')).toBe(true)
-    expect(fixtures).toHaveLength(3)
-  })
-
-  it('assigns sequential round numbers', () => {
-    const teams = [makeTeam('a','A'), makeTeam('b','B'), makeTeam('c','C'), makeTeam('d','D')]
-    const fixtures = generateRoundRobin(teams, false)
-    const rounds = [...new Set(fixtures.map(f => f.round_number))].sort((a, b) => a - b)
-    expect(rounds).toEqual([1, 2, 3])
-  })
-})
+// Razpored (Bergerjev sistem) je testiran v engines/berger.test.ts
