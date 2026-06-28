@@ -518,6 +518,7 @@ export default function LeagueAdmin() {
                       <option value="hitrostno">Hitrostno zbijanje</option>
                       <option value="natancno">Natančno zbijanje</option>
                       <option value="blizanje">Natančno bližanje</option>
+                      <option value="blizanje_krog">Bližanje v krog</option>
                       <option value="stafeta">Štafeta</option>
                       <option value="dvojka">Dvojka</option>
                       <option value="trojka">Trojka</option>

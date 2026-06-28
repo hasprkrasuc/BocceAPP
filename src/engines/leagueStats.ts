@@ -32,9 +32,10 @@ export const DEFAULT_LIGA_KOEF = 0.5   // območne/ostale
 
 /** Discipline type → rang utežni faktor (50 % / 75 % / 100 %) */
 const DISC_WEIGHT: Partial<Record<DisciplineType, number>> = {
-  posamezno:  1.00,
-  krog:       1.00,
-  dvojka:     0.75,
+  posamezno:    1.00,
+  krog:         1.00,
+  blizanje_krog: 1.00, // igra se 1 na 1 kot Igra v krog
+  dvojka:       0.75,
   trojka:     0.50,
   stafeta:    0.50,
   natancno:   0.50,
