@@ -33,6 +33,13 @@ export default function AdminDashboard() {
       desc: 'Pregled in odobritev vlog za dvojno registracijo mladih igralcev',
       color: 'border-blue-300 hover:bg-blue-50',
     },
+    {
+      to: '/admin/serije',
+      icon: '🏅',
+      title: 'Mladinske serije',
+      desc: 'Ustvari serije turnirjev (U14/U18), dodaj turnirje, poglej skupno lestvico',
+      color: 'border-orange-300 hover:bg-orange-50',
+    },
     ...(isSuperAdmin ? [{
       to: '/admin/uporabniki',
       icon: '👤',
