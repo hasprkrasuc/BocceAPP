@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import LeagueTable from '../components/LeagueTable'
 import { calculateStandings, calculateGroupStandings, getFixturesByRound } from '../engines/league'
+import { pickLeagueTreeSeasons, type LeagueTreeSlot } from '../engines/leagueTree'
 import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueTier } from '../types'
@@ -38,6 +39,44 @@ const TIER_COLORS: Record<LeagueTier, string> = {
 // ──────────────────────────────────────────────────────────────
 type SeasonWithCount = LeagueSeason & { league_teams?: Array<{ count: number }> }
 
+// Postavitev v ligaškem drevesu: oznaka, podnaslov in barva roba/pike po ravni
+const SLOT_META: Record<LeagueTreeSlot, { label: string; sub: string; border: string; dot: string }> = {
+  super_liga:      { label: 'Super Liga',         sub: 'moški',    border: 'border-bocce-gold',  dot: 'bg-bocce-gold' },
+  '1_liga':        { label: '1. Liga',            sub: 'moški',    border: 'border-bocce-green', dot: 'bg-bocce-green' },
+  '2_liga_vzhod':  { label: '2. Liga Vzhod',      sub: 'moški',    border: 'border-blue-300',    dot: 'bg-blue-400' },
+  '2_liga_zahod':  { label: '2. Liga Zahod',      sub: 'moški',    border: 'border-blue-300',    dot: 'bg-blue-400' },
+  '1_liga_zenske': { label: '1. Liga – Članice',  sub: 'ženske',   border: 'border-pink-300',    dot: 'bg-pink-400' },
+  u14:             { label: 'U14',                sub: 'mladinci', border: 'border-orange-300',  dot: 'bg-orange-400' },
+  u18:             { label: 'U18',                sub: 'mladinci', border: 'border-orange-300',  dot: 'bg-orange-400' },
+}
+
+function LeagueBox({ slot, season }: { slot: LeagueTreeSlot; season: SeasonWithCount | null }) {
+  const m = SLOT_META[slot]
+  const inner = (
+    <>
+      <div className="flex items-center gap-2">
+        <span className={`inline-block w-2.5 h-2.5 rounded-full ${m.dot}`} />
+        <span className="font-bold text-gray-800">{m.label}</span>
+        <span className="text-xs text-gray-400">· {m.sub}</span>
+      </div>
+      {season ? (
+        <div className="mt-1.5 flex items-center justify-between gap-3">
+          <span className="text-xs text-gray-500">Sezona {season.year}</span>
+          <span className="text-xs text-gray-500">{season.league_teams?.[0]?.count ?? 0} ekip</span>
+        </div>
+      ) : (
+        <div className="mt-1.5 text-xs text-gray-400 italic">Ni razpisane sezone</div>
+      )}
+    </>
+  )
+  const base = `block w-full border-2 rounded-xl px-4 py-3 transition-all ${m.border}`
+  return season
+    ? <Link to={`/liga/${season.id}`} className={`${base} bg-white hover:shadow-md`}>{inner}</Link>
+    : <div className={`${base} bg-gray-50 opacity-60`}>{inner}</div>
+}
+
+const Connector = () => <div className="w-0.5 h-5 bg-gray-300" />
+
 export function LeagueList() {
   const [seasons, setSeasons] = useState<SeasonWithCount[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,105 +86,45 @@ export function LeagueList() {
       .then(({ data }) => { setSeasons((data ?? []) as SeasonWithCount[]); setLoading(false) })
   }, [])
 
-  const byTier = TIER_ORDER.reduce<Record<LeagueTier, SeasonWithCount[]>>((acc, t) => {
-    acc[t] = seasons.filter(s => (s.tier ?? 'super_liga') === t)
-    return acc
-  }, {} as Record<LeagueTier, SeasonWithCount[]>)
-
-  // Group OBZ by obz_name
-  const obzByName = byTier.obz.reduce<Record<string, SeasonWithCount[]>>((acc, s) => {
-    const key = s.obz_name ?? 'Ostale'
-    if (!acc[key]) acc[key] = []
-    acc[key].push(s)
-    return acc
-  }, {})
+  const tree = pickLeagueTreeSeasons(seasons)
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">Ligaška piramida</h1>
-      <p className="text-sm text-gray-500 mb-8">Državne in območne balinarske lige</p>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <h1 className="text-2xl font-bold text-gray-800 mb-2">Državne lige</h1>
+      <p className="text-sm text-gray-500 mb-8">Ligaško drevo — klikni ligo za lestvico in razpored</p>
 
       {loading ? (
         <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}</div>
-      ) : seasons.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 italic">Ni razpisanih lig</div>
       ) : (
-        <div className="space-y-8">
-          {/* State-level tiers */}
-          {(['super_liga', '1_liga', '2_liga_zahod', '2_liga_vzhod'] as LeagueTier[]).map(tier => {
-            const tierSeasons = byTier[tier]
-            if (tierSeasons.length === 0) return null
-            return (
-              <div key={tier}>
-                <h2 className="text-base font-bold text-gray-700 mb-3 flex items-center gap-2">
-                  <span className={`inline-block w-3 h-3 rounded-full ${tier === 'super_liga' ? 'bg-bocce-gold' : tier === '1_liga' ? 'bg-bocce-green' : 'bg-blue-400'}`} />
-                  {TIER_LABELS[tier]}
-                </h2>
-                <div className="space-y-2">
-                  {tierSeasons.map(s => (
-                    <Link key={s.id} to={`/liga/${s.id}`}
-                      className={`block border-2 rounded-xl p-4 hover:shadow-sm transition-all ${TIER_COLORS[tier]}`}>
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <h3 className="font-semibold text-gray-800">{s.name}</h3>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[s.status]}`}>
-                              {STATUS_LABELS[s.status]}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500">Sezona {s.year}</p>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-bold text-bocce-green">{s.league_teams?.[0]?.count ?? 0}</div>
-                          <div className="text-xs text-gray-500">ekip</div>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-
-          {/* OBZ section */}
-          {byTier.obz.length > 0 && (
-            <div>
-              <h2 className="text-base font-bold text-gray-700 mb-3 flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full bg-gray-400" />
-                Območne lige
-              </h2>
-              <div className="space-y-4">
-                {Object.entries(obzByName).sort(([a], [b]) => a.localeCompare(b)).map(([obzName, obzSeasons]) => (
-                  <div key={obzName}>
-                    <h3 className="text-sm font-semibold text-gray-500 mb-2">{obzName}</h3>
-                    <div className="space-y-2">
-                      {obzSeasons.map(s => (
-                        <Link key={s.id} to={`/liga/${s.id}`}
-                          className="block border border-gray-200 rounded-xl p-4 bg-white hover:border-bocce-green hover:shadow-sm transition-all">
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <h4 className="font-medium text-gray-800">{s.name}</h4>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[s.status]}`}>
-                                  {STATUS_LABELS[s.status]}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500">Sezona {s.year}</p>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-lg font-bold text-bocce-green">{s.league_teams?.[0]?.count ?? 0}</div>
-                              <div className="text-xs text-gray-500">ekip</div>
-                            </div>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+        <>
+          {/* Moška piramida (levo) + ženska liga (desno) */}
+          <div className="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+            <div className="flex flex-col items-center">
+              <div className="w-full max-w-sm"><LeagueBox slot="super_liga" season={tree.super_liga} /></div>
+              <Connector />
+              <div className="w-full max-w-sm"><LeagueBox slot="1_liga" season={tree['1_liga']} /></div>
+              <Connector />
+              <div className="grid grid-cols-2 gap-3 w-full max-w-md">
+                <LeagueBox slot="2_liga_vzhod" season={tree['2_liga_vzhod']} />
+                <LeagueBox slot="2_liga_zahod" season={tree['2_liga_zahod']} />
               </div>
             </div>
-          )}
-        </div>
+
+            <div>
+              <div className="text-xs font-bold text-gray-400 tracking-wide mb-2">ŽENSKE</div>
+              <LeagueBox slot="1_liga_zenske" season={tree['1_liga_zenske']} />
+            </div>
+          </div>
+
+          {/* Mladinske lige (spodaj) */}
+          <div className="mt-10 pt-8 border-t border-dashed border-gray-200">
+            <h2 className="text-sm font-bold text-gray-500 tracking-wide mb-3">MLADINSKE LIGE</h2>
+            <div className="grid grid-cols-2 gap-3 max-w-md">
+              <LeagueBox slot="u14" season={tree.u14} />
+              <LeagueBox slot="u18" season={tree.u18} />
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
