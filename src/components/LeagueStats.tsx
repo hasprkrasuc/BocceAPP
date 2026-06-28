@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type {
   LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult,
-  LeagueSeasonDiscipline, LeagueTeam,
+  LeagueSeasonDiscipline, LeagueTeam, DisciplineType,
 } from '../types'
 import { aggregatePlayerStats, calculateRang } from '../engines/leagueStats'
 import { playersByDiscipline, teamsByDiscipline, showsAverage } from '../engines/leagueStatsViews'
@@ -20,9 +20,27 @@ interface BaseProps {
 const nameOf = (names: Map<string, ResolvedPlayer>, id: string) => names.get(id)?.full_name ?? id
 const clubOf = (names: Map<string, ResolvedPlayer>, id: string) => names.get(id)?.club ?? ''
 
+/** Spustni izbirnik discipline — prikaže samo tipe, ki imajo podatke. */
+function DisciplinePicker({ groups, value, onChange }: {
+  groups: { type: DisciplineType; label: string; rows: unknown[] }[]
+  value: DisciplineType | ''
+  onChange: (t: DisciplineType) => void
+}) {
+  const avail = groups.filter(g => g.rows.length > 0)
+  if (avail.length === 0) return null
+  const current = avail.find(g => g.type === value) ?? avail[0]
+  return (
+    <select value={current.type} onChange={e => onChange(e.target.value as DisciplineType)}
+      className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white mb-4 focus:ring-2 focus:ring-bocce-green outline-none">
+      {avail.map(g => <option key={g.type} value={g.type}>{g.label}</option>)}
+    </select>
+  )
+}
+
 // ── Statistika (3 podpogledi) ────────────────────────────────────────────────
 export function LeagueStatsPanel({ fixtures, matchResults, disciplines, teams, names }: BaseProps) {
   const [view, setView] = useState<'player' | 'playerDisc' | 'teamDisc'>('player')
+  const [selType, setSelType] = useState<DisciplineType | ''>('')
 
   const playerStats = useMemo(
     () => aggregatePlayerStats(matchResults, fixtures, disciplines),
@@ -79,61 +97,61 @@ export function LeagueStatsPanel({ fixtures, matchResults, disciplines, teams, n
         </table>
       )}
 
-      {view === 'playerDisc' && (
-        <div className="space-y-6">
-          {playerSections.filter(s => s.rows.length > 0).map(({ discipline, rows }) => (
-            <div key={discipline.id}>
-              <h3 className="text-sm font-bold text-gray-700 mb-2">{discipline.name}</h3>
-              <table className="w-full text-sm">
-                <thead><tr className="text-left text-gray-500 border-b">
-                  <th className="py-1">Igralec</th><th className="text-right">Odigrano</th>
-                  <th className="text-right">Točke</th>
-                  {showsAverage(discipline.discipline_type) && <th className="text-right">Povprečje</th>}
-                </tr></thead>
-                <tbody>
-                  {rows.map(r => (
-                    <tr key={r.playerId} className="border-b">
-                      <td className="py-1">{nameOf(names, r.playerId)}</td>
-                      <td className="text-right">{r.played}</td>
-                      <td className="text-right font-semibold">{r.matchPointsFor}</td>
-                      {showsAverage(discipline.discipline_type) && <td className="text-right">{r.average.toFixed(1)}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-          {playerSections.every(s => s.rows.length === 0) && <p className="text-sm text-gray-400">Ni podatkov.</p>}
-        </div>
-      )}
+      {view === 'playerDisc' && (() => {
+        const avail = playerSections.filter(s => s.rows.length > 0)
+        if (avail.length === 0) return <p className="text-sm text-gray-400">Ni podatkov.</p>
+        const g = avail.find(x => x.type === selType) ?? avail[0]
+        return (
+          <div>
+            <DisciplinePicker groups={playerSections} value={selType} onChange={setSelType} />
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-gray-500 border-b">
+                <th className="py-1">Igralec</th><th className="text-right">Odigrano</th>
+                <th className="text-right">Točke</th>
+                {showsAverage(g.type) && <th className="text-right">Povprečje</th>}
+              </tr></thead>
+              <tbody>
+                {g.rows.map(r => (
+                  <tr key={r.playerId} className="border-b">
+                    <td className="py-1">{nameOf(names, r.playerId)}</td>
+                    <td className="text-right">{r.played}</td>
+                    <td className="text-right font-semibold">{r.matchPointsFor}</td>
+                    {showsAverage(g.type) && <td className="text-right">{r.average.toFixed(1)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      })()}
 
-      {view === 'teamDisc' && (
-        <div className="space-y-6">
-          {teamSections.filter(s => s.rows.length > 0).map(({ discipline, rows }) => (
-            <div key={discipline.id}>
-              <h3 className="text-sm font-bold text-gray-700 mb-2">{discipline.name}</h3>
-              <table className="w-full text-sm">
-                <thead><tr className="text-left text-gray-500 border-b">
-                  <th className="py-1">Ekipa</th><th className="text-right">Odigrano</th>
-                  <th className="text-right">Točke</th>
-                  {showsAverage(discipline.discipline_type) && <th className="text-right">Povprečje</th>}
-                </tr></thead>
-                <tbody>
-                  {rows.map(r => (
-                    <tr key={r.teamId} className="border-b">
-                      <td className="py-1">{teamName[r.teamId] ?? r.teamId}</td>
-                      <td className="text-right">{r.played}</td>
-                      <td className="text-right font-semibold">{r.matchPointsFor}</td>
-                      {showsAverage(discipline.discipline_type) && <td className="text-right">{r.average.toFixed(1)}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-          {teamSections.every(s => s.rows.length === 0) && <p className="text-sm text-gray-400">Ni podatkov.</p>}
-        </div>
-      )}
+      {view === 'teamDisc' && (() => {
+        const avail = teamSections.filter(s => s.rows.length > 0)
+        if (avail.length === 0) return <p className="text-sm text-gray-400">Ni podatkov.</p>
+        const g = avail.find(x => x.type === selType) ?? avail[0]
+        return (
+          <div>
+            <DisciplinePicker groups={teamSections} value={selType} onChange={setSelType} />
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-gray-500 border-b">
+                <th className="py-1">Ekipa</th><th className="text-right">Odigrano</th>
+                <th className="text-right">Točke</th>
+                {showsAverage(g.type) && <th className="text-right">Povprečje</th>}
+              </tr></thead>
+              <tbody>
+                {g.rows.map(r => (
+                  <tr key={r.teamId} className="border-b">
+                    <td className="py-1">{teamName[r.teamId] ?? r.teamId}</td>
+                    <td className="text-right">{r.played}</td>
+                    <td className="text-right font-semibold">{r.matchPointsFor}</td>
+                    {showsAverage(g.type) && <td className="text-right">{r.average.toFixed(1)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      })()}
     </div>
   )
 }

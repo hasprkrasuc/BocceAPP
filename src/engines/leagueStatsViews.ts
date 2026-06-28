@@ -12,9 +12,35 @@ export function showsAverage(t: DisciplineType): boolean {
   return AVERAGE_DISCIPLINES.has(t)
 }
 
-export interface DisciplineSection<Row> {
-  discipline: LeagueSeasonDiscipline
+/** Prikazna oznaka tipa discipline (več instanc, npr. "DVOJKA 1/2/3", se združi v eno). */
+export const DISCIPLINE_TYPE_LABELS: Record<DisciplineType, string> = {
+  posamezno: 'Posamezno',
+  dvojka: 'Dvojka',
+  trojka: 'Trojka',
+  krog: 'Igra v krog',
+  hitrostno: 'Hitrostno izbijanje',
+  natancno: 'Natančno izbijanje',
+  blizanje: 'Natančno bližanje',
+  blizanje_krog: 'Bližanje v krog',
+  stafeta: 'Štafeta',
+  podaljsek: 'Podaljšek',
+}
+
+/** Skupina po tipu discipline (instance istega tipa so združene). */
+export interface DisciplineGroup<Row> {
+  type: DisciplineType
+  label: string
   rows: Row[]
+}
+
+/** Unikatni tipi disciplin v vrstnem redu prve pojavitve. */
+function orderedTypes(disciplines: LeagueSeasonDiscipline[]): DisciplineType[] {
+  const seen = new Set<DisciplineType>()
+  const out: DisciplineType[] = []
+  for (const d of disciplines) {
+    if (!seen.has(d.discipline_type)) { seen.add(d.discipline_type); out.push(d.discipline_type) }
+  }
+  return out
 }
 
 export interface DisciplinePlayerRow {
@@ -25,26 +51,26 @@ export interface DisciplinePlayerRow {
   average: number
 }
 
-/** Za vsako disciplino seznam igralcev (iz njihovih byDiscipline), razvrščen po točkah. */
+/** Za vsak TIP discipline seznam igralcev (združene instance), razvrščen po točkah. */
 export function playersByDiscipline(
   stats: PlayerSeasonStat[],
   disciplines: LeagueSeasonDiscipline[],
-): DisciplineSection<DisciplinePlayerRow>[] {
-  return disciplines.map(discipline => {
+): DisciplineGroup<DisciplinePlayerRow>[] {
+  return orderedTypes(disciplines).map(type => {
     const rows: DisciplinePlayerRow[] = []
     for (const ps of stats) {
-      const d = ps.byDiscipline.find(b => b.disciplineId === discipline.id)
-      if (!d || d.played === 0) continue
-      rows.push({
-        playerId: ps.playerId,
-        played: d.played,
-        matchPointsFor: d.matchPointsFor,
-        scoreFor: d.scoreFor,
-        average: d.played > 0 ? d.scoreFor / d.played : 0,
-      })
+      let played = 0, matchPointsFor = 0, scoreFor = 0
+      for (const d of ps.byDiscipline) {
+        if (d.disciplineType !== type) continue
+        played += d.played
+        matchPointsFor += d.matchPointsFor
+        scoreFor += d.scoreFor
+      }
+      if (played === 0) continue
+      rows.push({ playerId: ps.playerId, played, matchPointsFor, scoreFor, average: scoreFor / played })
     }
     rows.sort((a, b) => b.matchPointsFor - a.matchPointsFor || b.average - a.average)
-    return { discipline, rows }
+    return { type, label: DISCIPLINE_TYPE_LABELS[type] ?? type, rows }
   })
 }
 
@@ -56,35 +82,34 @@ export interface DisciplineTeamRow {
   average: number
 }
 
-/** Za vsako disciplino seznam ekip (kliče aggregateTeamDisciplineStats na ekipo), razvrščen po točkah. */
+/** Za vsak TIP discipline seznam ekip (združene instance), razvrščen po točkah. */
 export function teamsByDiscipline(
   teamIds: string[],
   fixtures: LeagueFixture[],
   matchResults: Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>,
   disciplines: LeagueSeasonDiscipline[],
-): DisciplineSection<DisciplineTeamRow>[] {
-  const perTeam = new Map<string, Map<string, { played: number; matchPointsFor: number; scoreFor: number }>>()
+): DisciplineGroup<DisciplineTeamRow>[] {
+  type Tot = { played: number; matchPointsFor: number; scoreFor: number }
+  const perTeam = new Map<string, Map<DisciplineType, Tot>>()
   for (const teamId of teamIds) {
-    const m = new Map<string, { played: number; matchPointsFor: number; scoreFor: number }>()
+    const m = new Map<DisciplineType, Tot>()
     for (const s of aggregateTeamDisciplineStats(teamId, fixtures, matchResults, disciplines)) {
-      m.set(s.disciplineId, { played: s.played, matchPointsFor: s.matchPointsFor, scoreFor: s.scoreFor })
+      const cur = m.get(s.disciplineType) ?? { played: 0, matchPointsFor: 0, scoreFor: 0 }
+      cur.played += s.played
+      cur.matchPointsFor += s.matchPointsFor
+      cur.scoreFor += s.scoreFor
+      m.set(s.disciplineType, cur)
     }
     perTeam.set(teamId, m)
   }
-  return disciplines.map(discipline => {
+  return orderedTypes(disciplines).map(type => {
     const rows: DisciplineTeamRow[] = []
     for (const teamId of teamIds) {
-      const s = perTeam.get(teamId)?.get(discipline.id)
+      const s = perTeam.get(teamId)?.get(type)
       if (!s || s.played === 0) continue
-      rows.push({
-        teamId,
-        played: s.played,
-        matchPointsFor: s.matchPointsFor,
-        scoreFor: s.scoreFor,
-        average: s.played > 0 ? s.scoreFor / s.played : 0,
-      })
+      rows.push({ teamId, played: s.played, matchPointsFor: s.matchPointsFor, scoreFor: s.scoreFor, average: s.scoreFor / s.played })
     }
     rows.sort((a, b) => b.matchPointsFor - a.matchPointsFor || b.average - a.average)
-    return { discipline, rows }
+    return { type, label: DISCIPLINE_TYPE_LABELS[type] ?? type, rows }
   })
 }
