@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
 import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
@@ -28,7 +29,7 @@ export default function PlayerDetail() {
   useEffect(() => {
     if (!id) return
     Promise.all([
-      supabase.from('users').select('*').eq('id', id).single(),
+      supabase.from('users').select(USER_PUBLIC_COLS).eq('id', id).single(),
       supabase.from('player_statistics').select('*').eq('player_id', id).order('year', { ascending: false }),
       supabase
         .from('league_team_players')

@@ -35,7 +35,7 @@ export default function Home() {
           .gte('date', new Date().toISOString().slice(0, 10)).order('date').limit(3),
         supabase.from('tournaments').select('*').eq('status', 'completed').order('date', { ascending: false }).limit(3),
         supabase.from('tournaments').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'player'),
+        supabase.from('users').select('id', { count: 'exact', head: true }).eq('role', 'player'),
       ])
       setUpcoming((upcData ?? []) as Tournament[])
       setRecent((recData ?? []) as Tournament[])

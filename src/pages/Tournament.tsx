@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import GroupBracket from '../components/GroupBracket'
 import KnockoutBracket from '../components/KnockoutBracket'
@@ -139,7 +140,7 @@ export function TournamentDetail() {
         supabase.from('tournaments').select('*').eq('id', id).single(),
         supabase.from('tournament_groups').select('*').eq('tournament_id', id).order('group_number'),
         supabase.from('matches').select(`*, team_a:group_teams!matches_team_a_id_fkey(*, registration:tournament_registrations(*)), team_b:group_teams!matches_team_b_id_fkey(*, registration:tournament_registrations(*))`).eq('tournament_id', id),
-        supabase.from('tournament_registrations').select(`*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*)`).eq('tournament_id', id),
+        supabase.from('tournament_registrations').select(`*, player1:users!tournament_registrations_player1_id_fkey(${USER_PUBLIC_COLS}), player2:users!tournament_registrations_player2_id_fkey(${USER_PUBLIC_COLS})`).eq('tournament_id', id),
       ])
       if (tErr) throw tErr
       setTournament(t as Tournament)
