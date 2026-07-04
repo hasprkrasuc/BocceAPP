@@ -259,20 +259,27 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         .in('stage', ['final', 'third_place', 'sf', 'qf', 'r16'])
         .eq('status', 'completed')
 
+      type Reg = { player1_id: string; player2_id: string | null }
+      type GroupTeamEmbed = { id: string; registration: Reg | Reg[] | null }
       type MatchRow = {
         stage: string; winner_id: string | null; team_a_id: string | null; team_b_id: string | null
-        team_a: Array<{ id: string; registration: Array<{ player1_id: string; player2_id: string | null }> }>
-        team_b: Array<{ id: string; registration: Array<{ player1_id: string; player2_id: string | null }> }>
+        team_a: GroupTeamEmbed | GroupTeamEmbed[] | null
+        team_b: GroupTeamEmbed | GroupTeamEmbed[] | null
       }
       const rows = (matches ?? []) as unknown as MatchRow[]
+
+      // PostgREST vrne to-one embed kot OBJEKT (redkeje kot enočlanski array) — podpri oboje.
+      // Prej je koda vedno indeksirala [0], kar je pri objektu undefined → playersByTeam prazen → 0 DP točk.
+      const one = <T>(v: T | T[] | null | undefined): T | null =>
+        Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
 
       // group_team id → igralci ekipe (dvojica = 2)
       const playersByTeam: Record<string, string[]> = {}
       const koMatches: ChampKoMatch[] = rows.map(m => {
-        for (const gt of [m.team_a?.[0], m.team_b?.[0]]) {
+        for (const gt of [one(m.team_a), one(m.team_b)]) {
           if (gt && !playersByTeam[gt.id]) {
-            playersByTeam[gt.id] = [gt.registration?.[0]?.player1_id, gt.registration?.[0]?.player2_id]
-              .filter(Boolean) as string[]
+            const reg = one(gt.registration)
+            playersByTeam[gt.id] = [reg?.player1_id, reg?.player2_id].filter(Boolean) as string[]
           }
         }
         return { stage: m.stage, winnerId: m.winner_id, teamAId: m.team_a_id, teamBId: m.team_b_id }
