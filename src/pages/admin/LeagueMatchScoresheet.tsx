@@ -3,7 +3,6 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { BLOCK_LABELS } from '../../engines/leagueDisciplines'
-import { getAutoPlayground, getBlok4Playground, BLOK4_DISCIPLINES } from '../../engines/leaguePlaygrounds'
 import type { LeagueFixture, LeagueSeasonDiscipline, LeagueMatchResult, LeagueMatchDisciplineResult, DisciplineType, UserProfile } from '../../types'
 import { evaluatePlayerLineup, seasonUsesBlock2Rule, type LineupDisc } from '../../engines/leagueLineup'
 
@@ -141,8 +140,6 @@ export default function LeagueMatchScoresheet() {
   const [homeRoster, setHomeRoster] = useState<RosterPlayer[]>([])
   const [awayRoster, setAwayRoster] = useState<RosterPlayer[]>([])
   const [rosterOpen, setRosterOpen] = useState(true)
-  const [drawNatancno, setDrawNatancno] = useState<1 | 4 | null>(null)
-  const [drawBlok4, setDrawBlok4] = useState<Record<string, number>>({})
   const [existingResultId, setExistingResultId] = useState<string | null>(null)
   // Judge delegation (stored on fixture)
   const [chiefJudgeUserId, setChiefJudgeUserId] = useState<string>('')
@@ -190,8 +187,6 @@ export default function LeagueMatchScoresheet() {
     if (existing) {
       const res = existing as LeagueMatchResult
       setExistingResultId(res.id)
-      if (res.draw_natancno_field) setDrawNatancno(res.draw_natancno_field)
-      if (res.draw_blok4) setDrawBlok4(res.draw_blok4)
       for (const disc of discList) {
         const dr = (res.discipline_results ?? []).find(r => r.discipline_id === disc.id) as LeagueMatchDisciplineResult | undefined
         if (dr) {
@@ -224,33 +219,27 @@ export default function LeagueMatchScoresheet() {
       return { ...f, [id]: { ...f[id], [side === 'home' ? 'homePlayers' : 'awayPlayers']: arr } }
     })
   }
-  function setBlok4Field(discName: string, field: number) {
-    setDrawBlok4(prev => {
-      const next = { ...prev }
-      Object.keys(next).forEach(k => { if (next[k] === field) delete next[k] })
-      next[discName] = field
-      return next
-    })
-  }
-
   async function assignChiefJudge(userId: string) {
     if (!fixtureId) return
     setChiefJudgeUserId(userId)
-    await supabase.from('league_fixtures').update({ chief_judge_id: userId || null }).eq('id', fixtureId)
+    const { error } = await supabase.from('league_fixtures').update({ chief_judge_id: userId || null }).eq('id', fixtureId)
+    if (error) setMessage(`❌ Glavni sodnik ni shranjen: ${error.message}`)
   }
 
   async function addJudgeUser(userId: string) {
     if (!fixtureId || !userId || judgeUserIds.includes(userId)) return
     const next = [...judgeUserIds, userId]
     setJudgeUserIds(next)
-    await supabase.from('league_fixtures').update({ judge_ids: next }).eq('id', fixtureId)
+    const { error } = await supabase.from('league_fixtures').update({ judge_ids: next }).eq('id', fixtureId)
+    if (error) setMessage(`❌ Sodnik ni dodan: ${error.message}`)
   }
 
   async function removeJudgeUser(userId: string) {
     if (!fixtureId) return
     const next = judgeUserIds.filter(id => id !== userId)
     setJudgeUserIds(next)
-    await supabase.from('league_fixtures').update({ judge_ids: next }).eq('id', fixtureId)
+    const { error } = await supabase.from('league_fixtures').update({ judge_ids: next }).eq('id', fixtureId)
+    if (error) setMessage(`❌ Sodnik ni odstranjen: ${error.message}`)
   }
 
   const canEdit = isAdmin || (!!user && chiefJudgeUserId === user.id)
@@ -286,7 +275,7 @@ export default function LeagueMatchScoresheet() {
     let resultId = existingResultId
     const resultData = {
       fixture_id: fixtureId,
-      draw_natancno_field: drawNatancno, draw_blok4: Object.keys(drawBlok4).length ? drawBlok4 : null,
+      draw_natancno_field: null, draw_blok4: null,
     }
     if (!resultId) {
       const { data, error } = await supabase.from('league_match_results').insert(resultData).select().single()
@@ -303,15 +292,13 @@ export default function LeagueMatchScoresheet() {
       if (pts) { homeTotal += pts[0]; awayTotal += pts[1] }
       if (f.homeScore) homePunt += Number(f.homeScore)
       if (f.awayScore) awayPunt += Number(f.awayScore)
-      const playground = BLOK4_DISCIPLINES.includes(disc.name)
-        ? getBlok4Playground(disc.name, drawBlok4) : getAutoPlayground(disc.name, drawNatancno)
       const homePlayers = f.homePlayers.filter(Boolean)
       if (disc.has_reserve && f.homeReserve) homePlayers.push(`R: ${f.homeReserve}`)
       const awayPlayers = f.awayPlayers.filter(Boolean)
       if (disc.has_reserve && f.awayReserve) awayPlayers.push(`R: ${f.awayReserve}`)
       return {
         match_result_id: resultId, discipline_id: disc.id,
-        playground_number: playground ? Number(playground.split(' ')[0]) || null : null,
+        playground_number: null,
         home_score: f.homeScore ? Number(f.homeScore) : null,
         away_score: f.awayScore ? Number(f.awayScore) : null,
         home_match_points: pts ? pts[0] : null, away_match_points: pts ? pts[1] : null,
@@ -524,33 +511,6 @@ export default function LeagueMatchScoresheet() {
         )}
       </div>
 
-      {/* Žreb */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Žreb igrišč</h3>
-        <div className="flex items-start gap-4 flex-wrap">
-          <div>
-            <p className="text-xs text-gray-500 mb-2">Natančno izbijanje poteka na igrišču:</p>
-            <div className="flex gap-2">
-              {([1, 4] as const).map(f => (
-                <button key={f} onClick={() => canEdit && setDrawNatancno(f)} disabled={!canEdit}
-                  className={`w-12 h-12 rounded-xl font-bold text-lg border-2 transition-all ${drawNatancno === f ? 'border-bocce-green bg-bocce-green text-white' : canEdit ? 'border-gray-200 text-gray-600 hover:border-bocce-green' : 'border-gray-100 text-gray-300 cursor-default'}`}>
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-          {drawNatancno && (
-            <div className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-xs text-gray-600 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1">
-              <span><span className="font-semibold">Štafeta:</span> igrišče {drawNatancno === 1 ? '2 in 4' : '1 in 3'}</span>
-              <span><span className="font-semibold">Natančno:</span> igrišče {drawNatancno}</span>
-              <span><span className="font-semibold">Posamezno 1:</span> igrišče {drawNatancno === 1 ? '3' : '2'}</span>
-              <span><span className="font-semibold">Krog:</span> igrišče {drawNatancno === 1 ? '4' : '1'}</span>
-              <span><span className="font-semibold">Hitrostno:</span> igrišče {drawNatancno === 1 ? '2 in 4' : '1 in 3'}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Disciplines */}
       {disciplines.length === 0 ? (
         <div className="text-center py-10 text-gray-400 italic text-sm">
@@ -568,40 +528,10 @@ export default function LeagueMatchScoresheet() {
                 <span className="font-semibold text-gray-700">{BLOCK_LABELS[blockNum] ?? `Blok ${blockNum}`}</span>
               </div>
 
-              {blockNum === 4 && (
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-3">
-                  <p className="text-xs text-gray-500 mb-3">Žreb igrišč za Blok 4:</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {BLOK4_DISCIPLINES.filter(name => blocks[4]?.some(d => d.name === name)).map(name => (
-                      <div key={name}>
-                        <p className="text-xs font-medium text-gray-700 mb-1.5">{name}</p>
-                        <div className="flex gap-1">
-                          {[1, 2, 3, 4].map(f => (
-                            <button key={f} onClick={() => canEdit && setBlok4Field(name, f)}
-                              className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all ${
-                                drawBlok4[name] === f ? 'border-bocce-green bg-bocce-green text-white' :
-                                !canEdit ? 'border-gray-100 text-gray-300 cursor-default' :
-                                Object.values(drawBlok4).includes(f) ? 'border-gray-100 text-gray-300 cursor-not-allowed' :
-                                'border-gray-200 text-gray-600 hover:border-bocce-green'
-                              }`}
-                              disabled={!canEdit || (Object.values(drawBlok4).includes(f) && drawBlok4[name] !== f)}>
-                              {f}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div className="space-y-2">
                 {blocks[blockNum].map(disc => {
                   const f = forms[disc.id]; if (!f) return null
                   const pts = calcPoints(f.homeScore, f.awayScore)
-                  const playground = BLOK4_DISCIPLINES.includes(disc.name)
-                    ? getBlok4Playground(disc.name, drawBlok4)
-                    : getAutoPlayground(disc.name, drawNatancno)
                   const isTech = TECHNICAL_TYPES.includes(disc.discipline_type as DisciplineType)
 
                   return (
@@ -609,11 +539,6 @@ export default function LeagueMatchScoresheet() {
                       <div className="flex items-center gap-2 mb-2">
                         <span className="font-semibold text-sm text-gray-800 w-32 shrink-0">{disc.name}</span>
                         {isTech && <span className="text-xs bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">tehnična</span>}
-                        {playground ? (
-                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Igrišče {playground}</span>
-                        ) : (
-                          <span className="text-xs text-gray-300 italic">igrišče — žreb</span>
-                        )}
                         {pts && (
                           <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full ${
                             pts[0] === 2 ? 'bg-bocce-lime/20 text-bocce-lime' :
