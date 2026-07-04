@@ -71,9 +71,37 @@ describe('teamsCompatible — terminske skupine', () => {
   it('1. liga ↔ 2. liga = NI (isti termin)', () => {
     expect(teamsCompatible(l1, l2)).toBe(false)
   })
-  it('ista skupina = NI (super↔super, youth↔youth)', () => {
+  it('ista kategorija = NI (super↔super, U-18↔U-18)', () => {
     expect(teamsCompatible(sup, sup)).toBe(false)
-    expect(teamsCompatible(youth, u14)).toBe(false)
+    expect(teamsCompatible(youth, youth)).toBe(false)
+  })
+  it('različni mladinski kategoriji (U-14 ↔ U-18) = DA (igra navzgor)', () => {
+    expect(teamsCompatible(u14, youth)).toBe(true)  // youth=u18
+  })
+})
+
+describe('eligibleSecondaryTeams — igra navzgor (U-14 → U-18)', () => {
+  const teams = [
+    { id: 'u18a', tier: null,          category: 'u18' },
+    { id: 'sup',  tier: 'super_liga',  category: 'men' },
+    { id: 'l1',   tier: '1_liga',      category: 'men' },
+  ]
+  it('U-14 matična → ponudi U-18 (navzgor) + članske lige', () => {
+    const my = [{ id: 'u14', tier: null, category: 'u14' }]
+    expect(eligibleSecondaryTeams('M', my, teams).map(t => t.id).sort()).toEqual(['l1', 'sup', 'u18a'])
+  })
+  it('U-18 matična → NE ponudi U-14 (ni igre navzdol), le članske', () => {
+    const teams2 = [
+      { id: 'u14a', tier: null,         category: 'u14' },
+      { id: 'sup',  tier: 'super_liga', category: 'men' },
+    ]
+    const my = [{ id: 'u18', tier: null, category: 'u18' }]
+    expect(eligibleSecondaryTeams('M', my, teams2).map(t => t.id)).toEqual(['sup'])
+  })
+  it('že v U-18 → ne ponudi druge U-18 ekipe (ista kategorija trči)', () => {
+    const teams3 = [{ id: 'u18b', tier: null, category: 'u18' }]
+    const my = [{ id: 'u14', tier: null, category: 'u14' }, { id: 'u18a', tier: null, category: 'u18' }]
+    expect(eligibleSecondaryTeams('M', my, teams3).map(t => t.id)).toEqual([])
   })
 })
 
