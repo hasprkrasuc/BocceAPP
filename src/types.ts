@@ -5,7 +5,7 @@ export type TournamentKind = 'tournament' | 'championship'
 export type TournamentStatus = 'draft' | 'registration_open' | 'in_progress' | 'completed'
 export type TournamentCategory = 'men' | 'women' | 'u18' | 'mixed' | 'u18_women' | 'u15' | 'u12'
 export type RegistrationStatus = 'pending' | 'confirmed' | 'rejected'
-export type MatchStage = 'group' | 'r64' | 'r32' | 'r16' | 'qf' | 'sf' | 'final' | 'third_place'
+export type MatchStage = 'group' | 'r128' | 'r64' | 'r32' | 'r16' | 'qf' | 'sf' | 'final' | 'third_place'
 export type MatchType = 'zm' | 'po' | 'r' | 'bye' | 'knockout'
 export type MatchStatus = 'pending' | 'completed'
 export type GroupStatus = 'pending' | 'in_progress' | 'completed'
@@ -83,6 +83,7 @@ export interface Tournament {
   max_teams: number | null
   series_id: string | null
   discipline_type: DisciplineType | null
+  format: 'groups' | 'knockout'
 }
 
 export interface TournamentRegistration {

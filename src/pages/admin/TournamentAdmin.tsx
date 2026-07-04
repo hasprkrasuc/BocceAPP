@@ -19,6 +19,7 @@ interface TournamentForm {
   date: string
   location: string
   group_size: string
+  format: string
   max_teams: string
   registration_deadline: string
   notes: string
@@ -26,7 +27,9 @@ interface TournamentForm {
 
 const EMPTY_FORM: TournamentForm = {
   name: '', kind: 'tournament', category: 'men', date: '', location: '',
-  group_size: '4', max_teams: '', registration_deadline: '', notes: '',
+  group_size: '4',
+  format: 'groups',
+  max_teams: '', registration_deadline: '', notes: '',
 }
 
 export default function TournamentAdmin() {
@@ -61,6 +64,7 @@ export default function TournamentAdmin() {
         date: form.date,
         location: form.location,
         group_size: form.group_size,
+        format: form.format,
         max_teams: form.max_teams ? Number(form.max_teams) : null,
         registration_deadline: form.registration_deadline || null,
         notes: form.notes || null,
@@ -120,6 +124,14 @@ export default function TournamentAdmin() {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sistem tekmovanja *</label>
+                <select value={form.format} onChange={set('format')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                  <option value="groups">Skupinski + izločilni</option>
+                  <option value="knockout">Direktni izločilni (brez skupin)</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ime *</label>
                 <input type="text" required value={form.name} onChange={set('name')}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
@@ -145,15 +157,17 @@ export default function TournamentAdmin() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
                   placeholder="Postojna" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ekipe v skupini</label>
-                <select value={form.group_size} onChange={set('group_size')}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
-                  <option value="3">3 ekipe (U18 mali)</option>
-                  <option value="4">4 ekipe (standardno moški)</option>
-                  <option value="5">5 ekip (ženske / U18 veliki)</option>
-                </select>
-              </div>
+              {form.format === 'groups' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ekipe v skupini</label>
+                  <select value={form.group_size} onChange={set('group_size')}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                    <option value="3">3 ekipe (U18 mali)</option>
+                    <option value="4">4 ekipe (standardno moški)</option>
+                    <option value="5">5 ekip (ženske / U18 veliki)</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Max ekip</label>
                 <input type="number" value={form.max_teams} onChange={set('max_teams')}

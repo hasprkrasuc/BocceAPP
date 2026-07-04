@@ -1,9 +1,9 @@
 import { stageLabel, teamDisplayName } from '../engines/tournament'
 import type { Match, TournamentRegistration, GroupTeam, MatchStage } from '../types'
 
-const STAGES: MatchStage[] = ['r16', 'qf', 'sf', 'final']
+const STAGES: MatchStage[] = ['r128', 'r64', 'r32', 'r16', 'qf', 'sf', 'final']
 const STAGE_WIDTHS: Partial<Record<MatchStage | 'third_place', number>> = {
-  r16: 140, qf: 148, sf: 156, final: 164, third_place: 156,
+  r128: 132, r64: 132, r32: 136, r16: 140, qf: 148, sf: 156, final: 164, third_place: 156,
 }
 
 interface EnrichedMatch extends Match {
@@ -41,7 +41,7 @@ function KnockoutMatchCard({ match, isAdmin, onEnterScore, compact = false }: Ca
       </div>
       <div className={`flex items-center justify-between px-3 py-1.5 ${winnerIsB ? 'bg-green-50' : ''}`}>
         <span className={`flex-1 truncate ${winnerIsB ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamB ? 'text-gray-300 italic' : ''}`}>
-          {match.teamB ? nameB : 'Čaka...'}
+          {match.teamB ? nameB : (match.is_bye ? 'prosto (bye)' : 'Čaka...')}
         </span>
         {match.score_b !== null && (
           <span className={`ml-2 w-6 text-center font-bold font-mono rounded ${winnerIsB ? 'text-bocce-green' : 'text-gray-500'}`}>

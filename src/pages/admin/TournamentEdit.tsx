@@ -4,8 +4,14 @@ import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel } from '../../engines/tournament'
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile } from '../../types'
+import { drawKnockout } from '../../lib/knockoutDraw'
+import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 
 type Tab = 'registrations' | 'draw' | 'knockout'
+
+function toRangCat(cat: string): RangCategory | null {
+  return cat === 'men' || cat === 'women' || cat === 'u18' ? cat : null
+}
 
 export default function TournamentEdit() {
   const { id } = useParams<{ id: string }>()
@@ -281,6 +287,26 @@ export default function TournamentEdit() {
     setDrawLoading(false)
   }
 
+  async function handleKnockoutDraw() {
+    const confirmed = registrations.filter(r => r.status === 'confirmed')
+    if (confirmed.length < 2) { setMessage('❌ Premalo potrjenih prijav (najmanj 2)'); return }
+    if (groups.length > 0 && !confirm('Ponoven žreb izbriše obstoječo mrežo. Nadaljujem?')) return
+    setDrawLoading(true); setMessage('')
+    try {
+      const rang = await computeRangLestvica()
+      const cat = tournament ? toRangCat(tournament.category) : null
+      const rangPoints: Record<string, number> = {}
+      if (cat) for (const row of rang.byCategory[cat]) rangPoints[row.playerId] = row.rang
+      const regs = confirmed.map(r => ({ id: r.id, player1_id: r.player1_id, player2_id: r.player2_id }))
+      const res = await drawKnockout(id!, regs, rangPoints)
+      setMessage(`✓ Izločilni žreb opravljen: mreža ${res.bracket} (${res.teams} ekip)`)
+      await load()
+    } catch (err) {
+      setMessage('❌ Napaka pri žrebu: ' + (err as Error).message)
+    }
+    setDrawLoading(false)
+  }
+
   async function generateKnockout() {
     setMessage('')
     try {
@@ -395,11 +421,17 @@ export default function TournamentEdit() {
       )}
 
       <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {([
-          { key: 'registrations' as Tab, label: `Prijave (${registrations.length})` },
-          { key: 'draw' as Tab, label: `Žreb skupin (${groups.length})` },
-          { key: 'knockout' as Tab, label: 'Izločilni del' },
-        ]).map(t => (
+        {(tournament.format === 'knockout'
+          ? [
+              { key: 'registrations' as Tab, label: `Prijave (${registrations.length})` },
+              { key: 'draw' as Tab, label: `Izločilni žreb${groups.length ? ' ✓' : ''}` },
+            ]
+          : [
+              { key: 'registrations' as Tab, label: `Prijave (${registrations.length})` },
+              { key: 'draw' as Tab, label: `Žreb skupin (${groups.length})` },
+              { key: 'knockout' as Tab, label: 'Izločilni del' },
+            ]
+        ).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px
               ${tab === t.key ? 'border-bocce-green text-bocce-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
@@ -587,7 +619,24 @@ export default function TournamentEdit() {
       )}
 
       {/* Draw tab */}
-      {tab === 'draw' && (
+      {tab === 'draw' && tournament.format === 'knockout' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+          <p className="text-sm font-semibold text-amber-800 mb-2">
+            Direktni izločilni sistem — {registrations.filter(r => r.status === 'confirmed').length} potrjenih ekip
+          </p>
+          <p className="text-xs text-amber-700 mb-3">
+            Nosilci se določijo po rang lestvici (dvojice po vsoti točk para). Najboljši dobijo proste (bye), če število ni potenca 2.
+          </p>
+          <button onClick={handleKnockoutDraw} disabled={drawLoading}
+            className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors disabled:opacity-50">
+            {drawLoading ? 'Žrebam...' : groups.length > 0 ? '↺ Ponovi izločilni žreb' : 'Naredi izločilni žreb'}
+          </button>
+          <p className="text-xs text-gray-500 mt-3">
+            Rezultate vnašaj na <Link to={`/prvenstva/${id}`} className="text-bocce-green hover:underline">javni strani</Link>; krogi napredujejo samodejno.
+          </p>
+        </div>
+      )}
+      {tab === 'draw' && tournament.format !== 'knockout' && (
         <div>
           {/* Distribution preview */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
