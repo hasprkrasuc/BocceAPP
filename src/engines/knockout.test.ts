@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest'
 import { bracketSize, seedOrder, firstStageForSize } from './knockout'
 import { buildKnockoutBracket } from './knockout'
 import { knockoutPropagation, type KoMatchRow } from './knockout'
+import { seedRegistrations, type SeedableReg } from './knockout'
 
 describe('bracketSize', () => {
   test('najbližja potenca 2 ≥ n', () => {
@@ -83,6 +84,37 @@ describe('buildKnockoutBracket', () => {
 
 const row = (o: Partial<KoMatchRow> & { id: string; stage: KoMatchRow['stage']; match_number: number }): KoMatchRow => ({
   team_a_id: null, team_b_id: null, winner_id: null, is_bye: false, ...o,
+})
+
+describe('seedRegistrations', () => {
+  test('posamezno: padajoče po točkah igralca', () => {
+    const regs: SeedableReg[] = [
+      { id: 'r1', player1_id: 'a', player2_id: null },
+      { id: 'r2', player1_id: 'b', player2_id: null },
+      { id: 'r3', player1_id: 'c', player2_id: null },
+    ]
+    const pts = { a: 10, b: 30, c: 20 }
+    expect(seedRegistrations(regs, pts)).toEqual(['r2', 'r3', 'r1'])
+  })
+
+  test('dvojice: padajoče po vsoti točk para', () => {
+    const regs: SeedableReg[] = [
+      { id: 'r1', player1_id: 'a', player2_id: 'b' }, // 10+5 = 15
+      { id: 'r2', player1_id: 'c', player2_id: 'd' }, // 20+20 = 40
+    ]
+    const pts = { a: 10, b: 5, c: 20, d: 20 }
+    expect(seedRegistrations(regs, pts)).toEqual(['r2', 'r1'])
+  })
+
+  test('brez točk (0) uvrščen zadnji; izenačenje po id', () => {
+    const regs: SeedableReg[] = [
+      { id: 'rB', player1_id: 'x', player2_id: null },
+      { id: 'rA', player1_id: 'y', player2_id: null },
+      { id: 'rC', player1_id: 'z', player2_id: null },
+    ]
+    const pts = { z: 5 }
+    expect(seedRegistrations(regs, pts)).toEqual(['rC', 'rA', 'rB'])
+  })
 })
 
 describe('knockoutPropagation', () => {

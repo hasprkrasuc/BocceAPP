@@ -133,3 +133,18 @@ export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
 
   return updates
 }
+
+export interface SeedableReg {
+  id: string
+  player1_id: string
+  player2_id: string | null
+}
+
+/** Razvrsti prijave po nosilni vrednosti (vsota rang točk ekipe), padajoče. */
+export function seedRegistrations(regs: SeedableReg[], rangPoints: Record<string, number>): string[] {
+  const val = (r: SeedableReg) =>
+    (rangPoints[r.player1_id] ?? 0) + (r.player2_id ? rangPoints[r.player2_id] ?? 0 : 0)
+  return [...regs]
+    .sort((a, b) => (val(b) - val(a)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map(r => r.id)
+}
