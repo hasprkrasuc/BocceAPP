@@ -17,12 +17,13 @@
  * - Admin direktno dodeli
  *
  * ─── STANJE IMPLEMENTACIJE (TODO) ───────────────────────────────
- * Spodnja koda uveljavlja le MOŠKO pravilo. Znana odstopanja:
- *   1. ŽENSKE: neimplementirano — Profile.tsx in PlayerDetail.tsx
- *      filtrirata samo `category === 'men'`, dodelitev pa je vezana
- *      na drEligible (≤23). Žensk trenutno ni mogoče dvojno registrirati.
- *   2. tiersCompatible() ne uveljavi pogoja "vsaj eden super_liga"
+ * Implementirano: moško pravilo (tiersCompatible), ženska pot
+ * (eligibleSecondaryTeams → samo 1. liga članice; primaryTeams → pri
+ * ženskah šteje katerakoli njena ekipa, tudi U18). Znana odstopanja:
+ *   1. tiersCompatible() ne uveljavi pogoja "vsaj eden super_liga"
  *      (preverja le, da nista oba nižja tier-a) — glej opombo pri funkciji.
+ *   2. Trojna registracija mladincev (U14–U18: Super liga + nižja liga +
+ *      liga U18) še ni modelirana — primaryTeams za moške šteje le 'men'.
  */
 
 export const DOUBLE_REG_MAX_AGE = 23
@@ -103,22 +104,47 @@ export function calcAge(dateOfBirth: string | null | undefined): number | null {
   return age
 }
 
+type SeasonRef = { year: number; category?: string; tier?: string | null } | null
+
 /**
- * Obdrži le ekipe iz NAJNOVEJŠE sezone znotraj svoje kategorije — ne glede
- * na status sezone (tudi zaključene). Dvojna registracija mora biti mogoča
- * tudi, ko je aktualna sezona že zaključena.
+ * Obdrži le ekipe iz NAJNOVEJŠE sezone znotraj svoje kategorije+tier-a — ne
+ * glede na status sezone (tudi zaključene). Dvojna registracija mora biti
+ * mogoča tudi, ko je aktualna sezona že zaključena. Ključ vključuje tier,
+ * da nova sezona enega ranga (npr. Super liga 2026/27) ne izloči še tekočih
+ * sezon drugih rangov iste kategorije (1./2. liga 2025/26).
  */
-export function latestSeasonsOnly<T extends { season?: { year: number; category?: string } | null }>(
-  teams: T[],
-): T[] {
-  const maxByCat = new Map<string, number>()
+export function latestSeasonsOnly<T extends { season?: SeasonRef }>(teams: T[]): T[] {
+  const key = (s: NonNullable<SeasonRef>) => `${s.category ?? ''}|${s.tier ?? ''}`
+  const maxByKey = new Map<string, number>()
   for (const t of teams) {
     if (!t.season) continue
-    const cat = t.season.category ?? ''
-    const cur = maxByCat.get(cat)
-    if (cur === undefined || t.season.year > cur) maxByCat.set(cat, t.season.year)
+    const k = key(t.season)
+    const cur = maxByKey.get(k)
+    if (cur === undefined || t.season.year > cur) maxByKey.set(k, t.season.year)
   }
-  return teams.filter(t => t.season && t.season.year === maxByCat.get(t.season.category ?? ''))
+  return teams.filter(t => t.season && t.season.year === maxByKey.get(key(t.season)))
+}
+
+/**
+ * Ekipe, ki lahko služijo kot PRIMARNA (matična) ekipa za dvojno registracijo.
+ * - MOŠKI:  samo moške ekipe (tiersCompatible nato omeji kombinacije rangov).
+ * - ŽENSKE: katerakoli njena ekipa — tudi U18/U14, ker klub pogosto nima
+ *   ženske ekipe (npr. mladinka, ki igra le v ligi U18, se dvojno registrira
+ *   v 1. ligo – članice).
+ */
+export function primaryTeams<T extends { season?: SeasonRef }>(
+  gender: string | null | undefined,
+  teams: T[],
+): T[] {
+  if (isFemale(gender)) return teams.filter(t => !!t.season)
+  return teams.filter(t => t.season?.category === 'men')
+}
+
+/** Letnica rojstva za prikaz (ISO ali pikčasti BZS zapis; slice(0,4) bi pikčaste pokvaril). */
+export function birthYearOf(dateOfBirth: string | null | undefined): string | null {
+  if (!dateOfBirth) return null
+  const dob = parseDob(dateOfBirth)
+  return dob ? String(dob.getFullYear()) : null
 }
 
 /** Ali je igralec starostno upravičen (≤ 23 let)? */

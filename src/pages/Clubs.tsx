@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
+import { birthYearOf } from '../engines/doubleRegistration'
 import type { Club, UserProfile } from '../types'
 
 // ──────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ export function ClubDetail() {
                       <span className="text-xs text-gray-400">Licenca: {m.license_number}</span>
                     )}
                     {m.date_of_birth && (
-                      <span className="text-xs text-gray-400">r. {m.date_of_birth.slice(0, 4)}</span>
+                      <span className="text-xs text-gray-400">r. {birthYearOf(m.date_of_birth) ?? '—'}</span>
                     )}
                   </div>
                 </div>
