@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../supabase'
 import type { UserProfile, LeagueFixture, DoubleRegistration, LeagueTeam, LeagueSeason } from '../types'
 import {
-  isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams,
+  isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams, seasonStartYear,
   DOUBLE_REG_MAX_AGE,
   DR_TIER_LABELS, DR_STATUS_COLORS, DR_STATUS_LABELS,
 } from '../engines/doubleRegistration'
@@ -42,7 +42,11 @@ export default function Profile() {
   const [selectedSecondary, setSelectedSecondary] = useState('')
   const [drMsg, setDrMsg] = useState('')
 
-  const ageEligible = isAgeEligible(profile?.date_of_birth)
+  const drRefYear = (() => {
+    const ys = myTeams.map(t => seasonStartYear((t.season as any)?.name)).filter((y): y is number => y !== null)
+    return ys.length ? Math.max(...ys) : null
+  })()
+  const ageEligible = isAgeEligible(profile?.date_of_birth, drRefYear)
 
   useEffect(() => {
     if (!user) return

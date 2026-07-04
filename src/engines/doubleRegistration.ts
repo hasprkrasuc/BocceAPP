@@ -171,10 +171,27 @@ export function birthYearOf(dateOfBirth: string | null | undefined): string | nu
   return dob ? String(dob.getFullYear()) : null
 }
 
-/** Ali je igralec starostno upravičen (≤ 23 let)? */
-export function isAgeEligible(dateOfBirth: string | null | undefined): boolean {
-  const age = calcAge(dateOfBirth)
-  return age !== null && age <= DOUBLE_REG_MAX_AGE
+/** Začetno leto sezone iz imena ("2025/26" → 2025). */
+export function seasonStartYear(seasonName: string | null | undefined): number | null {
+  const m = /(\d{4})/.exec(seasonName ?? '')
+  return m ? parseInt(m[1], 10) : null
+}
+
+/**
+ * Ali je igralec starostno upravičen do dvojne registracije?
+ * Pravilo je po LETNIKU glede na sezono: (začetno leto sezone − letnica rojstva) ≤ 23.
+ * Npr. sezona 2025/26 (začetek 2025) → letniki ≥ 2002 so še upravičeni.
+ * Če referenčno leto ni podano, se uporabi tekoče koledarsko leto.
+ */
+export function isAgeEligible(
+  dateOfBirth: string | null | undefined,
+  refYear?: number | null,
+): boolean {
+  if (!dateOfBirth) return false
+  const dob = parseDob(dateOfBirth)
+  if (!dob) return false
+  const year = refYear ?? new Date().getFullYear()
+  return year - dob.getFullYear() <= DOUBLE_REG_MAX_AGE
 }
 
 /** Prikaz tier-a za UI */

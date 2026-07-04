@@ -4,7 +4,7 @@ import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
-import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams, birthYearOf, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
+import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams, birthYearOf, seasonStartYear, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
 import { computeRangLestvica, RANG_CATEGORY_LABELS, type PlayerSeasonSummary, type RangCategory } from '../lib/rangLestvica'
 import { findPlayerRankInCategories, type CategoryPlayerRank } from '../lib/findPlayerRank'
 
@@ -23,6 +23,7 @@ export default function PlayerDetail() {
   const [doubleRegs, setDoubleRegs] = useState<DoubleRegistration[]>([])
   const [eligibleTeams, setEligibleTeams] = useState<{ id: string; club_name: string; tier: string; season_id: string }[]>([])
   const [myTeams, setMyTeams] = useState<{ id: string; tier: string; season_id: string }[]>([])
+  const [drRefYear, setDrRefYear] = useState<number | null>(null)
   const [selectedSecondary, setSelectedSecondary] = useState('')
   const [drSubmitting, setDrSubmitting] = useState(false)
   const [drMsg, setDrMsg] = useState('')
@@ -79,11 +80,14 @@ export default function PlayerDetail() {
       const playerGender = (p as UserProfile)?.gender
       const { data: tpData } = await supabase
         .from('league_team_players')
-        .select('league_team_id, league_teams(id, club_name, season_id, season:league_seasons(id, tier, year, category))')
+        .select('league_team_id, league_teams(id, club_name, season_id, season:league_seasons(id, name, tier, year, category))')
         .eq('player_id', (p as UserProfile)?.id ?? id)
       const playerTeams = latestSeasonsOnly(primaryTeams(playerGender,
         ((tpData ?? []) as any[]).map(tp => tp.league_teams).filter(Boolean)))
       setMyTeams(playerTeams.map((t: any) => ({ id: t.id, tier: t.season.tier, season_id: t.season_id })))
+      // Sezonsko referenčno leto (za starostno upravičenost po letniku, ne po dnevni starosti)
+      const drYears = playerTeams.map((t: any) => seasonStartYear(t.season?.name)).filter((y: number | null): y is number => y !== null)
+      setDrRefYear(drYears.length ? Math.max(...drYears) : null)
 
       const { data: allTeams } = await supabase
         .from('league_teams')
@@ -112,7 +116,7 @@ export default function PlayerDetail() {
 
   const birthYear = birthYearOf(player.date_of_birth)
   const age = calcAge(player.date_of_birth)
-  const drEligible = isAgeEligible(player.date_of_birth)
+  const drEligible = isAgeEligible(player.date_of_birth, drRefYear)
 
   // Prikaži aktivne sezone; če jih ni (aktualna sezona je zaključena), zadnjo zaključeno
   const activeSeasons = seasonStats.filter(s => s.active)

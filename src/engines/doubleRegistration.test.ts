@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible } from './doubleRegistration'
+import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible, seasonStartYear } from './doubleRegistration'
 
 describe('isFemale', () => {
   it('prepozna "Ž" kot žensko', () => {
@@ -118,6 +118,32 @@ describe('isAgeEligible (≤23 velja za oba spola)', () => {
   })
   it('24 let ni upravičen', () => {
     expect(isAgeEligible(yearsAgo(24))).toBe(false)
+  })
+})
+
+describe('isAgeEligible — po sezoni (letnik, ne dnevna starost)', () => {
+  it('letnik 2002 JE upravičen za sezono 2025/26 (ref 2025): 2025−2002=23', () => {
+    expect(isAgeEligible('2002-01-12', 2025)).toBe(true)
+  })
+  it('letnik 2002 NI upravičen za sezono 2026/27 (ref 2026): 2026−2002=24', () => {
+    expect(isAgeEligible('2002-01-12', 2026)).toBe(false)
+  })
+  it('letnik 2003 je upravičen za ref 2026', () => {
+    expect(isAgeEligible('2003-05-01', 2026)).toBe(true)
+  })
+  it('pikčasti datum + referenčno leto', () => {
+    expect(isAgeEligible('12.1.2002', 2025)).toBe(true)
+  })
+})
+
+describe('seasonStartYear', () => {
+  it('vrne začetno leto iz imena sezone', () => {
+    expect(seasonStartYear('Super liga 2025/26')).toBe(2025)
+    expect(seasonStartYear('2025/26')).toBe(2025)
+  })
+  it('null / brez letnice → null', () => {
+    expect(seasonStartYear(null)).toBeNull()
+    expect(seasonStartYear('brez letnice')).toBeNull()
   })
 })
 
