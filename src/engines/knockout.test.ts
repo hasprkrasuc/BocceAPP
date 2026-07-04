@@ -150,4 +150,22 @@ describe('knockoutPropagation', () => {
     const u = knockoutPropagation(matches)
     expect(u.find(x => x.id === 'f' && x.slot === 'team_a_id')).toBeUndefined()
   })
+
+  test('vrže napako, če manjka vmesni krog (nepravilna mreža)', () => {
+    const matches: KoMatchRow[] = [
+      row({ id: 'r32a', stage: 'r32', match_number: 1, team_a_id: 'A', team_b_id: 'B', winner_id: 'A' }),
+      row({ id: 'qf1',  stage: 'qf',  match_number: 1 }), // r16 manjka namenoma
+    ]
+    expect(() => knockoutPropagation(matches)).toThrow()
+  })
+
+  test('sprejme veljavno delno mrežo, ki se začne pri qf', () => {
+    const matches: KoMatchRow[] = [
+      row({ id: 'qf1', stage: 'qf', match_number: 1, team_a_id: 'A', team_b_id: 'B', winner_id: 'A' }),
+      row({ id: 'qf2', stage: 'qf', match_number: 2, team_a_id: 'C', team_b_id: 'D', winner_id: 'C' }),
+      row({ id: 'sf1', stage: 'sf', match_number: 1 }),
+      row({ id: 'fin', stage: 'final', match_number: 1 }),
+    ]
+    expect(() => knockoutPropagation(matches)).not.toThrow()
+  })
 })

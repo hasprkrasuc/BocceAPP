@@ -103,6 +103,11 @@ export interface KoSlotUpdate {
 /** Izračuna, katera mesta naslednjih krogov je treba napolniti iz zmagovalcev. */
 export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
   const koStages = KO_STAGE_ORDER.filter(s => matches.some(m => m.stage === s))
+  if (koStages.length) {
+    const expected = KO_STAGE_ORDER.slice(KO_STAGE_ORDER.indexOf(koStages[0]))
+    const contiguous = koStages.every((s, i) => s === expected[i])
+    if (!contiguous) throw new Error('Nepravilna izločilna mreža: manjka vmesni krog')
+  }
   const byStage = (s: MatchStage) =>
     matches.filter(m => m.stage === s).sort((a, b) => a.match_number - b.match_number)
 
