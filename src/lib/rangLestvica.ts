@@ -1,8 +1,11 @@
 /**
- * RANG LESTVICA — izračun (liga + državna prvenstva, zadnjih 365 dni).
+ * RANG LESTVICA — izračun (liga + državna prvenstva).
  *
  * Ločeno po kategoriji: Moški, Ženske, U18, U14. Vsaka lestvica šteje le
  * sezone/prvenstva svoje kategorije.
+ *
+ * Okno DP: MOŠKI štejejo le najnovejše leto DP (vsa 2025 veljajo, dokler ni
+ * prvega 2026 DP); OSTALE kategorije 365-dnevno drseče okno.
  *
  * Liga rang:  rang = utežene match točke × ligaKoef × % uspešnosti
  * DP točke:   1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7 · 5.–8. m. 3 · 9.–16. m. 1
@@ -11,6 +14,7 @@
 
 import { supabase } from '../supabase'
 import { aggregatePlayerStats, calculateRang } from '../engines/leagueStats'
+import { championshipPoints, type ChampKoMatch } from './championshipPoints'
 import type {
   LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline,
 } from '../types'
@@ -38,17 +42,6 @@ function toRangCategory(cat: string | null | undefined): RangCategory | null {
     case 'u14': return 'u14'
     default: return null
   }
-}
-
-/** Točke za PORAŽENCA izločilnega kroga (zmagovalec napreduje). */
-const STAGE_LOSER_PTS: Record<string, { pts: number; placeLabel: string }> = {
-  qf:  { pts: 3, placeLabel: '5.–8. mesto' },
-  r16: { pts: 1, placeLabel: '9.–16. mesto' },
-}
-/** Točke za finalna kroga (zmagovalec in poraženec dobita). */
-const STAGE_FINAL_PTS = {
-  final:       { winner: 16, loser: 10, winnerPlace: '1. mesto', loserPlace: '2. mesto' },
-  third_place: { winner: 8,  loser: 7,  winnerPlace: '3. mesto', loserPlace: '4. mesto' },
 }
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -229,68 +222,66 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   }
 
   // ── Državna prvenstva ─────────────────────────────────────────────────────
-  const { data: championships } = await supabase
+  const yearOf = (date: string) => parseInt(String(date).slice(0, 4), 10)
+  const { data: allChamps } = await supabase
     .from('tournaments')
     .select('id, name, date, category')
     .eq('kind', 'championship')
     .eq('status', 'completed')
-    .gte('date', cutoffStr)
-    .lte('date', todayStr)
 
-  if (championships?.length) {
+  // MOŠKI: šteje le najnovejše leto DP — vsa 2025 veljajo, dokler ni prvega 2026
+  // DP (potem se maxYear premakne na 2026 in 2025 padejo).
+  // OSTALE kategorije: 365-dnevno okno.
+  const menYears = (allChamps ?? [])
+    .filter(c => toRangCategory((c as { category?: string }).category) === 'men')
+    .map(c => yearOf(c.date))
+  const menMaxYear = menYears.length ? Math.max(...menYears) : null
+
+  const championships = (allChamps ?? []).filter(c => {
+    const cat = toRangCategory((c as { category?: string }).category)
+    if (!cat) return false
+    if (cat === 'men') return yearOf(c.date) === menMaxYear
+    return c.date >= cutoffStr && c.date <= todayStr
+  })
+
+  if (championships.length) {
     await Promise.all(championships.map(async champ => {
-      const champCat = toRangCategory((champ as { category?: string }).category)
-      if (!champCat) return
+      const champCat = toRangCategory((champ as { category?: string }).category)!
 
       const { data: matches } = await supabase
         .from('matches')
         .select(`
-          id, stage, status, winner_id, is_bye, team_a_id, team_b_id,
-          team_a:group_teams!matches_team_a_id_fkey(
-            id, registration:tournament_registrations!group_teams_registration_id_fkey(player1_id, player2_id)
-          ),
-          team_b:group_teams!matches_team_b_id_fkey(
-            id, registration:tournament_registrations!group_teams_registration_id_fkey(player1_id, player2_id)
-          )
+          stage, winner_id, team_a_id, team_b_id,
+          team_a:group_teams!matches_team_a_id_fkey(id, registration:tournament_registrations!group_teams_registration_id_fkey(player1_id, player2_id)),
+          team_b:group_teams!matches_team_b_id_fkey(id, registration:tournament_registrations!group_teams_registration_id_fkey(player1_id, player2_id))
         `)
         .eq('tournament_id', champ.id)
-        .in('stage', ['final', 'third_place', 'qf', 'r16'])
+        .in('stage', ['final', 'third_place', 'sf', 'qf', 'r16'])
         .eq('status', 'completed')
 
       type MatchRow = {
-        stage: string; winner_id: string | null; is_bye: boolean
-        team_a_id: string | null; team_b_id: string | null
+        stage: string; winner_id: string | null; team_a_id: string | null; team_b_id: string | null
         team_a: Array<{ id: string; registration: Array<{ player1_id: string; player2_id: string | null }> }>
         team_b: Array<{ id: string; registration: Array<{ player1_id: string; player2_id: string | null }> }>
       }
+      const rows = (matches ?? []) as unknown as MatchRow[]
 
-      for (const match of (matches ?? []) as unknown as MatchRow[]) {
-        if (!match.winner_id) continue
-        const loserId = match.team_a_id === match.winner_id ? match.team_b_id : match.team_a_id
-
-        function awardPts(teamId: string | null, pts: number, placeLabel: string) {
-          if (!teamId || pts <= 0) return
-          const teamArr = teamId === match.team_a_id ? match.team_a : match.team_b
-          const reg = teamArr?.[0]?.registration?.[0]
-          if (!reg) return
-          for (const pid of [reg.player1_id, reg.player2_id]) {
-            if (!pid) continue
-            const a = ensureAcc(champCat!, pid)
-            a.dpPts += pts
-            a.champEntries.push({ champName: champ.name, placeLabel, pts })
+      // group_team id → igralci ekipe (dvojica = 2)
+      const playersByTeam: Record<string, string[]> = {}
+      const koMatches: ChampKoMatch[] = rows.map(m => {
+        for (const gt of [m.team_a?.[0], m.team_b?.[0]]) {
+          if (gt && !playersByTeam[gt.id]) {
+            playersByTeam[gt.id] = [gt.registration?.[0]?.player1_id, gt.registration?.[0]?.player2_id]
+              .filter(Boolean) as string[]
           }
         }
+        return { stage: m.stage, winnerId: m.winner_id, teamAId: m.team_a_id, teamBId: m.team_b_id }
+      })
 
-        if (match.stage === 'final') {
-          awardPts(match.winner_id, STAGE_FINAL_PTS.final.winner, STAGE_FINAL_PTS.final.winnerPlace)
-          awardPts(loserId, STAGE_FINAL_PTS.final.loser, STAGE_FINAL_PTS.final.loserPlace)
-        } else if (match.stage === 'third_place') {
-          awardPts(match.winner_id, STAGE_FINAL_PTS.third_place.winner, STAGE_FINAL_PTS.third_place.winnerPlace)
-          awardPts(loserId, STAGE_FINAL_PTS.third_place.loser, STAGE_FINAL_PTS.third_place.loserPlace)
-        } else if (!match.is_bye) {
-          const stagePts = STAGE_LOSER_PTS[match.stage]
-          if (stagePts) awardPts(loserId, stagePts.pts, stagePts.placeLabel)
-        }
+      for (const award of championshipPoints(koMatches, playersByTeam)) {
+        const a = ensureAcc(champCat, award.playerId)
+        a.dpPts += award.pts
+        a.champEntries.push({ champName: champ.name, placeLabel: award.placeLabel, pts: award.pts })
       }
     }))
   }
