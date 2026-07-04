@@ -74,15 +74,51 @@ export function eligibleSecondaryTeams<T extends DRTeamRef>(
     myTeams.some(mt => tiersCompatible(mt.tier, t.tier)))
 }
 
-/** Izračun starosti iz datuma rojstva */
+/**
+ * Prebere datum rojstva v Date. Podpira ISO (YYYY-MM-DD) in BZS pikčasti
+ * zapis (D.M.YYYY / DD.MM.YYYY) — new Date() bi slednjega narobe prebral
+ * kot ameriški M.D.YYYY ali ga zavrnil.
+ */
+function parseDob(dateOfBirth: string): Date | null {
+  const dotted = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(dateOfBirth.trim())
+  if (dotted) {
+    const [, d, m, y] = dotted.map(Number)
+    const date = new Date(y, m - 1, d)
+    // zavrni neveljavne komponente (npr. 31.2.), ki bi jih Date tiho "prenesel"
+    if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null
+    return date
+  }
+  const date = new Date(dateOfBirth)
+  return isNaN(date.getTime()) ? null : date
+}
+
+/** Izračun starosti iz datuma rojstva (ISO ali pikčasti BZS zapis) */
 export function calcAge(dateOfBirth: string | null | undefined): number | null {
   if (!dateOfBirth) return null
-  const dob = new Date(dateOfBirth)
-  if (isNaN(dob.getTime())) return null
+  const dob = parseDob(dateOfBirth)
+  if (!dob) return null
   const today = new Date()
   let age = today.getFullYear() - dob.getFullYear()
   if (today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate())) age--
   return age
+}
+
+/**
+ * Obdrži le ekipe iz NAJNOVEJŠE sezone znotraj svoje kategorije — ne glede
+ * na status sezone (tudi zaključene). Dvojna registracija mora biti mogoča
+ * tudi, ko je aktualna sezona že zaključena.
+ */
+export function latestSeasonsOnly<T extends { season?: { year: number; category?: string } | null }>(
+  teams: T[],
+): T[] {
+  const maxByCat = new Map<string, number>()
+  for (const t of teams) {
+    if (!t.season) continue
+    const cat = t.season.category ?? ''
+    const cur = maxByCat.get(cat)
+    if (cur === undefined || t.season.year > cur) maxByCat.set(cat, t.season.year)
+  }
+  return teams.filter(t => t.season && t.season.year === maxByCat.get(t.season.category ?? ''))
 }
 
 /** Ali je igralec starostno upravičen (≤ 23 let)? */
