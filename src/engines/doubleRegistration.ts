@@ -28,9 +28,16 @@
 export const DOUBLE_REG_MAX_AGE = 23
 // Pogoj nastopov NI več zahteva — samo starost ≤ 23 in različen rang
 
+/** Mladinske kategorije po starosti (za "igro navzgor": U-14 lahko igra U-18). */
+const YOUTH_ORDER: Record<string, number> = { u12: 0, u14: 1, u15: 2, u18: 3 }
+export function youthLevel(category: string | null | undefined): number | null {
+  const c = category ?? ''
+  return c in YOUTH_ORDER ? YOUTH_ORDER[c] : null
+}
+
 /**
  * Terminska skupina ekipe za hkratno registracijo:
- *   'youth' = mladinske lige (U-18/U-14, tier null)
+ *   'youth' = mladinske lige (U-12/U-14/U-15/U-18, tier null)
  *   'super' = Super liga
  *   'lower' = 1. liga in 2. liga (igrajo ob istem terminu)
  */
@@ -39,7 +46,7 @@ export function terminGroup(
   category: string | null | undefined,
   tier: string | null | undefined,
 ): TerminGroup | null {
-  if (category === 'u18' || category === 'u14') return 'youth'
+  if (youthLevel(category) !== null) return 'youth'
   if (tier === 'super_liga') return 'super'
   if (tier === '1_liga' || tier === '2_liga_zahod' || tier === '2_liga_vzhod') return 'lower'
   return null
@@ -47,8 +54,9 @@ export function terminGroup(
 
 /**
  * Ali sta ekipi iz RAZLIČNIH terminskih skupin (dovoljena hkratna registracija)?
- * Nadomešča prejšnji tiersCompatible in pravilno obravnava mladinske ekipe (tier null):
  * youth↔super, youth↔lower, super↔lower ✅ · lower↔lower, ista skupina ❌.
+ * Dve MLADINSKI ekipi sta združljivi le, če sta RAZLIČNI kategoriji (U-14 + U-18 =
+ * igra navzgor); ista mladinska kategorija ❌.
  */
 export function teamsCompatible(
   a: { category?: string | null; tier?: string | null },
@@ -56,7 +64,9 @@ export function teamsCompatible(
 ): boolean {
   const ga = terminGroup(a.category, a.tier)
   const gb = terminGroup(b.category, b.tier)
-  return ga !== null && gb !== null && ga !== gb
+  if (ga === null || gb === null) return false
+  if (ga === 'youth' && gb === 'youth') return (a.category ?? '') !== (b.category ?? '')
+  return ga !== gb
 }
 
 /** Ali je igralec/ka ženskega spola? (shranjeni gender: 'Ž' / 'M') */
@@ -85,13 +95,18 @@ export function eligibleSecondaryTeams<T extends DRTeamRef>(
   if (isFemale(gender)) {
     return allTeams.filter(t => t.category === 'women' && t.tier === '1_liga' && !myIds.has(t.id))
   }
-  // MOŠKI: člansko ekipo, ki je terminsko združljiva z VSEMI trenutnimi ekipami
-  // igralca (matična + že dodane). Tako mladinec dobi U-18 + Super + eno nižjo,
-  // 1./2. liga hkrati pa ni mogoča (isti termin).
-  return allTeams.filter(t =>
-    t.category === 'men' && !myIds.has(t.id) &&
-    myTeams.length > 0 &&
-    myTeams.every(mt => teamsCompatible(mt, t)))
+  // MOŠKI + mladinci. Sekundarna je lahko:
+  //  - članska ekipa, terminsko združljiva z VSEMI trenutnimi (U-18/U-14 + Super + ena nižja);
+  //  - mladinska ekipa VIŠJE kategorije od matične (igra navzgor, npr. U-14 → U-18).
+  const myYouth = myTeams.map(mt => youthLevel(mt.category)).filter((n): n is number => n !== null)
+  const myYouthLevel = myYouth.length ? Math.min(...myYouth) : null
+  return allTeams.filter(t => {
+    if (myIds.has(t.id) || myTeams.length === 0) return false
+    if (t.category === 'men') return myTeams.every(mt => teamsCompatible(mt, t))
+    const tl = youthLevel(t.category)
+    if (tl !== null) return myYouthLevel !== null && tl > myYouthLevel && myTeams.every(mt => teamsCompatible(mt, t))
+    return false
+  })
 }
 
 /**
@@ -156,11 +171,11 @@ export function primaryTeams<T extends { season?: SeasonRef }>(
   teams: T[],
 ): T[] {
   if (isFemale(gender)) return teams.filter(t => !!t.season)
-  // MOŠKI: moške ekipe + mladinske (U-18/U-14) — mladinec se dvojno/trojno
-  // registrira iz svoje matične mladinske ekipe v članske lige.
+  // MOŠKI: moške ekipe + mladinske (u12/u14/u15/u18) — mladinec se dvojno/trojno
+  // registrira iz svoje matične mladinske ekipe v članske lige ali višjo mladinsko.
   return teams.filter(t => {
     const c = t.season?.category
-    return c === 'men' || c === 'u18' || c === 'u14'
+    return c === 'men' || youthLevel(c) !== null
   })
 }
 
@@ -171,10 +186,27 @@ export function birthYearOf(dateOfBirth: string | null | undefined): string | nu
   return dob ? String(dob.getFullYear()) : null
 }
 
-/** Ali je igralec starostno upravičen (≤ 23 let)? */
-export function isAgeEligible(dateOfBirth: string | null | undefined): boolean {
-  const age = calcAge(dateOfBirth)
-  return age !== null && age <= DOUBLE_REG_MAX_AGE
+/** Začetno leto sezone iz imena ("2025/26" → 2025). */
+export function seasonStartYear(seasonName: string | null | undefined): number | null {
+  const m = /(\d{4})/.exec(seasonName ?? '')
+  return m ? parseInt(m[1], 10) : null
+}
+
+/**
+ * Ali je igralec starostno upravičen do dvojne registracije?
+ * Pravilo je po LETNIKU glede na sezono: (začetno leto sezone − letnica rojstva) ≤ 23.
+ * Npr. sezona 2025/26 (začetek 2025) → letniki ≥ 2002 so še upravičeni.
+ * Če referenčno leto ni podano, se uporabi tekoče koledarsko leto.
+ */
+export function isAgeEligible(
+  dateOfBirth: string | null | undefined,
+  refYear?: number | null,
+): boolean {
+  if (!dateOfBirth) return false
+  const dob = parseDob(dateOfBirth)
+  if (!dob) return false
+  const year = refYear ?? new Date().getFullYear()
+  return year - dob.getFullYear() <= DOUBLE_REG_MAX_AGE
 }
 
 /** Prikaz tier-a za UI */

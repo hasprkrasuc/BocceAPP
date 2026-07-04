@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible } from './doubleRegistration'
+import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible, seasonStartYear } from './doubleRegistration'
 
 describe('isFemale', () => {
   it('prepozna "Ž" kot žensko', () => {
@@ -71,9 +71,37 @@ describe('teamsCompatible — terminske skupine', () => {
   it('1. liga ↔ 2. liga = NI (isti termin)', () => {
     expect(teamsCompatible(l1, l2)).toBe(false)
   })
-  it('ista skupina = NI (super↔super, youth↔youth)', () => {
+  it('ista kategorija = NI (super↔super, U-18↔U-18)', () => {
     expect(teamsCompatible(sup, sup)).toBe(false)
-    expect(teamsCompatible(youth, u14)).toBe(false)
+    expect(teamsCompatible(youth, youth)).toBe(false)
+  })
+  it('različni mladinski kategoriji (U-14 ↔ U-18) = DA (igra navzgor)', () => {
+    expect(teamsCompatible(u14, youth)).toBe(true)  // youth=u18
+  })
+})
+
+describe('eligibleSecondaryTeams — igra navzgor (U-14 → U-18)', () => {
+  const teams = [
+    { id: 'u18a', tier: null,          category: 'u18' },
+    { id: 'sup',  tier: 'super_liga',  category: 'men' },
+    { id: 'l1',   tier: '1_liga',      category: 'men' },
+  ]
+  it('U-14 matična → ponudi U-18 (navzgor) + članske lige', () => {
+    const my = [{ id: 'u14', tier: null, category: 'u14' }]
+    expect(eligibleSecondaryTeams('M', my, teams).map(t => t.id).sort()).toEqual(['l1', 'sup', 'u18a'])
+  })
+  it('U-18 matična → NE ponudi U-14 (ni igre navzdol), le članske', () => {
+    const teams2 = [
+      { id: 'u14a', tier: null,         category: 'u14' },
+      { id: 'sup',  tier: 'super_liga', category: 'men' },
+    ]
+    const my = [{ id: 'u18', tier: null, category: 'u18' }]
+    expect(eligibleSecondaryTeams('M', my, teams2).map(t => t.id)).toEqual(['sup'])
+  })
+  it('že v U-18 → ne ponudi druge U-18 ekipe (ista kategorija trči)', () => {
+    const teams3 = [{ id: 'u18b', tier: null, category: 'u18' }]
+    const my = [{ id: 'u14', tier: null, category: 'u14' }, { id: 'u18a', tier: null, category: 'u18' }]
+    expect(eligibleSecondaryTeams('M', my, teams3).map(t => t.id)).toEqual([])
   })
 })
 
@@ -118,6 +146,32 @@ describe('isAgeEligible (≤23 velja za oba spola)', () => {
   })
   it('24 let ni upravičen', () => {
     expect(isAgeEligible(yearsAgo(24))).toBe(false)
+  })
+})
+
+describe('isAgeEligible — po sezoni (letnik, ne dnevna starost)', () => {
+  it('letnik 2002 JE upravičen za sezono 2025/26 (ref 2025): 2025−2002=23', () => {
+    expect(isAgeEligible('2002-01-12', 2025)).toBe(true)
+  })
+  it('letnik 2002 NI upravičen za sezono 2026/27 (ref 2026): 2026−2002=24', () => {
+    expect(isAgeEligible('2002-01-12', 2026)).toBe(false)
+  })
+  it('letnik 2003 je upravičen za ref 2026', () => {
+    expect(isAgeEligible('2003-05-01', 2026)).toBe(true)
+  })
+  it('pikčasti datum + referenčno leto', () => {
+    expect(isAgeEligible('12.1.2002', 2025)).toBe(true)
+  })
+})
+
+describe('seasonStartYear', () => {
+  it('vrne začetno leto iz imena sezone', () => {
+    expect(seasonStartYear('Super liga 2025/26')).toBe(2025)
+    expect(seasonStartYear('2025/26')).toBe(2025)
+  })
+  it('null / brez letnice → null', () => {
+    expect(seasonStartYear(null)).toBeNull()
+    expect(seasonStartYear('brez letnice')).toBeNull()
   })
 })
 
