@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf } from './doubleRegistration'
+import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible } from './doubleRegistration'
 
 describe('isFemale', () => {
   it('prepozna "Ž" kot žensko', () => {
@@ -52,6 +52,58 @@ describe('eligibleSecondaryTeams', () => {
     const my = [{ id: 'm1', tier: '1_liga' }]
     const res = eligibleSecondaryTeams('M', my, [...teams, extra])
     expect(res.map(t => t.id)).toEqual(['ms'])
+  })
+})
+
+describe('teamsCompatible — terminske skupine', () => {
+  const youth = { category: 'u18', tier: null }
+  const u14 =   { category: 'u14', tier: null }
+  const sup =   { category: 'men', tier: 'super_liga' }
+  const l1 =    { category: 'men', tier: '1_liga' }
+  const l2 =    { category: 'men', tier: '2_liga_zahod' }
+  it('youth ↔ super in youth ↔ nižja = združljivo', () => {
+    expect(teamsCompatible(youth, sup)).toBe(true)
+    expect(teamsCompatible(youth, l1)).toBe(true)
+  })
+  it('super ↔ nižja = združljivo', () => {
+    expect(teamsCompatible(sup, l1)).toBe(true)
+  })
+  it('1. liga ↔ 2. liga = NI (isti termin)', () => {
+    expect(teamsCompatible(l1, l2)).toBe(false)
+  })
+  it('ista skupina = NI (super↔super, youth↔youth)', () => {
+    expect(teamsCompatible(sup, sup)).toBe(false)
+    expect(teamsCompatible(youth, u14)).toBe(false)
+  })
+})
+
+describe('eligibleSecondaryTeams — trojna registracija mladincev', () => {
+  const men = [
+    { id: 'sup', tier: 'super_liga',    category: 'men' },
+    { id: 'l1',  tier: '1_liga',        category: 'men' },
+    { id: 'l2',  tier: '2_liga_zahod',  category: 'men' },
+  ]
+  it('mladinec (U-18) → katerakoli članska liga', () => {
+    const my = [{ id: 'u18', tier: null, category: 'u18' }]
+    expect(eligibleSecondaryTeams('M', my, men).map(t => t.id).sort()).toEqual(['l1', 'l2', 'sup'])
+  })
+  it('mladinec + Super → le nižja liga', () => {
+    const my = [
+      { id: 'u18', tier: null,          category: 'u18' },
+      { id: 'sup', tier: 'super_liga',  category: 'men' },
+    ]
+    expect(eligibleSecondaryTeams('M', my, men).map(t => t.id).sort()).toEqual(['l1', 'l2'])
+  })
+  it('mladinec + Super + 1. liga → nič (2. liga trči z 1.)', () => {
+    const my = [
+      { id: 'u18', tier: null,          category: 'u18' },
+      { id: 'sup', tier: 'super_liga',  category: 'men' },
+      { id: 'l1',  tier: '1_liga',      category: 'men' },
+    ]
+    expect(eligibleSecondaryTeams('M', my, men).map(t => t.id)).toEqual([])
+  })
+  it('prazen seznam ekip → nič (brez matične ni dvojne)', () => {
+    expect(eligibleSecondaryTeams('M', [], men)).toEqual([])
   })
 })
 
@@ -151,12 +203,12 @@ describe('primaryTeams — primarna ekipa za dvojno registracijo', () => {
     ]
     expect(primaryTeams('Ž', teams).map(t => t.id)).toEqual(['w'])
   })
-  it('moški: štejejo samo moške ekipe (U18 ne — trojna reg. mladincev je ločena tema)', () => {
+  it('moški: štejejo moške IN mladinske ekipe (trojna registracija mladincev)', () => {
     const teams = [
       { id: 'm', season: { year: 2026, category: 'men', tier: 'super_liga' } },
       { id: 'u18', season: { year: 2025, category: 'u18', tier: null as string | null } },
     ]
-    expect(primaryTeams('M', teams).map(t => t.id)).toEqual(['m'])
+    expect(primaryTeams('M', teams).map(t => t.id).sort()).toEqual(['m', 'u18'])
   })
 })
 
