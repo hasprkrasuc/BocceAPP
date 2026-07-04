@@ -375,10 +375,12 @@ export default function LeagueMatchScoresheet() {
     )
   }
 
+  const backToFixtures = fixture?.season_id ? `/liga/${fixture.season_id}?tab=fixtures` : '/admin/liga'
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center gap-3 mb-6">
-        <Link to="/admin/liga" className="text-sm text-gray-500 hover:text-gray-700">← Nazaj na ligo</Link>
+        <Link to={backToFixtures} className="text-sm text-gray-500 hover:text-gray-700">← Nazaj na tekme</Link>
         {!canEdit && (
           <span className="text-xs bg-gray-100 text-gray-500 border border-gray-200 px-2.5 py-1 rounded-full">
             Samo za branje
@@ -607,8 +609,8 @@ export default function LeagueMatchScoresheet() {
       )}
 
       <div className="flex gap-3 justify-end">
-        <Link to="/admin/liga" className="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-lg text-sm hover:bg-gray-50">
-          {canEdit ? 'Prekliči' : '← Nazaj'}
+        <Link to={backToFixtures} className="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-lg text-sm hover:bg-gray-50">
+          ← Nazaj na tekme
         </Link>
         {canEdit && (
           <button onClick={save} disabled={saving || disciplines.length === 0}

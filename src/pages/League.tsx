@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
@@ -192,7 +192,14 @@ export function LeagueDetail() {
   const [season, setSeason] = useState<LeagueSeason | null>(null)
   const [teams, setTeams] = useState<LeagueTeam[]>([])
   const [fixtures, setFixtures] = useState<LeagueFixture[]>([])
-  const [tab, setTab] = useState<'standings' | 'fixtures' | 'teams' | 'statistika' | 'rang'>('standings')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const TABS = ['standings', 'fixtures', 'teams', 'statistika', 'rang'] as const
+  type TabKey = typeof TABS[number]
+  const paramTab = searchParams.get('tab')
+  const [tab, setTabState] = useState<TabKey>(
+    (TABS as readonly string[]).includes(paramTab ?? '') ? (paramTab as TabKey) : 'standings',
+  )
+  const setTab = (t: TabKey) => { setTabState(t); setSearchParams({ tab: t }, { replace: true }) }
   const [loading, setLoading] = useState(true)
   const [matchResults, setMatchResults] = useState<Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>>([])
   const [disciplines, setDisciplines] = useState<LeagueSeasonDiscipline[]>([])
