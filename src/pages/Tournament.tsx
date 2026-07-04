@@ -9,6 +9,7 @@ import ScoreModal from '../components/ScoreModal'
 import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
 import { GROUP_TEMPLATES } from '../engines/tournament'
+import { propagateKnockout } from '../lib/knockoutDraw'
 import type {
   Tournament, TournamentGroup, Match, TournamentRegistration,
   TournamentStatus, TournamentCategory, TournamentKind, UserProfile, GroupSize,
@@ -123,6 +124,10 @@ export function TournamentDetail() {
 
   useEffect(() => { load() }, [id])
 
+  useEffect(() => {
+    if (tournament?.format === 'knockout') setTab('knockout')
+  }, [tournament?.format])
+
   // Real-time subscription for match updates
   useEffect(() => {
     if (!id) return
@@ -198,6 +203,8 @@ export function TournamentDetail() {
 
     if (match.group_id) {
       await propagateGroup(match.group_id)
+    } else if (match.stage !== 'group') {
+      await propagateKnockout(match.tournament_id)
     }
 
     await load()
@@ -343,11 +350,17 @@ export function TournamentDetail() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {[
-          { key: 'groups' as const, label: `Skupine (${groups.length})` },
-          { key: 'knockout' as const, label: 'Izločilni del' },
-          { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
-        ].map(t => (
+        {(tournament.format === 'knockout'
+          ? [
+              { key: 'knockout' as const, label: 'Izločilni del' },
+              { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
+            ]
+          : [
+              { key: 'groups' as const, label: `Skupine (${groups.length})` },
+              { key: 'knockout' as const, label: 'Izločilni del' },
+              { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
+            ]
+        ).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px
               ${tab === t.key ? 'border-bocce-green text-bocce-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
