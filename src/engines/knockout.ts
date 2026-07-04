@@ -83,3 +83,53 @@ export function buildKnockoutBracket(seededTeamIds: string[]): PlannedMatch[] {
 
   return matches
 }
+
+export interface KoMatchRow {
+  id: string
+  stage: MatchStage
+  match_number: number
+  team_a_id: string | null
+  team_b_id: string | null
+  winner_id: string | null
+  is_bye: boolean
+}
+
+export interface KoSlotUpdate {
+  id: string
+  slot: 'team_a_id' | 'team_b_id'
+  teamId: string
+}
+
+/** Izračuna, katera mesta naslednjih krogov je treba napolniti iz zmagovalcev. */
+export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
+  const koStages = KO_STAGE_ORDER.filter(s => matches.some(m => m.stage === s))
+  const byStage = (s: MatchStage) =>
+    matches.filter(m => m.stage === s).sort((a, b) => a.match_number - b.match_number)
+
+  const updates: KoSlotUpdate[] = []
+  const want = (target: KoMatchRow | undefined, slot: KoSlotUpdate['slot'], teamId: string) => {
+    if (!target) return
+    const cur = slot === 'team_a_id' ? target.team_a_id : target.team_b_id
+    if (cur !== teamId) updates.push({ id: target.id, slot, teamId })
+  }
+
+  for (let si = 0; si < koStages.length - 1; si++) {
+    const cur = byStage(koStages[si])
+    const nxt = byStage(koStages[si + 1])
+    cur.forEach((m, j) => {
+      if (!m.winner_id) return
+      want(nxt[Math.floor(j / 2)], j % 2 === 0 ? 'team_a_id' : 'team_b_id', m.winner_id)
+    })
+  }
+
+  const third = byStage('third_place')[0]
+  if (third) {
+    byStage('sf').forEach((m, j) => {
+      if (!m.winner_id) return
+      const loser = m.winner_id === m.team_a_id ? m.team_b_id : m.team_a_id
+      if (loser) want(third, j % 2 === 0 ? 'team_a_id' : 'team_b_id', loser)
+    })
+  }
+
+  return updates
+}

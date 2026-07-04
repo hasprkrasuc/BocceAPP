@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import { bracketSize, seedOrder, firstStageForSize } from './knockout'
 import { buildKnockoutBracket } from './knockout'
+import { knockoutPropagation, type KoMatchRow } from './knockout'
 
 describe('bracketSize', () => {
   test('najbližja potenca 2 ≥ n', () => {
@@ -77,5 +78,44 @@ describe('buildKnockoutBracket', () => {
     expect(m.filter(x => x.stage === 'sf')).toHaveLength(2)
     expect(m.filter(x => x.stage === 'final')).toHaveLength(1)
     expect(m.filter(x => x.stage === 'third_place')).toHaveLength(1)
+  })
+})
+
+const row = (o: Partial<KoMatchRow> & { id: string; stage: KoMatchRow['stage']; match_number: number }): KoMatchRow => ({
+  team_a_id: null, team_b_id: null, winner_id: null, is_bye: false, ...o,
+})
+
+describe('knockoutPropagation', () => {
+  test('zmagovalci sf → finale; poraženca sf → tekma za 3.', () => {
+    const matches: KoMatchRow[] = [
+      row({ id: 'sf1', stage: 'sf', match_number: 1, team_a_id: 'A', team_b_id: 'B', winner_id: 'A' }),
+      row({ id: 'sf2', stage: 'sf', match_number: 2, team_a_id: 'C', team_b_id: 'D', winner_id: 'D' }),
+      row({ id: 'f',   stage: 'final', match_number: 1 }),
+      row({ id: 'tp',  stage: 'third_place', match_number: 1 }),
+    ]
+    const u = knockoutPropagation(matches)
+    expect(u).toContainEqual({ id: 'f', slot: 'team_a_id', teamId: 'A' })
+    expect(u).toContainEqual({ id: 'f', slot: 'team_b_id', teamId: 'D' })
+    expect(u).toContainEqual({ id: 'tp', slot: 'team_a_id', teamId: 'B' })
+    expect(u).toContainEqual({ id: 'tp', slot: 'team_b_id', teamId: 'C' })
+  })
+
+  test('bye zmagovalec prvega kroga napreduje', () => {
+    const matches: KoMatchRow[] = [
+      row({ id: 'q1', stage: 'qf', match_number: 1, team_a_id: 'A', team_b_id: null, winner_id: 'A', is_bye: true }),
+      row({ id: 'q2', stage: 'qf', match_number: 2, team_a_id: 'B', team_b_id: 'C', winner_id: null }),
+      row({ id: 's1', stage: 'sf', match_number: 1 }),
+    ]
+    const u = knockoutPropagation(matches)
+    expect(u).toContainEqual({ id: 's1', slot: 'team_a_id', teamId: 'A' })
+  })
+
+  test('ne predlaga sprememb, če je mesto že pravilno', () => {
+    const matches: KoMatchRow[] = [
+      row({ id: 'sf1', stage: 'sf', match_number: 1, team_a_id: 'A', team_b_id: 'B', winner_id: 'A' }),
+      row({ id: 'f',   stage: 'final', match_number: 1, team_a_id: 'A' }),
+    ]
+    const u = knockoutPropagation(matches)
+    expect(u.find(x => x.id === 'f' && x.slot === 'team_a_id')).toBeUndefined()
   })
 })
