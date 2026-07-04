@@ -203,7 +203,7 @@ export function TournamentDetail() {
 
     if (match.group_id) {
       await propagateGroup(match.group_id)
-    } else if (match.stage !== 'group') {
+    } else if (tournament?.format === 'knockout' && match.stage !== 'group') {
       await propagateKnockout(match.tournament_id)
     }
 

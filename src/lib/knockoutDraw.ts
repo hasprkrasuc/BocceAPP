@@ -6,6 +6,10 @@ import {
 
 /** Prebere izločilne tekme turnirja, napolni mesta naslednjih krogov iz zmagovalcev. */
 export async function propagateKnockout(tournamentId: string): Promise<void> {
+  const { data: t } = await supabase
+    .from('tournaments').select('format').eq('id', tournamentId).single()
+  if (t?.format !== 'knockout') return
+
   const { data } = await supabase
     .from('matches')
     .select('id, stage, match_number, team_a_id, team_b_id, winner_id, is_bye')
