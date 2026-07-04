@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { bracketSize, seedOrder, firstStageForSize } from './knockout'
+import { buildKnockoutBracket } from './knockout'
 
 describe('bracketSize', () => {
   test('najbližja potenca 2 ≥ n', () => {
@@ -40,5 +41,41 @@ describe('firstStageForSize', () => {
     expect(firstStageForSize(32)).toBe('r32')
     expect(firstStageForSize(64)).toBe('r64')
     expect(firstStageForSize(128)).toBe('r128')
+  })
+})
+
+describe('buildKnockoutBracket', () => {
+  test('N=4: 2 sf + finale + tekma za 3.', () => {
+    const m = buildKnockoutBracket(['t1', 't2', 't3', 't4'])
+    const sf = m.filter(x => x.stage === 'sf')
+    expect(sf).toHaveLength(2)
+    // nosilni razpored [1,4,2,3] -> pari (t1,t4),(t2,t3)
+    expect(sf[0]).toMatchObject({ teamA: 't1', teamB: 't4', isBye: false })
+    expect(sf[1]).toMatchObject({ teamA: 't2', teamB: 't3', isBye: false })
+    expect(m.filter(x => x.stage === 'final')).toHaveLength(1)
+    expect(m.filter(x => x.stage === 'third_place')).toHaveLength(1)
+  })
+
+  test('N=3: prosti (bye) najboljšemu nosilcu', () => {
+    const m = buildKnockoutBracket(['t1', 't2', 't3'])
+    const sf = m.filter(x => x.stage === 'sf').sort((a, b) => a.matchNumber - b.matchNumber)
+    // sloti [t1, null, t2, t3] -> (t1,bye),(t2,t3)
+    expect(sf[0]).toMatchObject({ teamA: 't1', teamB: null, isBye: true, winner: 't1' })
+    expect(sf[1]).toMatchObject({ teamA: 't2', teamB: 't3', isBye: false })
+  })
+
+  test('N=2: samo finale, brez tekme za 3.', () => {
+    const m = buildKnockoutBracket(['t1', 't2'])
+    expect(m).toHaveLength(1)
+    expect(m[0]).toMatchObject({ stage: 'final', teamA: 't1', teamB: 't2' })
+    expect(m.some(x => x.stage === 'third_place')).toBe(false)
+  })
+
+  test('N=8: qf(4)+sf(2)+final(1)+3.(1) = 8 tekem', () => {
+    const m = buildKnockoutBracket(['t1','t2','t3','t4','t5','t6','t7','t8'])
+    expect(m.filter(x => x.stage === 'qf')).toHaveLength(4)
+    expect(m.filter(x => x.stage === 'sf')).toHaveLength(2)
+    expect(m.filter(x => x.stage === 'final')).toHaveLength(1)
+    expect(m.filter(x => x.stage === 'third_place')).toHaveLength(1)
   })
 })

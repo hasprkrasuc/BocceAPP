@@ -37,3 +37,49 @@ export function seedOrder(b: number): number[] {
   }
   return rounds
 }
+
+export interface PlannedMatch {
+  stage: MatchStage
+  matchNumber: number
+  teamA: string | null
+  teamB: string | null
+  isBye: boolean
+  winner: string | null
+}
+
+/** Zgradi celotno izločilno mrežo iz nosilno urejenih ekip (indeks 0 = nosilec 1). */
+export function buildKnockoutBracket(seededTeamIds: string[]): PlannedMatch[] {
+  const n = seededTeamIds.length
+  const b = bracketSize(n)
+  const order = seedOrder(b)
+  const slotTeam = (slot: number): string | null => seededTeamIds[order[slot] - 1] ?? null
+
+  const stages = KO_STAGE_ORDER.slice(KO_STAGE_ORDER.indexOf(firstStageForSize(b)))
+  const matches: PlannedMatch[] = []
+
+  // Prvi krog
+  const firstStage = stages[0]
+  for (let i = 0; i < b / 2; i++) {
+    const a = slotTeam(2 * i)
+    const c = slotTeam(2 * i + 1)
+    let teamA = a, teamB = c, isBye = false, winner: string | null = null
+    if (a && !c) { teamA = a; teamB = null; isBye = true; winner = a }
+    else if (!a && c) { teamA = c; teamB = null; isBye = true; winner = c }
+    matches.push({ stage: firstStage, matchNumber: i + 1, teamA, teamB, isBye, winner })
+  }
+
+  // Nadaljnji krogi (prazni)
+  for (let s = 1; s < stages.length; s++) {
+    const count = b / Math.pow(2, s + 1)
+    for (let i = 0; i < count; i++) {
+      matches.push({ stage: stages[s], matchNumber: i + 1, teamA: null, teamB: null, isBye: false, winner: null })
+    }
+  }
+
+  // Tekma za 3. mesto (če obstaja polfinale)
+  if (b >= 4) {
+    matches.push({ stage: 'third_place', matchNumber: 1, teamA: null, teamB: null, isBye: false, winner: null })
+  }
+
+  return matches
+}
