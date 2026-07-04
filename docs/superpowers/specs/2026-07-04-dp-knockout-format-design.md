@@ -61,15 +61,15 @@ vpišejo vse ekipe kot `group_teams`. Izločilne tekme imajo `group_id = null`
 
 Vhod: potrjene prijave (`status = 'confirmed'`) turnirja + kategorija turnirja.
 
-1. Prek `computeRangLestvica()` dobim razvrščeno rang lestvico kategorije
-   (ista kot na /rang) in zgradim `playerId → rangIndex` (nižji = boljši).
-2. Vsaki prijavi določim **nosilni ključ**:
-   - **Posamezno:** `rangIndex` igralca 1.
-   - **Dvojice/štafeta:** `min(rangIndex(p1), rangIndex(p2))`; izenačenje →
-     `max(...)`, nato deterministično po `registration.id`.
-   - **Brez ranga** (ni na lestvici): uvrščen za vse nosilce, deterministično
-     po `registration.id`.
-3. Razvrščene prijave dobijo nosilne številke 1..N.
+1. Prek `computeRangLestvica()` dobim rang lestvico kategorije (ista kot na
+   /rang) in zgradim `playerId → rangTočke` (številčna vrednost `rang`;
+   višje = boljše). Igralec brez uvrstitve → 0 točk.
+2. Vsaki prijavi določim **nosilno vrednost** = vsota rang točk njenih igralcev:
+   - **Posamezno:** `rangTočke(p1)`.
+   - **Dvojice/štafeta:** `rangTočke(p1) + rangTočke(p2)` (skupna vsota para).
+   - Izenačenje → deterministično po `registration.id`.
+3. Prijave razvrstim padajoče po nosilni vrednosti → nosilne številke 1..N
+   (najvišja vsota = nosilec 1). Ekipe brez rang točk (vsota 0) so zadnje.
 
 Rang lestvica se izračuna enkrat ob žrebu (admin akcija) — sprejemljiv strošek.
 
@@ -126,7 +126,8 @@ izločilni krogi — obstoječa vrzel, kjer je bil ustvarjen le prvi krog.
 - Nov izbirnik **"Sistem tekmovanja"**:
   - `Skupinski + izločilni` → `format = 'groups'`
   - `Direktni izločilni (brez skupin)` → `format = 'knockout'`
-- Privzeto: `knockout` za `kind = 'championship'`, `groups` za `kind = 'tournament'`.
+- Privzeto: **`groups` za oba tipa** (turnir in državno prvenstvo); admin ročno
+  izbere `knockout`, kadar želi direktni izločilni sistem.
 - Pri `knockout` skrijem polje "Ekipe v skupini" (`group_size` se ne uporablja).
 
 ### `TournamentEdit` (admin urejanje)
@@ -184,7 +185,8 @@ izločilni krogi — obstoječa vrzel, kjer je bil ustvarjen le prvi krog.
   bye najboljšim nosilcem, tekma za 3. mesto pri `B ≥ 4`, robni `B = 2`.
 - `knockoutPropagation(matches)` — zmagovalci tečejo naprej + polfinalni poraženci
   v tekmo za 3. mesto; verige bye stečejo do stabilnosti.
-- razvrstitev po rangu — posamezno/dvojice, izenačenja, igralci brez ranga zadnji.
+- razvrstitev po rangu — posamezno (točke igralca) in dvojice (vsota točk para),
+  izenačenja deterministična, ekipe brez rang točk zadnje.
 
 DB/UI ostane tanka plast okoli testiranih čistih funkcij.
 
