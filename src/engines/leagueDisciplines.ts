@@ -62,6 +62,6 @@ export const DEFAULT_DISCIPLINES: Record<LeagueTier, DisciplineTemplate[]> = {
 
 export const BLOCK_LABELS: Record<number, string> = {
   1: 'Blok 1',
-  2: 'Blok 2 — vzporedno',
+  2: 'Blok 2',
   3: 'Blok 3',
 }
