@@ -41,10 +41,13 @@ export function evaluatePlayerLineup(discs: LineupDisc[]): LineupEval {
 }
 
 /**
- * Ali sezona uporablja pravilo bloka 2 (Hitrostno + Štafeta + Natančno v bloku 2)?
- * Tako pravilo omejimo na žensko 1. ligo in podobne strukture, ne na moške lige.
+ * Ali sezona uporablja pravilo bloka 2 (izjema 4. discipline ob Hitrostno+Štafeta)?
+ * Velja LE za žensko ligo. Po novih zapisnikih imajo tudi MOŠKE lige v bloku 2
+ * Hitrostno + Štafeta (max 3 discipline, brez izjeme), zato žensko ligo razpoznamo
+ * po Natančno BLIŽANJU (blizanje) v bloku 2 — edina liga s to disciplino.
+ * Moške in mladinske lige: vedno max 3 discipline.
  */
 export function seasonUsesBlock2Rule(disciplines: LineupDisc[]): boolean {
   const b2 = new Set(disciplines.filter(d => d.block_number === 2).map(d => d.discipline_type))
-  return b2.has('hitrostno') && b2.has('stafeta')
+  return b2.has('hitrostno') && b2.has('stafeta') && b2.has('blizanje')
 }

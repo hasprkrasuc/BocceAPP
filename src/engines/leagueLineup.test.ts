@@ -75,11 +75,14 @@ describe('evaluatePlayerLineup — konkretni primeri (po opisu pravila)', () => 
   })
 })
 
-describe('seasonUsesBlock2Rule', () => {
-  it('velja za sezono z Hitrostno+Štafeta v bloku 2', () => {
-    expect(seasonUsesBlock2Rule([HIT, STA, NAT, DVO])).toBe(true)
+describe('seasonUsesBlock2Rule — velja LE za žensko ligo', () => {
+  it('velja za žensko sezono (blok 2 = Hitrostno + Štafeta + Natančno + Bližanje)', () => {
+    expect(seasonUsesBlock2Rule([HIT, STA, NAT, NAT2, DVO])).toBe(true)
   })
-  it('ne velja brez Hitrostno/Štafeta v bloku 2', () => {
+  it('NE velja za moško sezono (blok 2 = Hitrostno + Štafeta + Natančno, brez Bližanja)', () => {
+    expect(seasonUsesBlock2Rule([HIT, STA, NAT, DVO])).toBe(false)
+  })
+  it('ne velja brez tehničnih disciplin v bloku 2', () => {
     expect(seasonUsesBlock2Rule([DVO, POS, KROG])).toBe(false)
   })
 })
