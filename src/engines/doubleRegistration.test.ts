@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly } from './doubleRegistration'
+import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf } from './doubleRegistration'
 
 describe('isFemale', () => {
   it('prepozna "Ž" kot žensko', () => {
@@ -107,15 +107,15 @@ describe('calcAge — BZS pikčasti format datuma (DD.MM.YYYY)', () => {
   })
 })
 
-describe('latestSeasonsOnly — najnovejša sezona po kategoriji (tudi zaključena)', () => {
+describe('latestSeasonsOnly — najnovejša sezona po kategoriji+tier (tudi zaključena)', () => {
   const teams = [
-    { id: 'm-new',  season: { year: 2026, category: 'men',   status: 'completed' } },  // Super liga 2025/26 — zaključena!
-    { id: 'm-old',  season: { year: 2025, category: 'men',   status: 'completed' } },
-    { id: 'w-new',  season: { year: 2025, category: 'women', status: 'active' } },
-    { id: 'w-old',  season: { year: 2024, category: 'women', status: 'completed' } },
+    { id: 'm-new',  season: { year: 2026, category: 'men', tier: 'super_liga', status: 'completed' } },  // zaključena!
+    { id: 'm-old',  season: { year: 2025, category: 'men', tier: 'super_liga', status: 'completed' } },
+    { id: 'w-new',  season: { year: 2025, category: 'women', tier: '1_liga', status: 'active' } },
+    { id: 'w-old',  season: { year: 2024, category: 'women', tier: '1_liga', status: 'completed' } },
     { id: 'brez',   season: null },
   ]
-  it('obdrži le ekipe iz najnovejšega leta znotraj svoje kategorije', () => {
+  it('obdrži le ekipe iz najnovejšega leta znotraj svoje kategorije+tier', () => {
     const res = latestSeasonsOnly(teams)
     expect(res.map(t => t.id).sort()).toEqual(['m-new', 'w-new'])
   })
@@ -125,5 +125,52 @@ describe('latestSeasonsOnly — najnovejša sezona po kategoriji (tudi zaključe
   })
   it('prazen seznam vrne prazen seznam', () => {
     expect(latestSeasonsOnly([])).toEqual([])
+  })
+  it('prehod sezon: nova Super liga NE izloči 1./2. lige prejšnjega leta (max po tier-u)', () => {
+    // admin ustvari Super ligo 2026/27, 1. liga moških je še 2025/26
+    const rollover = [
+      { id: 'sl-2027', season: { year: 2027, category: 'men', tier: 'super_liga', status: 'draft' } },
+      { id: 'sl-2026', season: { year: 2026, category: 'men', tier: 'super_liga', status: 'completed' } },
+      { id: '1l-2026', season: { year: 2026, category: 'men', tier: '1_liga', status: 'active' } },
+    ]
+    const res = latestSeasonsOnly(rollover)
+    expect(res.map(t => t.id).sort()).toEqual(['1l-2026', 'sl-2027'])  // 1. liga OSTANE
+  })
+})
+
+describe('primaryTeams — primarna ekipa za dvojno registracijo', () => {
+  it('ženska: šteje KATERAKOLI njena ekipa, tudi U18 (klub pogosto nima ženske ekipe)', () => {
+    // Realen primer: Veronika Vrabec (Ž, 2008) — edina ekipa Pliskovica U18
+    const teams = [{ id: 'u18', season: { year: 2025, category: 'u18', tier: null as string | null } }]
+    expect(primaryTeams('Ž', teams).map(t => t.id)).toEqual(['u18'])
+  })
+  it('ženska: ženska ekipa prav tako šteje', () => {
+    const teams = [
+      { id: 'w', season: { year: 2025, category: 'women', tier: '1_liga' } },
+      { id: 'brez', season: null },
+    ]
+    expect(primaryTeams('Ž', teams).map(t => t.id)).toEqual(['w'])
+  })
+  it('moški: štejejo samo moške ekipe (U18 ne — trojna reg. mladincev je ločena tema)', () => {
+    const teams = [
+      { id: 'm', season: { year: 2026, category: 'men', tier: 'super_liga' } },
+      { id: 'u18', season: { year: 2025, category: 'u18', tier: null as string | null } },
+    ]
+    expect(primaryTeams('M', teams).map(t => t.id)).toEqual(['m'])
+  })
+})
+
+describe('birthYearOf — letnica rojstva za prikaz', () => {
+  it('ISO datum', () => {
+    expect(birthYearOf('2008-05-23')).toBe('2008')
+  })
+  it('pikčasti BZS datum (slice(0,4) bi vrnil "23.0")', () => {
+    expect(birthYearOf('23.05.2008')).toBe('2008')
+    expect(birthYearOf('7.2.2006')).toBe('2006')
+  })
+  it('neveljaven/manjkajoč datum vrne null', () => {
+    expect(birthYearOf('ni datum')).toBeNull()
+    expect(birthYearOf(null)).toBeNull()
+    expect(birthYearOf(undefined)).toBeNull()
   })
 })

@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../supabase'
 import type { UserProfile, LeagueFixture, DoubleRegistration, LeagueTeam, LeagueSeason } from '../types'
 import {
-  isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly,
+  isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams,
   DOUBLE_REG_MAX_AGE,
   DR_TIER_LABELS, DR_STATUS_COLORS, DR_STATUS_LABELS,
 } from '../engines/doubleRegistration'
@@ -69,11 +69,12 @@ export default function Profile() {
         .select('league_team_id, league_teams(id, club_name, season_id, season:league_seasons(id, name, tier, category, year))')
         .eq('player_id', user.id)
 
-      const playerCat = isFemale(profile?.gender) ? 'women' : 'men'
-      // Vedno najnovejša sezona kategorije — tudi če je že zaključena.
-      const teams: TeamWithSeason[] = latestSeasonsOnly((tpData ?? [])
-        .map((tp: { league_teams: TeamWithSeason }) => tp.league_teams)
-        .filter(t => t?.season?.category === playerCat))
+      // Vedno najnovejša sezona — tudi zaključena. Pri ženskah je primarna
+      // lahko katerakoli njena ekipa (tudi U18 — klub pogosto nima ženske ekipe).
+      const teams: TeamWithSeason[] = latestSeasonsOnly(primaryTeams(profile?.gender,
+        (tpData ?? [])
+          .map((tp: { league_teams: TeamWithSeason }) => tp.league_teams)
+          .filter(Boolean)))
 
       setMyTeams(teams)
 
