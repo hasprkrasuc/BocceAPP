@@ -274,7 +274,7 @@ export function matchTypeLabel(type: MatchType): string {
 
 export function stageLabel(stage: string): string {
   const labels: Record<string, string> = {
-    group: 'Skupinski del', r64: '1/32 finala', r32: '1/16 finala',
+    group: 'Skupinski del', r128: '1/64 finala', r64: '1/32 finala', r32: '1/16 finala',
     r16: '1/8 finala', qf: 'Četrtfinale',
     sf: 'Polfinale', final: 'Finale', third_place: 'Za 3. mesto',
   }
