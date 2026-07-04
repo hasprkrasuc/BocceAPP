@@ -87,7 +87,7 @@ export default function Profile() {
         .filter(t => t?.season))
       const eligibleRefs = eligibleSecondaryTeams(
         profile?.gender,
-        teams.map(t => ({ id: t.id, tier: t.season.tier })),
+        teams.map(t => ({ id: t.id, tier: t.season.tier, category: (t.season as any)?.category })),
         candidates.map((t: any) => ({ id: t.id, tier: t.season?.tier, category: t.season?.category })),
       )
       const eligibleIds = new Set(eligibleRefs.map(r => r.id))

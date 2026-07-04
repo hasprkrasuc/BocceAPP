@@ -16,32 +16,47 @@
  *   zato igralka nastopa za drug klub (npr. Skala Sežana → ŽBK Hrast)
  * - Admin direktno dodeli
  *
- * ─── STANJE IMPLEMENTACIJE (TODO) ───────────────────────────────
- * Implementirano: moško pravilo (tiersCompatible), ženska pot
- * (eligibleSecondaryTeams → samo 1. liga članice; primaryTeams → pri
- * ženskah šteje katerakoli njena ekipa, tudi U18). Znana odstopanja:
- *   1. tiersCompatible() ne uveljavi pogoja "vsaj eden super_liga"
- *      (preverja le, da nista oba nižja tier-a) — glej opombo pri funkciji.
- *   2. Trojna registracija mladincev (U14–U18: Super liga + nižja liga +
- *      liga U18) še ni modelirana — primaryTeams za moške šteje le 'men'.
+ * ─── STANJE IMPLEMENTACIJE ──────────────────────────────────────
+ * Implementirano: moško pravilo (teamsCompatible po terminskih skupinah —
+ * youth/super/lower), ženska pot (eligibleSecondaryTeams → samo 1. liga
+ * članice; primaryTeams → katerakoli njena ekipa), in TROJNA registracija
+ * mladincev: primaryTeams za moške šteje tudi mladinske (U-18/U-14) ekipe,
+ * eligibleSecondaryTeams pa dovoli člansko ekipo, združljivo z VSEMI trenutnimi
+ * ekipami → mladinec = U-18/U-14 + Super liga + ena nižja liga.
  */
 
 export const DOUBLE_REG_MAX_AGE = 23
 // Pogoj nastopov NI več zahteva — samo starost ≤ 23 in različen rang
 
-/** Tier-i ki igrajo ob istem terminu kot 1. liga → dvojna registracija med njimi ni dovoljena */
-const LOWER_TIERS = new Set(['1_liga', '2_liga_zahod', '2_liga_vzhod'])
+/**
+ * Terminska skupina ekipe za hkratno registracijo:
+ *   'youth' = mladinske lige (U-18/U-14, tier null)
+ *   'super' = Super liga
+ *   'lower' = 1. liga in 2. liga (igrajo ob istem terminu)
+ */
+export type TerminGroup = 'youth' | 'super' | 'lower'
+export function terminGroup(
+  category: string | null | undefined,
+  tier: string | null | undefined,
+): TerminGroup | null {
+  if (category === 'u18' || category === 'u14') return 'youth'
+  if (tier === 'super_liga') return 'super'
+  if (tier === '1_liga' || tier === '2_liga_zahod' || tier === '2_liga_vzhod') return 'lower'
+  return null
+}
 
 /**
- * Ali sta dva tier-a združljiva za dvojno registracijo?
- * Zahteva: vsaj eden mora biti super_liga, in ne smeta biti oba "lower tier".
+ * Ali sta ekipi iz RAZLIČNIH terminskih skupin (dovoljena hkratna registracija)?
+ * Nadomešča prejšnji tiersCompatible in pravilno obravnava mladinske ekipe (tier null):
+ * youth↔super, youth↔lower, super↔lower ✅ · lower↔lower, ista skupina ❌.
  */
-export function tiersCompatible(tier1: string, tier2: string): boolean {
-  if (!tier1 || !tier2)         return false
-  if (tier1 === tier2)           return false
-  // 1. liga in 2. liga igrajo ob istem terminu
-  if (LOWER_TIERS.has(tier1) && LOWER_TIERS.has(tier2)) return false
-  return true
+export function teamsCompatible(
+  a: { category?: string | null; tier?: string | null },
+  b: { category?: string | null; tier?: string | null },
+): boolean {
+  const ga = terminGroup(a.category, a.tier)
+  const gb = terminGroup(b.category, b.tier)
+  return ga !== null && gb !== null && ga !== gb
 }
 
 /** Ali je igralec/ka ženskega spola? (shranjeni gender: 'Ž' / 'M') */
@@ -63,16 +78,20 @@ export interface DRTeamRef { id: string; tier: string; category: string }
  */
 export function eligibleSecondaryTeams<T extends DRTeamRef>(
   gender: string | null | undefined,
-  myTeams: { id: string; tier: string }[],
+  myTeams: { id: string; tier?: string | null; category?: string | null }[],
   allTeams: T[],
 ): T[] {
   const myIds = new Set(myTeams.map(t => t.id))
   if (isFemale(gender)) {
     return allTeams.filter(t => t.category === 'women' && t.tier === '1_liga' && !myIds.has(t.id))
   }
+  // MOŠKI: člansko ekipo, ki je terminsko združljiva z VSEMI trenutnimi ekipami
+  // igralca (matična + že dodane). Tako mladinec dobi U-18 + Super + eno nižjo,
+  // 1./2. liga hkrati pa ni mogoča (isti termin).
   return allTeams.filter(t =>
     t.category === 'men' && !myIds.has(t.id) &&
-    myTeams.some(mt => tiersCompatible(mt.tier, t.tier)))
+    myTeams.length > 0 &&
+    myTeams.every(mt => teamsCompatible(mt, t)))
 }
 
 /**
@@ -137,7 +156,12 @@ export function primaryTeams<T extends { season?: SeasonRef }>(
   teams: T[],
 ): T[] {
   if (isFemale(gender)) return teams.filter(t => !!t.season)
-  return teams.filter(t => t.season?.category === 'men')
+  // MOŠKI: moške ekipe + mladinske (U-18/U-14) — mladinec se dvojno/trojno
+  // registrira iz svoje matične mladinske ekipe v članske lige.
+  return teams.filter(t => {
+    const c = t.season?.category
+    return c === 'men' || c === 'u18' || c === 'u14'
+  })
 }
 
 /** Letnica rojstva za prikaz (ISO ali pikčasti BZS zapis; slice(0,4) bi pikčaste pokvaril). */
