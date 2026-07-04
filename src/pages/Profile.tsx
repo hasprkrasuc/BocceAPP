@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../supabase'
 import type { UserProfile, LeagueFixture, DoubleRegistration, LeagueTeam, LeagueSeason } from '../types'
 import {
-  isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams,
+  isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly,
   DOUBLE_REG_MAX_AGE,
   DR_TIER_LABELS, DR_STATUS_COLORS, DR_STATUS_LABELS,
 } from '../engines/doubleRegistration'
@@ -42,7 +42,6 @@ export default function Profile() {
   const [selectedSecondary, setSelectedSecondary] = useState('')
   const [drMsg, setDrMsg] = useState('')
 
-  const currentYear = new Date().getFullYear() - 1  // sezona 2025/26 → year=2025
   const ageEligible = isAgeEligible(profile?.date_of_birth)
 
   useEffect(() => {
@@ -71,9 +70,10 @@ export default function Profile() {
         .eq('player_id', user.id)
 
       const playerCat = isFemale(profile?.gender) ? 'women' : 'men'
-      const teams: TeamWithSeason[] = (tpData ?? [])
+      // Vedno najnovejša sezona kategorije — tudi če je že zaključena.
+      const teams: TeamWithSeason[] = latestSeasonsOnly((tpData ?? [])
         .map((tp: { league_teams: TeamWithSeason }) => tp.league_teams)
-        .filter(t => t?.season?.year === currentYear && t?.season?.category === playerCat)
+        .filter(t => t?.season?.category === playerCat))
 
       setMyTeams(teams)
 
@@ -81,10 +81,9 @@ export default function Profile() {
       const { data: allTeams } = await supabase
         .from('league_teams')
         .select('id, club_name, season_id, season:league_seasons(id, name, tier, category, year)')
-        .eq('season:league_seasons.year', currentYear)
 
-      const candidates = ((allTeams ?? []) as any[])
-        .filter(t => t?.season?.year === currentYear)
+      const candidates = latestSeasonsOnly(((allTeams ?? []) as any[])
+        .filter(t => t?.season))
       const eligibleRefs = eligibleSecondaryTeams(
         profile?.gender,
         teams.map(t => ({ id: t.id, tier: t.season.tier })),

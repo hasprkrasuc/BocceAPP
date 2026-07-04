@@ -4,7 +4,7 @@ import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
-import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
+import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
 import { computeRangLestvica, RANG_CATEGORY_LABELS, type PlayerSeasonSummary, type RangCategory } from '../lib/rangLestvica'
 import { findPlayerRankInCategories, type CategoryPlayerRank } from '../lib/findPlayerRank'
 
@@ -72,23 +72,23 @@ export default function PlayerDetail() {
       setLeagues(entries)
       setDoubleRegs((dr ?? []) as DoubleRegistration[])
 
-      // Ekipe za dvojno reg (admin) — spolno-zavedno (moški / ženske)
-      const currentYear = new Date().getFullYear() - 1
+      // Ekipe za dvojno reg (admin) — spolno-zavedno (moški / ženske).
+      // Vedno najnovejša sezona kategorije, tudi če je že zaključena.
       const playerGender = (p as UserProfile)?.gender
       const playerCat = isFemale(playerGender) ? 'women' : 'men'
       const { data: tpData } = await supabase
         .from('league_team_players')
         .select('league_team_id, league_teams(id, club_name, season_id, season:league_seasons(id, tier, year, category))')
         .eq('player_id', (p as UserProfile)?.id ?? id)
-      const playerTeams = ((tpData ?? []) as any[])
+      const playerTeams = latestSeasonsOnly(((tpData ?? []) as any[])
         .map(tp => tp.league_teams)
-        .filter(t => t?.season?.year === currentYear && t?.season?.category === playerCat)
+        .filter(t => t?.season?.category === playerCat))
       setMyTeams(playerTeams.map((t: any) => ({ id: t.id, tier: t.season.tier, season_id: t.season_id })))
 
       const { data: allTeams } = await supabase
         .from('league_teams')
         .select('id, club_name, season:league_seasons(id, tier, year, category)')
-      const candidates = ((allTeams ?? []) as any[]).filter(t => t?.season?.year === currentYear)
+      const candidates = latestSeasonsOnly(((allTeams ?? []) as any[]).filter(t => t?.season))
       const eligibleRefs = eligibleSecondaryTeams(
         playerGender,
         playerTeams.map((t: any) => ({ id: t.id, tier: t.season?.tier })),
