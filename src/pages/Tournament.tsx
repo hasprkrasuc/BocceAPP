@@ -5,6 +5,7 @@ import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import GroupBracket from '../components/GroupBracket'
 import KnockoutBracket from '../components/KnockoutBracket'
+import RoundRobinStandings from '../components/RoundRobinStandings'
 import ScoreModal from '../components/ScoreModal'
 import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
@@ -113,7 +114,7 @@ export function TournamentDetail() {
   const [matches, setMatches] = useState<Match[]>([])
   const [registrations, setRegistrations] = useState<TournamentRegistration[]>([])
   const [myReg, setMyReg] = useState<TournamentRegistration | null>(null)
-  const [tab, setTab] = useState<'groups' | 'knockout' | 'registrations'>('groups')
+  const [tab, setTab] = useState<'groups' | 'knockout' | 'registrations' | 'standings'>('groups')
   const [scoreMatch, setScoreMatch] = useState<Match | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -126,6 +127,7 @@ export function TournamentDetail() {
 
   useEffect(() => {
     if (tournament?.format === 'knockout') setTab('knockout')
+    else if (tournament?.format === 'round_robin') setTab('standings')
   }, [tournament?.format])
 
   // Real-time subscription for match updates
@@ -355,6 +357,11 @@ export function TournamentDetail() {
               { key: 'knockout' as const, label: 'Izločilni del' },
               { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
             ]
+          : tournament.format === 'round_robin'
+          ? [
+              { key: 'standings' as const, label: 'Lestvica' },
+              { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
+            ]
           : [
               { key: 'groups' as const, label: `Skupine (${groups.length})` },
               { key: 'knockout' as const, label: 'Izločilni del' },
@@ -391,6 +398,15 @@ export function TournamentDetail() {
       {tab === 'knockout' && (
         <KnockoutBracket
           matches={knockoutMatches}
+          registrations={registrations}
+          isAdmin={isAdmin}
+          onEnterScore={setScoreMatch}
+        />
+      )}
+
+      {tab === 'standings' && (
+        <RoundRobinStandings
+          matches={groupMatches}
           registrations={registrations}
           isAdmin={isAdmin}
           onEnterScore={setScoreMatch}

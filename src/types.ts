@@ -83,7 +83,7 @@ export interface Tournament {
   max_teams: number | null
   series_id: string | null
   discipline_type: DisciplineType | null
-  format: 'groups' | 'knockout'
+  format: 'groups' | 'knockout' | 'round_robin'
 }
 
 export interface TournamentRegistration {
