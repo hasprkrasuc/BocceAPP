@@ -14,7 +14,7 @@
 
 import { supabase } from '../supabase'
 import { aggregatePlayerStats, calculateRang } from '../engines/leagueStats'
-import { championshipPoints, type ChampKoMatch } from './championshipPoints'
+import { placementPoints, placementLabel } from './dpPlacement'
 import type {
   LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline,
 } from '../types'
@@ -248,47 +248,25 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     await Promise.all(championships.map(async champ => {
       const champCat = toRangCategory((champ as { category?: string }).category)!
 
-      const { data: matches } = await supabase
-        .from('matches')
-        .select(`
-          stage, winner_id, team_a_id, team_b_id,
-          team_a:group_teams!matches_team_a_id_fkey(id, registration:tournament_registrations!group_teams_registration_id_fkey(player1_id, player2_id)),
-          team_b:group_teams!matches_team_b_id_fkey(id, registration:tournament_registrations!group_teams_registration_id_fkey(player1_id, player2_id))
-        `)
+      // DP točke po EKSPLICITNI končni uvrstitvi (final_rank iz grafikona), ne iz
+      // izločilnih tekem — deluje enotno za posamezno/dvojice/igro v krog/krožni
+      // sistem in zajame tudi mesta 5+ (iz skupin), ne le finalistov.
+      const { data: regs } = await supabase
+        .from('tournament_registrations')
+        .select('player1_id, player2_id, final_rank')
         .eq('tournament_id', champ.id)
-        .in('stage', ['final', 'third_place', 'sf', 'qf', 'r16'])
-        .eq('status', 'completed')
+        .not('final_rank', 'is', null)
 
-      type Reg = { player1_id: string; player2_id: string | null }
-      type GroupTeamEmbed = { id: string; registration: Reg | Reg[] | null }
-      type MatchRow = {
-        stage: string; winner_id: string | null; team_a_id: string | null; team_b_id: string | null
-        team_a: GroupTeamEmbed | GroupTeamEmbed[] | null
-        team_b: GroupTeamEmbed | GroupTeamEmbed[] | null
-      }
-      const rows = (matches ?? []) as unknown as MatchRow[]
-
-      // PostgREST vrne to-one embed kot OBJEKT (redkeje kot enočlanski array) — podpri oboje.
-      // Prej je koda vedno indeksirala [0], kar je pri objektu undefined → playersByTeam prazen → 0 DP točk.
-      const one = <T>(v: T | T[] | null | undefined): T | null =>
-        Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
-
-      // group_team id → igralci ekipe (dvojica = 2)
-      const playersByTeam: Record<string, string[]> = {}
-      const koMatches: ChampKoMatch[] = rows.map(m => {
-        for (const gt of [one(m.team_a), one(m.team_b)]) {
-          if (gt && !playersByTeam[gt.id]) {
-            const reg = one(gt.registration)
-            playersByTeam[gt.id] = [reg?.player1_id, reg?.player2_id].filter(Boolean) as string[]
-          }
+      type RegRow = { player1_id: string; player2_id: string | null; final_rank: number }
+      for (const reg of (regs ?? []) as RegRow[]) {
+        const pts = placementPoints(reg.final_rank)
+        if (pts <= 0) continue
+        const label = placementLabel(reg.final_rank)
+        for (const pid of [reg.player1_id, reg.player2_id].filter(Boolean) as string[]) {
+          const a = ensureAcc(champCat, pid)
+          a.dpPts += pts
+          a.champEntries.push({ champName: champ.name, placeLabel: label, pts })
         }
-        return { stage: m.stage, winnerId: m.winner_id, teamAId: m.team_a_id, teamBId: m.team_b_id }
-      })
-
-      for (const award of championshipPoints(koMatches, playersByTeam)) {
-        const a = ensureAcc(champCat, award.playerId)
-        a.dpPts += award.pts
-        a.champEntries.push({ champName: champ.name, placeLabel: award.placeLabel, pts: award.pts })
       }
     }))
   }
