@@ -20,26 +20,32 @@ const CATEGORY_COLORS: Record<TournamentCategory, string> = {
   u12: 'bg-green-50 text-green-700 border-green-200',
 }
 
-interface HomeStats { tournaments: number; players: number }
+interface HomeStats { tournaments: number; players: number; matches: number }
 
 export default function Home() {
   const [upcoming, setUpcoming] = useState<Tournament[]>([])
   const [recent, setRecent] = useState<Tournament[]>([])
-  const [stats, setStats] = useState<HomeStats>({ tournaments: 0, players: 0 })
+  const [stats, setStats] = useState<HomeStats>({ tournaments: 0, players: 0, matches: 0 })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [{ data: upcData }, { data: recData }, { count: tCount }, { count: pCount }] = await Promise.all([
+      const [
+        { data: upcData }, { data: recData },
+        { count: tCount }, { count: pCount },
+        { count: mCount }, { count: lfCount },
+      ] = await Promise.all([
         supabase.from('tournaments').select('*').in('status', ['registration_open', 'in_progress'])
           .gte('date', new Date().toISOString().slice(0, 10)).order('date').limit(3),
         supabase.from('tournaments').select('*').eq('status', 'completed').order('date', { ascending: false }).limit(3),
         supabase.from('tournaments').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
         supabase.from('users').select('id', { count: 'exact', head: true }).eq('role', 'player'),
+        supabase.from('matches').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('is_bye', false),
+        supabase.from('league_fixtures').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
       ])
       setUpcoming((upcData ?? []) as Tournament[])
       setRecent((recData ?? []) as Tournament[])
-      setStats({ tournaments: tCount ?? 0, players: pCount ?? 0 })
+      setStats({ tournaments: tCount ?? 0, players: pCount ?? 0, matches: (mCount ?? 0) + (lfCount ?? 0) })
       setLoading(false)
     }
     load()
@@ -75,7 +81,7 @@ export default function Home() {
         {[
           { label: 'Zaključenih turnirjev', value: stats.tournaments, icon: '🏆' },
           { label: 'Registriranih igralcev', value: stats.players, icon: '👤' },
-          { label: 'Odigranih tekem', value: '—', icon: '🎯' },
+          { label: 'Odigranih tekem', value: stats.matches, icon: '🎯' },
         ].map(s => (
           <div key={s.label} className="bg-white border border-gray-200 rounded-xl p-5 text-center border-t-4 border-t-bocce-lime">
             <div className="text-3xl mb-1">{s.icon}</div>
