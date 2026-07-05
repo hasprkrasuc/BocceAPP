@@ -27,18 +27,19 @@ export const TIER_LABELS: Record<string, string> = {
 }
 
 /** Kategorije rang lestvic. */
-export type RangCategory = 'men' | 'women' | 'u18' | 'u14'
-export const RANG_CATEGORIES: RangCategory[] = ['men', 'women', 'u18', 'u14']
+export type RangCategory = 'men' | 'women' | 'u18' | 'u18_women' | 'u14'
+export const RANG_CATEGORIES: RangCategory[] = ['men', 'women', 'u18', 'u18_women', 'u14']
 export const RANG_CATEGORY_LABELS: Record<RangCategory, string> = {
-  men: 'Moški', women: 'Ženske', u18: 'U18', u14: 'U14',
+  men: 'Moški', women: 'Ženske', u18: 'Mladinci', u18_women: 'Mladinke', u14: 'U14',
 }
 
-/** Preslika kategorijo sezone/prvenstva na rang kategorijo (ali null, če ne sodi v eno od štirih). */
+/** Preslika kategorijo sezone/prvenstva na rang kategorijo (ali null, če ne sodi v eno od kategorij). */
 function toRangCategory(cat: string | null | undefined): RangCategory | null {
   switch (cat) {
     case 'men': return 'men'
     case 'women': return 'women'
     case 'u18': return 'u18'
+    case 'u18_women': return 'u18_women'
     case 'u14': return 'u14'
     default: return null
   }
@@ -113,7 +114,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
 
   // Ločen akumulator na kategorijo
   const accByCat: Record<RangCategory, Record<string, PlayerAcc>> = {
-    men: {}, women: {}, u18: {}, u14: {},
+    men: {}, women: {}, u18: {}, u18_women: {}, u14: {},
   }
   const seasonStatsByPlayer: Record<string, PlayerSeasonSummary[]> = {}
 
@@ -238,7 +239,10 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   const menMaxYear = menYears.length ? Math.max(...menYears) : null
 
   const championships = (allChamps ?? []).filter(c => {
-    const cat = toRangCategory((c as { category?: string }).category)
+    const raw = (c as { category?: string }).category
+    // MIX (mešane dvojice): šteje za oba spola; vključi po 365-dnevnem oknu.
+    if (raw === 'mixed') return c.date >= cutoffStr && c.date <= todayStr
+    const cat = toRangCategory(raw)
     if (!cat) return false
     if (cat === 'men') return yearOf(c.date) === menMaxYear
     return c.date >= cutoffStr && c.date <= todayStr
@@ -246,7 +250,10 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
 
   if (championships.length) {
     await Promise.all(championships.map(async champ => {
-      const champCat = toRangCategory((champ as { category?: string }).category)!
+      const rawCat = (champ as { category?: string }).category
+      const isMixed = rawCat === 'mixed'
+      const champCat = isMixed ? null : toRangCategory(rawCat)
+      if (!isMixed && !champCat) return
 
       // DP točke po EKSPLICITNI končni uvrstitvi (final_rank iz grafikona), ne iz
       // izločilnih tekem — deluje enotno za posamezno/dvojice/igro v krog/krožni
@@ -258,12 +265,29 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         .not('final_rank', 'is', null)
 
       type RegRow = { player1_id: string; player2_id: string | null; final_rank: number }
-      for (const reg of (regs ?? []) as RegRow[]) {
+      const rows = (regs ?? []) as RegRow[]
+
+      // Pri MIX prvenstvu vsak igralec pripada svoji spolni kategoriji.
+      let genderCat: (pid: string) => RangCategory | null
+      if (isMixed) {
+        const pids = rows.flatMap(r => [r.player1_id, r.player2_id]).filter(Boolean) as string[]
+        const { data: gs } = pids.length
+          ? await supabase.from('users').select('id, gender').in('id', pids)
+          : { data: [] }
+        const gmap = Object.fromEntries((gs ?? []).map((u: { id: string; gender: string | null }) => [u.id, u.gender]))
+        genderCat = pid => { const g = gmap[pid]; return g === 'Ž' ? 'women' : g ? 'men' : null }
+      } else {
+        genderCat = () => champCat
+      }
+
+      for (const reg of rows) {
         const pts = placementPoints(reg.final_rank)
         if (pts <= 0) continue
         const label = placementLabel(reg.final_rank)
         for (const pid of [reg.player1_id, reg.player2_id].filter(Boolean) as string[]) {
-          const a = ensureAcc(champCat, pid)
+          const cat = genderCat(pid)
+          if (!cat) continue
+          const a = ensureAcc(cat, pid)
           a.dpPts += pts
           a.champEntries.push({ champName: champ.name, placeLabel: label, pts })
         }
@@ -314,6 +338,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     men: buildRows(accByCat.men),
     women: buildRows(accByCat.women),
     u18: buildRows(accByCat.u18),
+    u18_women: buildRows(accByCat.u18_women),
     u14: buildRows(accByCat.u14),
   }
 

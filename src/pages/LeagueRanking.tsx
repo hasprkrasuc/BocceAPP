@@ -11,7 +11,7 @@ import {
   type RangRow, type RangCategory,
 } from '../lib/rangLestvica'
 
-const EMPTY_BY_CAT: Record<RangCategory, RangRow[]> = { men: [], women: [], u18: [], u14: [] }
+const EMPTY_BY_CAT: Record<RangCategory, RangRow[]> = { men: [], women: [], u18: [], u18_women: [], u14: [] }
 
 export function LeagueRanking() {
   const [byCategory, setByCategory]   = useState<Record<RangCategory, RangRow[]>>(EMPTY_BY_CAT)
