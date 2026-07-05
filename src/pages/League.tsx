@@ -209,14 +209,14 @@ function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: s
   )
 }
 
-// Datum(i) kola za naslov: en datum, razpon ali prazno.
-function roundDateLabel(fs: LeagueFixture[]): string {
-  const dates = [...new Set(fs.map(f => (f.scheduled_date ? String(f.scheduled_date).slice(0, 10) : '')).filter(Boolean))].sort()
-  if (dates.length === 0) return ''
-  if (dates.length === 1) return matchDatePart(dates[0])
-  return `${matchDatePart(dates[0])} – ${matchDatePart(dates[dates.length - 1])}`
+const SL_DAYS = ['Nedelja', 'Ponedeljek', 'Torek', 'Sreda', 'Četrtek', 'Petek', 'Sobota']
+// Dnevni podnaslov iz "YYYY-MM-DD" (lokalno, brez TZ zamika): "Sobota, 25. 10. 2025".
+function dayHeading(datePart: string): string {
+  const [y, m, d] = datePart.split('-').map(Number)
+  if (!y || !m || !d) return 'Brez urnika'
+  return `${SL_DAYS[new Date(y, m - 1, d).getDay()]}, ${d}. ${m}. ${y}`
 }
-// Kronološka razvrstitev tekem v kolu (prazni termini na konec), nato po skupini.
+// Kronološka razvrstitev tekem (prazni termini na konec), nato po skupini.
 function sortFixturesChrono(fs: LeagueFixture[]): LeagueFixture[] {
   return [...fs].sort((a, b) => {
     const da = a.scheduled_date ?? '', db = b.scheduled_date ?? ''
@@ -226,13 +226,31 @@ function sortFixturesChrono(fs: LeagueFixture[]): LeagueFixture[] {
     return (a.group_label ?? '').localeCompare(b.group_label ?? '')
   })
 }
-function RoundHeading({ round, fixtures }: { round: number; fixtures: LeagueFixture[] }) {
-  const d = roundDateLabel(fixtures)
+// Kolo z datumskimi podnaslovi: tekme grupirane po datumu (kronološko), vsak s podnaslovom dan + datum.
+function RoundFixtures({ round, fixtures, myTeamId, showGroup }: { round: number; fixtures: LeagueFixture[]; myTeamId?: string; showGroup?: boolean }) {
+  const groups = new Map<string, LeagueFixture[]>()
+  for (const f of fixtures) {
+    const dp = f.scheduled_date ? String(f.scheduled_date).slice(0, 10) : ''
+    if (!groups.has(dp)) groups.set(dp, [])
+    groups.get(dp)!.push(f)
+  }
+  const dateKeys = [...groups.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a < b ? -1 : 1))
   return (
-    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
-      {round}. kolo
-      {d && <span className="ml-2 text-gray-400 font-normal normal-case tracking-normal">· {d}</span>}
-    </h3>
+    <div>
+      <h3 className="text-sm font-bold text-bocce-green uppercase tracking-wide mb-3">{round}. kolo</h3>
+      <div className="space-y-4">
+        {dateKeys.map(dk => (
+          <div key={dk || 'brez'}>
+            <p className="text-sm font-semibold text-gray-700 mb-2 px-1">{dk ? dayHeading(dk) : 'Brez urnika'}</p>
+            <div className="space-y-2">
+              {sortFixturesChrono(groups.get(dk)!).map(f => (
+                <FixtureRow key={f.id} f={f} myTeamId={myTeamId} showGroup={showGroup} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -447,13 +465,7 @@ export function LeagueDetail() {
                     <span className="text-xs text-gray-400">(R1–{phase1Rounds[phase1Rounds.length - 1]})</span>
                   </div>
                   {phase1Rounds.map(round => (
-                    <div key={round}>
-                      <RoundHeading round={round} fixtures={byRound[round]} />
-                      <div className="space-y-2">
-                        {sortFixturesChrono(byRound[round])
-                          .map(f => <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} showGroup />)}
-                      </div>
-                    </div>
+                    <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} showGroup />
                   ))}
                 </div>
               )}
@@ -467,13 +479,7 @@ export function LeagueDetail() {
                     <span className="text-xs text-gray-400">(R{phase2Rounds[0]}–{phase2Rounds[phase2Rounds.length - 1]})</span>
                   </div>
                   {phase2Rounds.map(round => (
-                    <div key={round}>
-                      <RoundHeading round={round} fixtures={byRound[round]} />
-                      <div className="space-y-2">
-                        {sortFixturesChrono(byRound[round])
-                          .map(f => <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} showGroup />)}
-                      </div>
-                    </div>
+                    <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} showGroup />
                   ))}
                 </div>
               )}
@@ -482,14 +488,7 @@ export function LeagueDetail() {
             <>
               {/* Regular rounds */}
               {rounds.filter(r => r <= season.rounds_count).map(round => (
-                <div key={round}>
-                  <RoundHeading round={round} fixtures={byRound[round]} />
-                  <div className="space-y-2">
-                    {sortFixturesChrono(byRound[round]).map(f => (
-                      <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} />
-                    ))}
-                  </div>
-                </div>
+                <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} />
               ))}
 
               {/* Playoff (končnica) */}
