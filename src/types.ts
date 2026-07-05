@@ -229,10 +229,13 @@ export interface LeagueFixture {
   scheduled_date: string | null
   chief_judge_id: string | null
   judge_ids: string[]
+  /** Kraj tekme (balinišče). */
+  venue: string | null
   /** NULL = no groups (Super Liga). 'A'/'B' = phase-1 skupini. '1-6'/'7-12' = phase-2 nadaljevalni skupini. */
   group_label: string | null
   home_team?: LeagueTeam
   away_team?: LeagueTeam
+  chief_judge?: { full_name: string | null } | null
 }
 
 // ─── Dvojna registracija ─────────────────────────────────────────────────────

@@ -35,10 +35,42 @@ type PlayerOption = Pick<UserProfile, 'id' | 'full_name' | 'club'>
 // ──────────────────────────────────────────────────────────────
 // TOURNAMENT LIST
 // ──────────────────────────────────────────────────────────────
+function TournamentCard({ t, basePath }: { t: Tournament; basePath: string }) {
+  return (
+    <Link to={`${basePath}/${t.id}`}
+      className="block bg-white border border-gray-200 rounded-xl p-5 hover:border-bocce-green hover:shadow-sm transition-all">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="font-semibold text-gray-800">{t.name}</h2>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+              {CATEGORY_LABELS[t.category]}
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 mt-1">
+            {format(new Date(t.date), 'd. MMMM yyyy', { locale: dateSl })} · {t.location}
+          </p>
+          {t.registration_deadline && t.status === 'registration_open' && (
+            <p className="text-xs text-orange-500 mt-1">
+              Rok za prijavo: {format(new Date(t.registration_deadline), 'd. M. yyyy')}
+            </p>
+          )}
+        </div>
+        <span className={`text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${STATUS_COLORS[t.status]}`}>
+          {STATUS_LABELS[t.status]}
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+const CAT_ORDER: TournamentCategory[] = ['men', 'women', 'u18', 'u18_women', 'mixed', 'u15', 'u12']
+
 export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind }) {
   const [tournaments, setTournaments] = useState<Tournament[]>([])
   const [filter, setFilter] = useState<TournamentStatus | 'all'>('all')
   const [loading, setLoading] = useState(true)
+  const [closedCats, setClosedCats] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     supabase.from('tournaments').select('*').eq('kind', kind).order('date', { ascending: false })
@@ -47,8 +79,17 @@ export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind 
 
   const statuses: Array<TournamentStatus | 'all'> = ['all', 'registration_open', 'in_progress', 'completed']
   const filtered = filter === 'all' ? tournaments : tournaments.filter(t => t.status === filter)
-  const title = kind === 'championship' ? 'Državna prvenstva' : 'Turnirji'
-  const basePath = kind === 'championship' ? '/prvenstva' : '/turnirji'
+  const isChamp = kind === 'championship'
+  const title = isChamp ? 'Državna prvenstva' : 'Turnirji'
+  const basePath = isChamp ? '/prvenstva' : '/turnirji'
+
+  // Prvenstva: skupine po kategorijah → letih
+  const yearOf = (d: string) => parseInt(String(d).slice(0, 4), 10)
+  const catsPresent = CAT_ORDER.filter(c => filtered.some(t => t.category === c))
+  const extraCats = [...new Set(filtered.map(t => t.category))].filter(c => !CAT_ORDER.includes(c as TournamentCategory)) as TournamentCategory[]
+  const orderedCats = [...catsPresent, ...extraCats]
+  const toggleCat = (c: string) =>
+    setClosedCats(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n })
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -67,35 +108,44 @@ export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind 
       {loading ? (
         <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 italic">Ni turnirjev</div>
+        <div className="text-center py-12 text-gray-400 italic">Ni {isChamp ? 'prvenstev' : 'turnirjev'}</div>
+      ) : !isChamp ? (
+        <div className="space-y-3">
+          {filtered.map(t => <TournamentCard key={t.id} t={t} basePath={basePath} />)}
+        </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map(t => (
-            <Link key={t.id} to={`${basePath}/${t.id}`}
-              className="block bg-white border border-gray-200 rounded-xl p-5 hover:border-bocce-green hover:shadow-sm transition-all">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="font-semibold text-gray-800">{t.name}</h2>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
-                      {CATEGORY_LABELS[t.category]}
-                    </span>
+          {orderedCats.map(cat => {
+            const inCat = filtered.filter(t => t.category === cat)
+            const years = [...new Set(inCat.map(t => yearOf(t.date)))].sort((a, b) => b - a)
+            const open = !closedCats.has(cat)
+            return (
+              <div key={cat} className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+                <button onClick={() => toggleCat(cat)}
+                  className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+                  <span className="flex items-center gap-2.5">
+                    <span className="font-semibold text-gray-800">{CATEGORY_LABELS[cat] ?? cat}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{inCat.length}</span>
+                  </span>
+                  <span className={`text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+                </button>
+                {open && (
+                  <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-3">
+                    {years.map(y => (
+                      <div key={y}>
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">{y}</h3>
+                        <div className="space-y-2">
+                          {inCat.filter(t => yearOf(t.date) === y).map(t => (
+                            <TournamentCard key={t.id} t={t} basePath={basePath} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {format(new Date(t.date), 'd. MMMM yyyy', { locale: dateSl })} · {t.location}
-                  </p>
-                  {t.registration_deadline && t.status === 'registration_open' && (
-                    <p className="text-xs text-orange-500 mt-1">
-                      Rok za prijavo: {format(new Date(t.registration_deadline), 'd. M. yyyy')}
-                    </p>
-                  )}
-                </div>
-                <span className={`text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${STATUS_COLORS[t.status]}`}>
-                  {STATUS_LABELS[t.status]}
-                </span>
+                )}
               </div>
-            </Link>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

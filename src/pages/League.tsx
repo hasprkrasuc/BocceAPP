@@ -11,6 +11,7 @@ import { sl as dateSl } from 'date-fns/locale'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueTier, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline } from '../types'
 import { LeagueStatsPanel, LeagueRangPanel } from '../components/LeagueStats'
 import { resolvePlayerNames, type ResolvedPlayer } from '../lib/playerNames'
+import { matchDatePart, matchTimePart } from '../lib/matchDate'
 
 const STATUS_LABELS: Record<LeagueSeasonStatus, string> = {
   draft: 'Osnutek', active: 'Aktivna', completed: 'Zaključena',
@@ -143,42 +144,95 @@ const GROUP_BADGE: Record<string, string> = {
   '7-12': 'bg-gray-100 text-gray-500',
 }
 
+function WhistleIcon({ className }: { className?: string }) {
+  // preprosta ikona piščalke
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M3 8a1 1 0 0 1 1-1h8.2l3.8-2.4V9.1A6 6 0 1 1 9.3 16H4a1 1 0 0 1-1-1V8zm7 3.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2z" />
+    </svg>
+  )
+}
+
 function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: string; showGroup?: boolean }) {
   const isMyMatch = f.home_team_id === myTeamId || f.away_team_id === myTeamId
+  const time = matchTimePart(f.scheduled_date)
+  const chief = f.chief_judge?.full_name
+  const hasBanner = !!(time || f.venue || chief)
   return (
     <Link to={`/admin/liga/tekma/${f.id}`}
-      className={`bg-white border rounded-xl px-5 py-3 flex items-center gap-4 transition-colors hover:bg-gray-50 group
+      className={`block bg-white border rounded-xl overflow-hidden transition-colors hover:bg-gray-50 group
         ${isMyMatch ? 'border-bocce-green/30 bg-bocce-green/5 hover:bg-bocce-green/10' : 'border-gray-200'}`}>
-      <div className="flex-1 text-right">
-        <span className={`font-medium text-sm ${f.home_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
-          {f.home_team?.club_name}
-        </span>
-      </div>
-      <div className="text-center min-w-[80px]">
-        {f.status === 'completed' ? (
-          <span className="font-bold text-gray-800 text-lg font-mono">
-            {f.home_score} : {f.away_score}
+      <div className="flex items-center gap-4 px-5 py-3">
+        <div className="flex-1 text-right">
+          <span className={`font-medium text-sm ${f.home_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
+            {f.home_team?.club_name}
           </span>
-        ) : (
-          <div className="text-xs text-gray-400">
-            {f.scheduled_date
-              ? format(new Date(f.scheduled_date), 'd.M.', { locale: dateSl })
-              : 'ni urnika'}
-          </div>
+        </div>
+        <div className="text-center min-w-[80px]">
+          {f.status === 'completed' ? (
+            <span className="font-bold text-gray-800 text-lg font-mono">
+              {f.home_score} : {f.away_score}
+            </span>
+          ) : (
+            <div className="text-xs text-gray-400">
+              {f.scheduled_date ? matchDatePart(f.scheduled_date) : 'ni urnika'}
+            </div>
+          )}
+        </div>
+        <div className="flex-1 text-left">
+          <span className={`font-medium text-sm ${f.away_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
+            {f.away_team?.club_name}
+          </span>
+        </div>
+        {showGroup && f.group_label && (
+          <span className={`text-xs font-semibold px-1.5 py-0.5 rounded min-w-[30px] text-center ${GROUP_BADGE[f.group_label] ?? 'bg-gray-100 text-gray-500'}`}>
+            {f.group_label}
+          </span>
         )}
+        <span className="text-gray-300 group-hover:text-gray-400 text-xs">›</span>
       </div>
-      <div className="flex-1 text-left">
-        <span className={`font-medium text-sm ${f.away_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
-          {f.away_team?.club_name}
-        </span>
-      </div>
-      {showGroup && f.group_label && (
-        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded min-w-[30px] text-center ${GROUP_BADGE[f.group_label] ?? 'bg-gray-100 text-gray-500'}`}>
-          {f.group_label}
-        </span>
+      {hasBanner && (
+        <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-500">
+          <span className="flex items-center gap-2 min-w-0">
+            {time && <span className="font-medium text-gray-600 whitespace-nowrap">{time}</span>}
+            {f.venue && <span className="truncate">📍 {f.venue}</span>}
+          </span>
+          {chief && (
+            <span className="flex items-center gap-1 whitespace-nowrap text-gray-600">
+              <WhistleIcon className="w-3.5 h-3.5 text-bocce-green" />
+              {chief}
+            </span>
+          )}
+        </div>
       )}
-      <span className="text-gray-300 group-hover:text-gray-400 text-xs">›</span>
     </Link>
+  )
+}
+
+// Datum(i) kola za naslov: en datum, razpon ali prazno.
+function roundDateLabel(fs: LeagueFixture[]): string {
+  const dates = [...new Set(fs.map(f => (f.scheduled_date ? String(f.scheduled_date).slice(0, 10) : '')).filter(Boolean))].sort()
+  if (dates.length === 0) return ''
+  if (dates.length === 1) return matchDatePart(dates[0])
+  return `${matchDatePart(dates[0])} – ${matchDatePart(dates[dates.length - 1])}`
+}
+// Kronološka razvrstitev tekem v kolu (prazni termini na konec), nato po skupini.
+function sortFixturesChrono(fs: LeagueFixture[]): LeagueFixture[] {
+  return [...fs].sort((a, b) => {
+    const da = a.scheduled_date ?? '', db = b.scheduled_date ?? ''
+    if (da && db && da !== db) return da < db ? -1 : 1
+    if (da && !db) return -1
+    if (!da && db) return 1
+    return (a.group_label ?? '').localeCompare(b.group_label ?? '')
+  })
+}
+function RoundHeading({ round, fixtures }: { round: number; fixtures: LeagueFixture[] }) {
+  const d = roundDateLabel(fixtures)
+  return (
+    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
+      {round}. kolo
+      {d && <span className="ml-2 text-gray-400 font-normal normal-case tracking-normal">· {d}</span>}
+    </h3>
   )
 }
 
@@ -226,7 +280,19 @@ export function LeagueDetail() {
     ])
     setSeason(s as LeagueSeason)
     setTeams((t ?? []) as LeagueTeam[])
-    setFixtures((f ?? []) as LeagueFixture[])
+
+    // imena glavnih sodnikov (za pasico) — ločena poizvedba, brez krhkih embedov
+    const fixturesRaw = (f ?? []) as LeagueFixture[]
+    const cjIds = [...new Set(fixturesRaw.map(fx => fx.chief_judge_id).filter(Boolean))] as string[]
+    let cjMap: Record<string, string | null> = {}
+    if (cjIds.length) {
+      const { data: cj } = await supabase.from('users').select('id, full_name').in('id', cjIds)
+      cjMap = Object.fromEntries((cj ?? []).map((u: { id: string; full_name: string | null }) => [u.id, u.full_name]))
+    }
+    setFixtures(fixturesRaw.map(fx => ({
+      ...fx,
+      chief_judge: fx.chief_judge_id ? { full_name: cjMap[fx.chief_judge_id] ?? null } : null,
+    })))
 
     const { data: discData } = await supabase.from('league_season_disciplines')
       .select('*').eq('season_id', id).order('order_num')
@@ -382,13 +448,9 @@ export function LeagueDetail() {
                   </div>
                   {phase1Rounds.map(round => (
                     <div key={round}>
-                      <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
-                        {round}. kolo
-                      </h3>
+                      <RoundHeading round={round} fixtures={byRound[round]} />
                       <div className="space-y-2">
-                        {byRound[round]
-                          .slice()
-                          .sort((a, b) => (a.group_label ?? '').localeCompare(b.group_label ?? ''))
+                        {sortFixturesChrono(byRound[round])
                           .map(f => <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} showGroup />)}
                       </div>
                     </div>
@@ -406,13 +468,9 @@ export function LeagueDetail() {
                   </div>
                   {phase2Rounds.map(round => (
                     <div key={round}>
-                      <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
-                        {round}. kolo
-                      </h3>
+                      <RoundHeading round={round} fixtures={byRound[round]} />
                       <div className="space-y-2">
-                        {byRound[round]
-                          .slice()
-                          .sort((a, b) => (a.group_label ?? '').localeCompare(b.group_label ?? ''))
+                        {sortFixturesChrono(byRound[round])
                           .map(f => <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} showGroup />)}
                       </div>
                     </div>
@@ -425,11 +483,9 @@ export function LeagueDetail() {
               {/* Regular rounds */}
               {rounds.filter(r => r <= season.rounds_count).map(round => (
                 <div key={round}>
-                  <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
-                    {round}. kolo
-                  </h3>
+                  <RoundHeading round={round} fixtures={byRound[round]} />
                   <div className="space-y-2">
-                    {byRound[round].map(f => (
+                    {sortFixturesChrono(byRound[round]).map(f => (
                       <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} />
                     ))}
                   </div>

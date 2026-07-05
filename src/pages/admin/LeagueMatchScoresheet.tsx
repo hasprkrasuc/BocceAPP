@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import type { LeagueFixture, LeagueSeasonDiscipline, LeagueMatchResult, LeagueMatchDisciplineResult, DisciplineType, UserProfile } from '../../types'
 import { evaluatePlayerLineup, seasonUsesBlock2Rule, type LineupDisc } from '../../engines/leagueLineup'
+import { formatMatchDateTime } from '../../lib/matchDate'
 
 const TECHNICAL_TYPES: DisciplineType[] = ['stafeta', 'hitrostno', 'natancno']
 
@@ -146,6 +147,7 @@ export default function LeagueMatchScoresheet() {
   const [judgeUserIds, setJudgeUserIds] = useState<string[]>([])
   const [allUsers, setAllUsers] = useState<Pick<UserProfile, 'id' | 'full_name'>[]>([])
   const [matchDate, setMatchDate] = useState('')
+  const [venue, setVenue] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
@@ -167,7 +169,10 @@ export default function LeagueMatchScoresheet() {
     if (!fx) { setLoading(false); return }
     const f = fx as LeagueFixture & { home_team: { league_team_players?: Array<{ player: { id: string; full_name: string | null } }> }; away_team: { league_team_players?: Array<{ player: { id: string; full_name: string | null } }> } }
     setFixture(fx as LeagueFixture)
-    setMatchDate((fx as LeagueFixture).scheduled_date ?? '')
+    // scheduled_date je timestamptz (ISO); <input datetime-local> potrebuje "YYYY-MM-DDTHH:mm"
+    const sd = (fx as LeagueFixture).scheduled_date
+    setMatchDate(sd ? String(sd).slice(0, 16) : '')
+    setVenue((fx as LeagueFixture).venue ?? '')
     setChiefJudgeUserId((fx as LeagueFixture).chief_judge_id ?? '')
     setJudgeUserIds((fx as LeagueFixture).judge_ids ?? [])
 
@@ -224,6 +229,15 @@ export default function LeagueMatchScoresheet() {
     setChiefJudgeUserId(userId)
     const { error } = await supabase.from('league_fixtures').update({ chief_judge_id: userId || null }).eq('id', fixtureId)
     if (error) setMessage(`❌ Glavni sodnik ni shranjen: ${error.message}`)
+  }
+  // Samostojno shranjevanje urnika (datum/čas + kraj) — neodvisno od shranjevanja zapisnika.
+  async function saveSchedule(patch: { scheduled_date?: string; venue?: string }) {
+    if (!fixtureId) return
+    const upd: Record<string, string | null> = {}
+    if ('scheduled_date' in patch) upd.scheduled_date = patch.scheduled_date || null
+    if ('venue' in patch) upd.venue = patch.venue || null
+    const { error } = await supabase.from('league_fixtures').update(upd).eq('id', fixtureId)
+    if (error) setMessage(`❌ Urnik ni shranjen: ${error.message}`)
   }
 
   async function addJudgeUser(userId: string) {
@@ -311,7 +325,7 @@ export default function LeagueMatchScoresheet() {
     }
     await supabase.from('league_fixtures').update({
       home_score: homeTotal, away_score: awayTotal, status: 'completed',
-      scheduled_date: matchDate || null,
+      scheduled_date: matchDate || null, venue: venue || null,
     }).eq('id', fixtureId)
     setMessage(`✓ Zapisnik shranjen — Točke: ${homeTotal}:${awayTotal} · Punte: ${homePunt}:${awayPunt}`)
     setSaving(false)
@@ -390,26 +404,39 @@ export default function LeagueMatchScoresheet() {
 
       {/* Score header */}
       <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-5">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
           <p className="text-xs text-gray-400 uppercase tracking-widest">Zapisnik ligaške tekme</p>
-          {/* Datum tekme — vedno vidno, urejanje samo za admina/sodnika */}
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-400">Datum:</label>
-            {canEdit ? (
-              <input
-                type="date"
-                value={matchDate}
-                onChange={e => setMatchDate(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
-              />
-            ) : (
-              <span className="text-sm text-gray-600 font-medium">
-                {matchDate
-                  ? new Date(matchDate).toLocaleDateString('sl-SI', { day: 'numeric', month: 'numeric', year: 'numeric' })
-                  : '—'}
-              </span>
-            )}
-          </div>
+          {/* Urnik: datum+čas in kraj — samodejno shranjevanje ob spremembi */}
+          {canEdit ? (
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs text-gray-400">Datum in čas:</label>
+                <input
+                  type="datetime-local"
+                  value={matchDate}
+                  onChange={e => setMatchDate(e.target.value)}
+                  onBlur={e => saveSchedule({ scheduled_date: e.target.value })}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs text-gray-400">Kraj:</label>
+                <input
+                  type="text"
+                  value={venue}
+                  placeholder="balinišče"
+                  onChange={e => setVenue(e.target.value)}
+                  onBlur={e => saveSchedule({ venue: e.target.value })}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-sm w-32 focus:ring-2 focus:ring-bocce-green outline-none"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="text-right text-sm text-gray-600">
+              {matchDate && <div className="font-medium">{formatMatchDateTime(matchDate)}</div>}
+              {venue && <div className="text-xs text-gray-400">{venue}</div>}
+            </div>
+          )}
         </div>
         <div className="flex items-center justify-center gap-4 flex-wrap">
           <div className="text-right flex-1 min-w-[150px]">
