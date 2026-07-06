@@ -361,3 +361,64 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
 
   return { byCategory, seasonStatsByPlayer, cutoffLabel }
 }
+
+/**
+ * Statistika enega igralca za VSE odigrane ligaške sezone — neodvisno od
+ * drsečega rang-okna (ki starejše sezone poreže). Uporablja se na kartici
+ * igralca, da se izpišejo vse sezone (npr. 2023/24, 2024/25, 2025/26), ne le
+ * tiste znotraj rang cutoffa.
+ */
+export async function computePlayerSeasonStats(playerId: string): Promise<PlayerSeasonSummary[]> {
+  // Sezone, v katerih je igralec v postavi (isto kot »Ligaška pot«).
+  const { data: tp } = await supabase
+    .from('league_team_players')
+    .select('league_teams(season:league_seasons(id, name, tier, year, status))')
+    .eq('player_id', playerId)
+
+  const seasonMap = new Map<string, { id: string; name: string; tier: string; year: number; status: string }>()
+  for (const r of ((tp ?? []) as any[])) {
+    const s = r.league_teams?.season
+    if (s?.id) seasonMap.set(s.id, s)
+  }
+
+  const out = await Promise.all([...seasonMap.values()].map(async season => {
+    const { data: fixtures } = await supabase
+      .from('league_fixtures')
+      .select('id, season_id, round_number, home_team_id, away_team_id, home_score, away_score, status, scheduled_date')
+      .eq('season_id', season.id)
+    const fixtureIds = (fixtures ?? []).map(f => f.id)
+    if (!fixtureIds.length) return null
+
+    const [{ data: disciplines }, { data: matchResults }] = await Promise.all([
+      supabase.from('league_season_disciplines').select('*').eq('season_id', season.id),
+      supabase.from('league_match_results')
+        .select('*, discipline_results:league_match_discipline_results(*)')
+        .in('fixture_id', fixtureIds),
+    ])
+
+    const stats = aggregatePlayerStats(
+      (matchResults ?? []) as Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>,
+      (fixtures ?? []) as LeagueFixture[],
+      (disciplines ?? []) as LeagueSeasonDiscipline[],
+    )
+    const ps = stats.find(s => s.playerId === playerId)
+    if (!ps || ps.totalPlayed === 0) return null
+
+    const entry = calculateRang(ps, season.tier)
+    return {
+      seasonId: season.id,
+      seasonName: season.name,
+      tier: season.tier,
+      year: season.year,
+      status: season.status,
+      played: ps.totalPlayed,
+      matchPointsFor: ps.totalMatchPointsFor,
+      uspesnostPct: ps.totalPlayed > 0 ? ps.totalMatchPointsFor / (ps.totalPlayed * 2) : 0,
+      rang: entry.rang,
+      active: season.status === 'active',
+    } as PlayerSeasonSummary
+  }))
+
+  return (out.filter(Boolean) as PlayerSeasonSummary[])
+    .sort((a, b) => b.year - a.year || a.seasonName.localeCompare(b.seasonName))
+}
