@@ -326,11 +326,12 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     RANG_CATEGORIES.flatMap(cat => Object.keys(accByCat[cat])),
   ))
   const uuidIds = allIds.filter(id => UUID_RE.test(id))
+  // UUID-ji izhajajo iz igralnih pozicij / DP prijav — razrešimo jih ne glede
+  // na vlogo (igralec je lahko hkrati tudi sodnik in mora šteti kot igralec).
   const { data: users } = uuidIds.length > 0
-    ? await supabase.from('users').select('id, full_name, club, role').in('id', uuidIds)
+    ? await supabase.from('users').select('id, full_name, club').in('id', uuidIds)
     : { data: [] }
-  const playerUsers = (users ?? []).filter((u: { role?: string }) => u.role !== 'judge')
-  const userMap = Object.fromEntries(playerUsers.map((u: { id: string; full_name: string | null; club: string | null }) => [u.id, u]))
+  const userMap = Object.fromEntries((users ?? []).map((u: { id: string; full_name: string | null; club: string | null }) => [u.id, u]))
 
   function buildRows(catAcc: Record<string, PlayerAcc>): RangRow[] {
     return Object.keys(catAcc)
