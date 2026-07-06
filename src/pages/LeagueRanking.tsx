@@ -213,16 +213,23 @@ export function LeagueRanking() {
                               <p className="font-semibold text-gray-700 mb-2">Liga rang</p>
                               <div className="space-y-1">
                                 {row.ligaEntries.map(s => (
-                                  <div key={s.name} className="flex items-center gap-2">
+                                  <div key={s.name} className={`flex items-center gap-2 ${s.counted ? '' : 'opacity-40'}`}>
                                     <span className="px-2 py-0.5 rounded bg-bocce-green/10 text-bocce-green font-medium">
                                       {TIER_LABELS[s.tier] ?? s.tier}
                                     </span>
                                     <span className="text-gray-700 truncate">{s.name}</span>
-                                    <span className="ml-auto font-bold text-bocce-green shrink-0">
-                                      +{s.rang.toFixed(2)}
+                                    <span className="ml-auto font-bold shrink-0">
+                                      {s.counted
+                                        ? <span className="text-bocce-green">+{s.rang.toFixed(2)}</span>
+                                        : <span className="line-through text-gray-400" title="Dvojna registracija — šteje liga z višjim rangom">+{s.rang.toFixed(2)}</span>}
                                     </span>
                                   </div>
                                 ))}
+                                {row.ligaEntries.some(s => !s.counted) && (
+                                  <p className="text-[11px] text-gray-400 italic pt-1">
+                                    Dvojna registracija — v rang šteje liga z višjim rangom.
+                                  </p>
+                                )}
                               </div>
                             </div>
                           )}
