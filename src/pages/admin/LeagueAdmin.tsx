@@ -18,6 +18,18 @@ const OBZ_OPTIONS = [
   'Šaleška BZ', 'OBZ Ljubljana', 'OBZ Gorenjska', 'OBZ Maribor', 'OBZ Dolenjska',
 ]
 
+// Stolpci po ligah (vrstni red od leve proti desni). Znotraj stolpca: najsvežejša sezona zgoraj.
+const LEAGUE_COLUMNS: Array<{ label: string; match: (s: LeagueSeason) => boolean }> = [
+  { label: 'Super Liga', match: s => s.tier === 'super_liga' },
+  { label: '1. liga članice', match: s => s.tier === '1_liga' && s.category === 'women' },
+  { label: '1. liga člani', match: s => s.tier === '1_liga' && s.category === 'men' },
+  { label: '2. liga zahod', match: s => s.tier === '2_liga_zahod' },
+  { label: '2. liga vzhod', match: s => s.tier === '2_liga_vzhod' },
+  { label: 'U18', match: s => s.category === 'u18' },
+  { label: 'U14', match: s => s.category === 'u14' },
+]
+const seasonShort = (name: string) => name.match(/\d{4}\/\d{2}|\d{4}/)?.[0] ?? name
+
 interface SeasonForm {
   name: string
   year: number
@@ -375,17 +387,33 @@ export default function LeagueAdmin() {
         </div>
       )}
 
-      {seasons.length > 0 && (
-        <div className="flex gap-2 mb-6 flex-wrap">
-          {seasons.map(s => (
-            <button key={s.id} onClick={() => setSelectedSeason(s)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors
-                ${selectedSeason?.id === s.id ? 'bg-bocce-green text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              {s.name}
-            </button>
-          ))}
-        </div>
-      )}
+      {seasons.length > 0 && (() => {
+        const rest = seasons.filter(s => !LEAGUE_COLUMNS.some(c => c.match(s)))
+        const cols = [
+          ...LEAGUE_COLUMNS.map(c => ({ label: c.label, list: seasons.filter(c.match) })),
+          ...(rest.length ? [{ label: 'Ostalo', list: rest }] : []),
+        ].filter(c => c.list.length > 0)
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-6">
+            {cols.map(col => (
+              <div key={col.label} className="bg-gray-50 border border-gray-200 rounded-xl p-2">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wide px-1 mb-1.5 truncate" title={col.label}>
+                  {col.label}
+                </div>
+                <div className="space-y-1.5">
+                  {col.list.slice().sort((a, b) => b.year - a.year).map(s => (
+                    <button key={s.id} onClick={() => setSelectedSeason(s)} title={s.name}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors truncate
+                        ${selectedSeason?.id === s.id ? 'bg-bocce-green text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'}`}>
+                      {seasonShort(s.name)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {selectedSeason && (
         <>
