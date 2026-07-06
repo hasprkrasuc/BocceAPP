@@ -188,8 +188,23 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
       }),
     )
 
+    // Spol igralcev iz ligaških postav — za delitev U18 lige: punce štejejo v
+    // rang za mladinke (u18_women), fantje v u18.
+    const leaguePids = new Set<string>()
+    for (const b of bundles)
+      for (const mr of b.matchResults)
+        for (const dr of (mr.discipline_results ?? []))
+          for (const pid of [...(dr.home_players ?? []), ...(dr.away_players ?? [])])
+            if (pid) leaguePids.add(pid)
+    const genderMap: Record<string, string | null> = {}
+    const gArr = [...leaguePids].filter(id => UUID_RE.test(id))
+    for (let i = 0; i < gArr.length; i += 300) {
+      const { data: gs } = await supabase.from('users').select('id, gender').in('id', gArr.slice(i, i + 300))
+      for (const u of ((gs ?? []) as Array<{ id: string; gender: string | null }>)) genderMap[u.id] = u.gender
+    }
+
     for (const { season, fixtures, disciplines, matchResults, playerClub } of bundles) {
-      const cat = toRangCategory((season as { category?: string }).category)
+      const baseCat = toRangCategory((season as { category?: string }).category)
       const playerStats = aggregatePlayerStats(matchResults, fixtures, disciplines)
       for (const ps of playerStats) {
         if (ps.totalPlayed === 0) continue
@@ -210,7 +225,9 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
           active: season.status === 'active',
         })
 
-        // Rang akumulacija samo za eno od štirih kategorij
+        // Rang akumulacija — U18 liga: punce v u18_women, sicer po kategoriji sezone
+        let cat = baseCat
+        if (cat === 'u18' && genderMap[ps.playerId] === 'Ž') cat = 'u18_women'
         if (!cat) continue
         const a = ensureAcc(cat, ps.playerId)
         a.ligaRang += entry.rang
