@@ -21,15 +21,17 @@ export interface ResolvedPlayer {
 
 /**
  * Razreši seznam (UUID | ime) v zemljevid prikaznih imen + klubov.
- * UUID-je poišče v users (brez sodnikov); prosta imena pusti dobesedno.
+ * UUID-ji izhajajo iz igralnih pozicij (home/away players), zato jih razrešimo
+ * ne glede na vlogo — nekdo je lahko hkrati igralec IN sodnik; kot igralec
+ * mora imeti razrešeno ime (ne UUID). Prosta imena pustimo dobesedno.
  */
 export async function resolvePlayerNames(ids: string[]): Promise<Map<string, ResolvedPlayer>> {
   const { uuids, names } = splitPlayerIds(ids)
   const map = new Map<string, ResolvedPlayer>()
   for (const n of names) map.set(n, { full_name: n, club: null })
   if (uuids.length) {
-    const { data } = await supabase.from('users').select('id, full_name, club, role').in('id', uuids)
-    for (const u of (data ?? []).filter((x: { role?: string }) => x.role !== 'judge')) {
+    const { data } = await supabase.from('users').select('id, full_name, club').in('id', uuids)
+    for (const u of (data ?? [])) {
       map.set(u.id, { full_name: u.full_name ?? `?? ${u.id.slice(0, 8)}`, club: u.club ?? null })
     }
   }

@@ -5,7 +5,7 @@ import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
 import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams, birthYearOf, seasonStartYear, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
-import { computeRangLestvica, RANG_CATEGORY_LABELS, type PlayerSeasonSummary, type RangCategory } from '../lib/rangLestvica'
+import { computeRangLestvica, computePlayerSeasonStats, RANG_CATEGORY_LABELS, type PlayerSeasonSummary, type RangCategory } from '../lib/rangLestvica'
 import { findPlayerRankInCategories, type CategoryPlayerRank } from '../lib/findPlayerRank'
 
 interface LeagueEntry {
@@ -36,10 +36,10 @@ export default function PlayerDetail() {
   useEffect(() => {
     if (!id) return
     setRangLoading(true)
-    computeRangLestvica()
-      .then(({ byCategory, seasonStatsByPlayer }) => {
+    Promise.all([computeRangLestvica(), computePlayerSeasonStats(id)])
+      .then(([{ byCategory }, seasons]) => {
         setRankInfo(findPlayerRankInCategories(byCategory, id))
-        setSeasonStats(seasonStatsByPlayer[id] ?? [])
+        setSeasonStats(seasons)
       })
       .catch(() => { setRankInfo(null); setSeasonStats([]) })
       .finally(() => setRangLoading(false))
@@ -118,18 +118,10 @@ export default function PlayerDetail() {
   const age = calcAge(player.date_of_birth)
   const drEligible = isAgeEligible(player.date_of_birth, drRefYear)
 
-  // Prikaži aktivne sezone; če jih ni (aktualna sezona je zaključena), zadnjo zaključeno
-  const activeSeasons = seasonStats.filter(s => s.active)
-  const showActive = activeSeasons.length > 0
-  const displaySeasons = showActive
-    ? activeSeasons
-    : (() => {
-        const completed = seasonStats.filter(s => s.status === 'completed')
-        if (!completed.length) return []
-        const maxYear = Math.max(...completed.map(s => s.year))
-        return completed.filter(s => s.year === maxYear)
-      })()
-  const seasonCardTitle = showActive ? 'Aktualna sezona' : 'Zadnja sezona'
+  // Statistika za vse odigrane sezone (najnovejša zgoraj)
+  const displaySeasons = [...seasonStats].sort((a, b) =>
+    b.year - a.year || a.seasonName.localeCompare(b.seasonName))
+  const seasonCardTitle = 'Statistika po sezonah'
 
   async function approveDoubleReg() {
     if (!selectedSecondary || myTeams.length === 0) return
