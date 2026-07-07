@@ -35,49 +35,48 @@ const makeResult = (fixtureId: string, homeBoules: number, awayBoules: number): 
   }] as unknown as LeagueMatchDisciplineResult[],
 } as unknown as LeagueMatchResult & { discipline_results: LeagueMatchDisciplineResult[] })
 
-describe('calculateStandings — uvrstitev po seštevku match točk', () => {
-  it('rangira po pointsFor (osvojene match točke), ne po zmagah', () => {
-    const teams = [makeTeam('a', 'A'), makeTeam('b', 'B'), makeTeam('c', 'C')]
-    // A: 1 zmaga a visok izid; B: 2 zmagi a nizka izida -> A ima več match točk
-    const fixtures = [
-      makeFixture('f1', 'a', 'c', 22, 2),  // A +22
-      makeFixture('f2', 'b', 'c', 13, 11), // B +13
-      makeFixture('f3', 'b', 'a', 6, 18),  // B +6, A +18  => A=40, B=19
-    ]
-    const s = calculateStandings(teams, fixtures, makeSeason())
+describe('calculateStandings — uvrstitev (točke po zmagah + tiebreaki)', () => {
+  it('kriterij 1: točke po zmagah (zmaga 2 / remi 1 / poraz 0)', () => {
+    const teams = [makeTeam('a', 'A'), makeTeam('b', 'B')]
+    const s = calculateStandings(teams, [makeFixture('f1', 'a', 'b', 11, 7)], makeSeason())
     expect(s[0].team.id).toBe('a')
-    expect(s[0].points).toBe(40)     // points == pointsFor
-    expect(s[0].won).toBe(2)
+    expect(s[0].points).toBe(2)
+    expect(s[1].points).toBe(0)
   })
 
-  it('kriterij 2: medsebojni dvoboji ob enakem seštevku match točk', () => {
+  it('remi da obema 1 točko', () => {
+    const teams = [makeTeam('a', 'A'), makeTeam('b', 'B')]
+    const s = calculateStandings(teams, [makeFixture('f1', 'a', 'b', 10, 10)], makeSeason())
+    expect(s[0].points).toBe(1); expect(s[1].points).toBe(1); expect(s[0].drawn).toBe(1)
+  })
+
+  it('kriterij 2: ob enakih točkah odločajo medsebojni dvoboji (match točke)', () => {
     const teams = [makeTeam('a', 'A'), makeTeam('b', 'B'), makeTeam('c', 'C')]
     const fixtures = [
-      makeFixture('f1', 'a', 'b', 10, 14), // A10 B14
-      makeFixture('f2', 'b', 'a', 11, 13), // B11 A13  => H2H: A23 B25
-      makeFixture('f3', 'a', 'c', 22, 2),  // A+22
-      makeFixture('f4', 'b', 'c', 20, 4),  // B+20  => total A=45, B=45 (izenačeno)
+      makeFixture('f1', 'a', 'b', 10, 14), // B zmaga
+      makeFixture('f2', 'b', 'a', 11, 13), // A zmaga  => vsak 1Z/1P medsebojno; H2H match: A23 B25
+      makeFixture('f3', 'a', 'c', 20, 4),  // A zmaga
+      makeFixture('f4', 'b', 'c', 20, 4),  // B zmaga  => A in B: 2Z/1P => 4 točke (izenačeno)
     ]
     const s = calculateStandings(teams, fixtures, makeSeason())
-    expect(s[0].pointsFor).toBe(45)
-    expect(s[1].pointsFor).toBe(45)
+    expect(s[0].points).toBe(4); expect(s[1].points).toBe(4)
     expect(s[0].team.id).toBe('b') // B višje po medsebojnih (25 > 23)
     expect(s[1].team.id).toBe('a')
   })
 
-  it('kriterij 3: razlika boule točk v medsebojnih ob izenačenih match točkah in medsebojnih', () => {
+  it('kriterij 3: ob enakih točkah IN izenačenih medsebojnih odloča razlika boule točk', () => {
+    // Pivka/Sivke primer: vsak zmaga doma 16:8 -> H2H match točke 24:24, točke 2:2
     const teams = [makeTeam('a', 'A'), makeTeam('b', 'B')]
     const fixtures = [
-      makeFixture('f1', 'a', 'b', 12, 12), // match točke izenačene
-      makeFixture('f2', 'b', 'a', 12, 12),
+      makeFixture('f1', 'a', 'b', 16, 8), // A zmaga doma
+      makeFixture('f2', 'b', 'a', 16, 8), // B zmaga doma
     ]
-    // boule: f1 A169:B175 ; f2 B157:A146  => A=315, B=332 -> B višje
+    // boule: f1 A169:B175 ; f2 B157:A146  => A=315, B=332 -> B višje (razlika +17)
     const results = [makeResult('f1', 169, 175), makeResult('f2', 157, 146)]
     const s = calculateStandings(teams, fixtures, makeSeason(), results)
-    expect(s[0].pointsFor).toBe(24)
-    expect(s[1].pointsFor).toBe(24)
-    expect(s[0].team.id).toBe('b') // B: boule razlika +17
-    expect(s[0].boulesFor).toBe(332)
+    expect(s[0].points).toBe(2); expect(s[1].points).toBe(2)
+    expect(s[0].team.id).toBe('b')
+    expect(s[0].boulesFor).toBe(332); expect(s[1].boulesFor).toBe(315)
   })
 
   it('šteje odigrane, zmage, poraze; ignorira neodigrane', () => {
