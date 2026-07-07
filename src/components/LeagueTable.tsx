@@ -24,7 +24,7 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
             <th className="px-3 py-3 text-center w-10" title={sl.league.lost}>P</th>
             <th className="px-3 py-3 text-center w-16" title="Match točke za / proti (seštevek končnih izidov tekem)">T+/T-</th>
             <th className="px-3 py-3 text-center w-14" title="Razlika točk posameznih iger (boule) — tiebreak">Igre ±</th>
-            <th className="px-3 py-3 text-center w-14 font-bold" title="Uvrstitev: seštevek osvojenih match točk">Točke</th>
+            <th className="px-3 py-3 text-center w-14 font-bold" title="Točke: zmaga 2 · remi 1 · poraz 0">Točke</th>
           </tr>
         </thead>
         <tbody>
@@ -63,7 +63,7 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
         </tbody>
       </table>
       <p className="text-[11px] text-gray-400 px-3 py-2 border-t border-gray-100 leading-relaxed">
-        Uvrstitev: 1) seštevek osvojenih match točk · 2) medsebojni dvoboji · 3) razlika točk iger v medsebojnih · 4) skupna razlika točk iger.
+        Uvrstitev: 1) točke (zmaga 2 / remi 1 / poraz 0) · 2) medsebojni dvoboji · 3) razlika točk iger v medsebojnih · 4) skupna razlika točk iger.
       </p>
     </div>
   )

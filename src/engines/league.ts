@@ -3,13 +3,13 @@
  * Izračun lestvic za ekipna tekmovanja.
  *
  * URADNO PRAVILO UVRSTITVE (velja za vse lestvice):
- *   1. seštevek končnih izidov tekem  — več osvojenih MATCH točk (pointsFor) je višje
+ *   1. točke — zmaga 2, remi 1, poraz 0 (seštevek končnih izidov tekem)
  *   2. medsebojni dvoboji             — seštevek match točk v tekmah med izenačenimi ekipami
  *   3. razlika točk posameznih iger   — boule/disciplinski score razlika v medsebojnih dvobojih
  *   4. razlika v vseh igrah           — skupna boule razlika (vse tekme)
  *   (nato po imenu kluba, deterministično)
  *
- * Zmage/remiji/porazi (Z/N/P) se še vedno beležijo informativno, a NE določajo uvrstitve.
+ * Kriteriji 2–4 pridejo v poštev LE ob enakem številu točk (kriterij 1).
  */
 
 import type {
@@ -72,15 +72,15 @@ function sortStandings(
 ): TeamStats[] {
   for (const s of statsArr) { s.difference = s.pointsFor - s.pointsAgainst; s.bouleDiff = s.boulesFor - s.boulesAgainst }
 
-  // primarno: pointsFor (padajoče)
-  const arr = [...statsArr].sort((a, b) => b.pointsFor - a.pointsFor)
+  // primarno: točke (zmaga 2 / remi 1 / poraz 0), padajoče
+  const arr = [...statsArr].sort((a, b) => b.points - a.points)
 
-  // mini-liga znotraj skupin z enakim pointsFor
+  // mini-liga znotraj skupin z enakim številom točk
   const out: TeamStats[] = []
   let i = 0
   while (i < arr.length) {
     let j = i + 1
-    while (j < arr.length && arr[j].pointsFor === arr[i].pointsFor) j++
+    while (j < arr.length && arr[j].points === arr[i].points) j++
     const group = arr.slice(i, j)
     if (group.length > 1) rankTiedGroup(group, fixtures, boule)
     out.push(...group)
@@ -127,6 +127,9 @@ export function calculateStandings(
   season: Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points' | 'rounds_count'> | null,
   matchResults?: MatchResultWithDisc[],
 ): TeamStats[] {
+  const winPts  = season?.win_points  ?? 2
+  const drawPts = season?.draw_points ?? 1
+  const lossPts = season?.loss_points ?? 0
   const regularRounds = season?.rounds_count ?? Infinity
   const boule = bouleByFixture(matchResults)
 
@@ -144,7 +147,8 @@ export function calculateStandings(
     counted.push(fixture)
   }
 
-  for (const s of Object.values(stats)) s.points = s.pointsFor  // uvrstitvena vrednost = match točke
+  // Točke: zmaga 2 / remi 1 / poraz 0 (kriterij 1)
+  for (const s of Object.values(stats)) s.points = s.won * winPts + s.drawn * drawPts + s.lost * lossPts
   return sortStandings(Object.values(stats), counted, boule)
 }
 
@@ -176,9 +180,12 @@ export interface GroupStandings {
 export function calculateGroupStandings(
   teams: LeagueTeam[],
   fixtures: LeagueFixture[],
-  _season: Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points'> | null,
+  season: Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points'> | null,
   matchResults?: MatchResultWithDisc[],
 ): GroupStandings {
+  const winPts  = season?.win_points  ?? 2
+  const drawPts = season?.draw_points ?? 1
+  const lossPts = season?.loss_points ?? 0
   const boule = bouleByFixture(matchResults)
   const phase1A = fixtures.filter(f => f.group_label === 'A')
   const phase1B = fixtures.filter(f => f.group_label === 'B')
@@ -209,7 +216,7 @@ export function calculateGroupStandings(
       accumulate(h, a, f.home_score ?? 0, f.away_score ?? 0, boule[f.id])
       counted.push(f)
     }
-    for (const s of Object.values(stats)) s.points = s.pointsFor
+    for (const s of Object.values(stats)) s.points = s.won * winPts + s.drawn * drawPts + s.lost * lossPts
     return sortStandings(Object.values(stats), counted, boule)
   }
 
