@@ -8,6 +8,7 @@ export const sl = {
     statistics: 'Statistika',
     archive: 'Arhiv',
     ranking: 'Rang lestvica',
+    calendar: 'Koledar',
     profile: 'Moj profil',
     admin: 'Administracija',
     login: 'Prijava',

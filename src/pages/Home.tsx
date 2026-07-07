@@ -21,6 +21,20 @@ const CATEGORY_COLORS: Record<TournamentCategory, string> = {
 
 interface HomeStats { tournaments: number; players: number; matches: number }
 
+interface CalEvent {
+  id: string; start_date: string | null; end_date: string | null
+  category: string | null; location: string | null; title: string; raw_date: string | null
+}
+const calCategoryStyle = (cat: string | null): string => {
+  const c = (cat ?? '').toLowerCase()
+  if (c.includes('superliga')) return 'bg-bocce-gold/15 text-yellow-700 border-bocce-gold/30'
+  if (/\bu-?1[248]\b|mladin|deč|dekl/.test(c)) return 'bg-orange-100 text-orange-700 border-orange-200'
+  if (c.includes('liga')) return 'bg-bocce-green/10 text-bocce-green border-bocce-green/20'
+  if (c.includes('mednarodno') || c.includes('svetovni') || c.includes('evropsk')) return 'bg-blue-100 text-blue-700 border-blue-200'
+  if (c.includes('dp') || c.includes('prvenstvo') || c.includes('pokal')) return 'bg-purple-100 text-purple-700 border-purple-200'
+  return 'bg-gray-100 text-gray-600 border-gray-200'
+}
+
 type TeamRel = { club_name: string } | { club_name: string }[] | null
 interface FixtureLite {
   id: string
@@ -48,6 +62,7 @@ export default function Home() {
   const [tourUpc, setTourUpc] = useState<Tournament[]>([])
   const [tourDone, setTourDone] = useState<Tournament[]>([])
   const [stats, setStats] = useState<HomeStats>({ tournaments: 0, players: 0, matches: 0 })
+  const [weekEvents, setWeekEvents] = useState<CalEvent[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -78,6 +93,13 @@ export default function Home() {
       setTourUpc((tUpc.data ?? []) as Tournament[])
       setTourDone((tDone.data ?? []) as Tournament[])
       setStats({ tournaments: tCount ?? 0, players: pCount ?? 0, matches: (mCount ?? 0) + (lfCount ?? 0) })
+
+      // Koledarski dogodki v naslednjih 7 dneh (BZS koledar)
+      const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+      const { data: cal } = await supabase.from('calendar_events').select('id, start_date, end_date, category, location, title, raw_date')
+        .not('start_date', 'is', null).gte('start_date', today).lte('start_date', weekEnd).order('start_date')
+      setWeekEvents((cal ?? []) as CalEvent[])
+
       setLoading(false)
     }
     load()
@@ -176,6 +198,35 @@ export default function Home() {
             <div className="text-xs text-gray-500 mt-1">{s.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* Prihodnji teden — koledarski dogodki */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-bocce-green">📅 Prihodnji teden</h2>
+          <Link to="/koledar" className="text-bocce-green text-sm hover:underline">Koledar →</Link>
+        </div>
+        {loading ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />)}</div>
+        ) : weekEvents.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">V naslednjem tednu ni napovedanih dogodkov.</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {weekEvents.map(e => (
+              <Link key={e.id} to="/koledar"
+                className="block rounded-lg border border-gray-200 px-3 py-2 hover:border-bocce-green/40 hover:shadow-sm transition-all">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-gray-800">{e.raw_date}</span>
+                  {e.category && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${calCategoryStyle(e.category)}`}>{e.category}</span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-800 leading-snug mt-0.5 line-clamp-2">{e.title}</p>
+                {e.location && <p className="text-xs text-gray-500 truncate mt-0.5">📍 {e.location}</p>}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 3 stolpci */}
