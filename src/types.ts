@@ -314,10 +314,16 @@ export interface TeamStats {
   won: number
   drawn: number
   lost: number
+  /** Seštevek match točk (končnih izidov tekem) — za / proti. Uvrstitev primarno po pointsFor. */
   pointsFor: number
   pointsAgainst: number
   difference: number
+  /** Uvrstitvena vrednost = seštevek osvojenih match točk (== pointsFor). */
   points: number
+  /** Seštevek točk posameznih iger (boule/disciplinski score) — za / proti (tiebreak 3 & 4). */
+  boulesFor: number
+  boulesAgainst: number
+  bouleDiff: number
 }
 
 export interface KnockoutBracketResult {

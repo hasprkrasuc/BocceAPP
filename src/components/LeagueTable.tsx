@@ -22,9 +22,9 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
             <th className="px-3 py-3 text-center w-10" title={sl.league.won}>Z</th>
             <th className="px-3 py-3 text-center w-10" title={sl.league.drawn}>N</th>
             <th className="px-3 py-3 text-center w-10" title={sl.league.lost}>P</th>
-            <th className="px-3 py-3 text-center w-16" title="Točke za / Točke proti">T+/T-</th>
-            <th className="px-3 py-3 text-center w-12" title={sl.league.difference}>Razl.</th>
-            <th className="px-3 py-3 text-center w-12 font-bold" title={sl.league.points}>Pkt.</th>
+            <th className="px-3 py-3 text-center w-16" title="Match točke za / proti (seštevek končnih izidov tekem)">T+/T-</th>
+            <th className="px-3 py-3 text-center w-14" title="Razlika točk posameznih iger (boule) — tiebreak">Igre ±</th>
+            <th className="px-3 py-3 text-center w-14 font-bold" title="Uvrstitev: seštevek osvojenih match točk">Točke</th>
           </tr>
         </thead>
         <tbody>
@@ -50,9 +50,9 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
                 <td className="px-3 py-2.5 text-center text-gray-500">{row.drawn}</td>
                 <td className="px-3 py-2.5 text-center text-red-500">{row.lost}</td>
                 <td className="px-3 py-2.5 text-center text-gray-500 text-xs">{row.pointsFor}:{row.pointsAgainst}</td>
-                <td className={`px-3 py-2.5 text-center font-mono text-sm
-                  ${row.difference > 0 ? 'text-green-600' : row.difference < 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                  {row.difference > 0 ? '+' : ''}{row.difference}
+                <td className={`px-3 py-2.5 text-center font-mono text-xs
+                  ${row.bouleDiff > 0 ? 'text-green-600' : row.bouleDiff < 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                  {row.bouleDiff > 0 ? '+' : ''}{row.bouleDiff}
                 </td>
                 <td className={`px-3 py-2.5 text-center font-bold text-base ${isTop3 ? 'text-bocce-green' : 'text-gray-700'}`}>
                   {row.points}
@@ -62,6 +62,9 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
           })}
         </tbody>
       </table>
+      <p className="text-[11px] text-gray-400 px-3 py-2 border-t border-gray-100 leading-relaxed">
+        Uvrstitev: 1) seštevek osvojenih match točk · 2) medsebojni dvoboji · 3) razlika točk iger v medsebojnih · 4) skupna razlika točk iger.
+      </p>
     </div>
   )
 }
