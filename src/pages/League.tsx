@@ -333,8 +333,8 @@ export function LeagueDetail() {
   if (loading) return <div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-bocce-green" /></div>
   if (!season) return <div className="text-center py-12 text-gray-400">Sezona ni najdena</div>
 
-  const standings = calculateStandings(teams, fixtures, season)
-  const groupStandings = calculateGroupStandings(teams, fixtures, season)
+  const standings = calculateStandings(teams, fixtures, season, matchResults)
+  const groupStandings = calculateGroupStandings(teams, fixtures, season, matchResults)
   const byRound = getFixturesByRound(fixtures)
   const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b)
 
