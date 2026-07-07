@@ -64,8 +64,7 @@ function LeagueBox({ slot, season }: { slot: LeagueTreeSlot; season: SeasonWithC
         <span className="text-xs text-gray-400">· {m.sub}</span>
       </div>
       {season ? (
-        <div className="mt-1.5 flex items-center justify-between gap-3">
-          <span className="text-xs text-gray-500">Sezona {season.year}</span>
+        <div className="mt-1.5 flex items-center justify-end gap-3">
           <span className="text-xs text-gray-500">{season.league_teams?.[0]?.count ?? 0} ekip</span>
         </div>
       ) : (
@@ -81,54 +80,104 @@ function LeagueBox({ slot, season }: { slot: LeagueTreeSlot; season: SeasonWithC
 
 const Connector = () => <div className="w-0.5 h-5 bg-gray-300" />
 
+/** Oznaka sezone iz imena (npr. "2025/26"); fallback na leto. */
+const seasonLabel = (s: { name: string; year: number }): string =>
+  s.name.match(/\d{4}\/\d{2,4}/)?.[0] ?? String(s.year)
+
+/** Ligaško drevo za eno sezono: moška piramida + ženska liga + mladinske lige. */
+function LeagueTreeView({ tree }: { tree: Record<LeagueTreeSlot, SeasonWithCount | null> }) {
+  return (
+    <>
+      {/* Moška piramida (levo) + ženska liga (desno) */}
+      <div className="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
+        <div className="flex flex-col items-center">
+          <div className="w-full max-w-sm"><LeagueBox slot="super_liga" season={tree.super_liga} /></div>
+          <Connector />
+          <div className="w-full max-w-sm"><LeagueBox slot="1_liga" season={tree['1_liga']} /></div>
+          <Connector />
+          <div className="grid grid-cols-2 gap-3 w-full max-w-md">
+            <LeagueBox slot="2_liga_vzhod" season={tree['2_liga_vzhod']} />
+            <LeagueBox slot="2_liga_zahod" season={tree['2_liga_zahod']} />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-bold text-gray-400 tracking-wide mb-2">ŽENSKE</div>
+          <LeagueBox slot="1_liga_zenske" season={tree['1_liga_zenske']} />
+        </div>
+      </div>
+
+      {/* Mladinske lige (spodaj) */}
+      <div className="mt-10 pt-8 border-t border-dashed border-gray-200">
+        <h2 className="text-sm font-bold text-gray-500 tracking-wide mb-3">MLADINSKE LIGE</h2>
+        <div className="grid grid-cols-2 gap-3 max-w-md">
+          <LeagueBox slot="u14" season={tree.u14} />
+          <LeagueBox slot="u18" season={tree.u18} />
+        </div>
+      </div>
+    </>
+  )
+}
+
 export function LeagueList() {
   const [seasons, setSeasons] = useState<SeasonWithCount[]>([])
   const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     supabase.from('league_seasons').select('*, league_teams(count)').order('year', { ascending: false })
-      .then(({ data }) => { setSeasons((data ?? []) as SeasonWithCount[]); setLoading(false) })
+      .then(({ data }) => {
+        const list = (data ?? []) as SeasonWithCount[]
+        setSeasons(list)
+        const labels = [...new Set(list.map(seasonLabel))].sort((a, b) => b.localeCompare(a))
+        if (labels[0]) setOpen(new Set([labels[0]]))   // najnovejša sezona privzeto odprta
+        setLoading(false)
+      })
   }, [])
 
-  const tree = pickLeagueTreeSeasons(seasons)
+  // Skupine sezon po oznaki (npr. 2025/26), najnovejša prva; za vsako svoje drevo.
+  const groups = [...new Set(seasons.map(seasonLabel))]
+    .sort((a, b) => b.localeCompare(a))
+    .map(label => ({ label, tree: pickLeagueTreeSeasons(seasons.filter(s => seasonLabel(s) === label)) }))
+
+  const toggle = (label: string) => setOpen(prev => {
+    const next = new Set(prev)
+    if (next.has(label)) next.delete(label); else next.add(label)
+    return next
+  })
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-2">Državne lige</h1>
-      <p className="text-sm text-gray-500 mb-8">Ligaško drevo — klikni ligo za lestvico in razpored</p>
+      <p className="text-sm text-gray-500 mb-6">Izberi sezono, da se odpre drevo z vsemi ligami.</p>
 
       {loading ? (
-        <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-14 bg-gray-100 rounded-2xl animate-pulse" />)}</div>
+      ) : groups.length === 0 ? (
+        <p className="text-gray-400 italic">Ni razpisanih lig.</p>
       ) : (
-        <>
-          {/* Moška piramida (levo) + ženska liga (desno) */}
-          <div className="grid lg:grid-cols-[1fr_280px] gap-8 items-start">
-            <div className="flex flex-col items-center">
-              <div className="w-full max-w-sm"><LeagueBox slot="super_liga" season={tree.super_liga} /></div>
-              <Connector />
-              <div className="w-full max-w-sm"><LeagueBox slot="1_liga" season={tree['1_liga']} /></div>
-              <Connector />
-              <div className="grid grid-cols-2 gap-3 w-full max-w-md">
-                <LeagueBox slot="2_liga_vzhod" season={tree['2_liga_vzhod']} />
-                <LeagueBox slot="2_liga_zahod" season={tree['2_liga_zahod']} />
+        <div className="space-y-3">
+          {groups.map(({ label, tree }) => {
+            const isOpen = open.has(label)
+            return (
+              <div key={label} className="border border-gray-200 rounded-2xl overflow-hidden bg-white">
+                <button
+                  onClick={() => toggle(label)}
+                  aria-expanded={isOpen}
+                  className="w-full flex items-center justify-between gap-3 px-5 py-4 hover:bg-gray-50 transition-colors"
+                >
+                  <span className="text-lg font-bold text-gray-800">Sezona {label}</span>
+                  <span className={`text-gray-400 text-sm transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                </button>
+                {isOpen && (
+                  <div className="px-5 pb-8 pt-4 border-t border-gray-100">
+                    <LeagueTreeView tree={tree} />
+                  </div>
+                )}
               </div>
-            </div>
-
-            <div>
-              <div className="text-xs font-bold text-gray-400 tracking-wide mb-2">ŽENSKE</div>
-              <LeagueBox slot="1_liga_zenske" season={tree['1_liga_zenske']} />
-            </div>
-          </div>
-
-          {/* Mladinske lige (spodaj) */}
-          <div className="mt-10 pt-8 border-t border-dashed border-gray-200">
-            <h2 className="text-sm font-bold text-gray-500 tracking-wide mb-3">MLADINSKE LIGE</h2>
-            <div className="grid grid-cols-2 gap-3 max-w-md">
-              <LeagueBox slot="u14" season={tree.u14} />
-              <LeagueBox slot="u18" season={tree.u18} />
-            </div>
-          </div>
-        </>
+            )
+          })}
+        </div>
       )}
     </div>
   )
