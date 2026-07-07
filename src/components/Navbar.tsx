@@ -24,6 +24,7 @@ export default function Navbar() {
     { to: '/statistika', label: sl.nav.statistics },
     { to: '/arhiv', label: sl.nav.archive },
     { to: '/rang', label: sl.nav.ranking },
+    { to: '/koledar', label: sl.nav.calendar },
   ]
 
   const isActive = (path: string): boolean => path === '/'

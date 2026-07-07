@@ -14,6 +14,7 @@ import { ClubList, ClubDetail } from './pages/Clubs'
 import PlayerDetail from './pages/PlayerDetail'
 import { Statistics, Archive } from './pages/StatsAndArchive'
 import { LeagueRanking } from './pages/LeagueRanking'
+import Calendar from './pages/Calendar'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import TournamentAdmin from './pages/admin/TournamentAdmin'
 import TournamentEdit from './pages/admin/TournamentEdit'
@@ -62,6 +63,7 @@ export default function App() {
               <Route path="/statistika" element={<Statistics />} />
               <Route path="/arhiv" element={<Archive />} />
               <Route path="/rang" element={<LeagueRanking />} />
+              <Route path="/koledar" element={<Calendar />} />
               <Route path="/serije" element={<Series />} />
               <Route path="/serija/:id" element={<Series />} />
 
