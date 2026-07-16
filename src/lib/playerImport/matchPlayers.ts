@@ -1,9 +1,13 @@
 import type { ParsedPlayer, ExistingUser, ImportRow } from './types'
 import { isValidEmso } from './emso'
 
-const norm = (s: string | null): string =>
+// Deljeno tudi s strežniško funkcijo api/import-players.ts — ujemanje brez EMŠO
+// se mora na obeh straneh normalizirati enako, sicer predogled in uvoz razideta.
+export const normalizeName = (s: string | null): string =>
   (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/š/g, 's').replace(/ž/g, 'z').replace(/č/g, 'c').replace(/\s+/g, ' ').trim()
+
+const norm = normalizeName
 
 export function computeStatuses(
   players: ParsedPlayer[],

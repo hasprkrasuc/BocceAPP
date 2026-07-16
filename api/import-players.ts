@@ -2,15 +2,20 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 import type { ImportRequest, ImportReport } from '../src/lib/playerImport/types'
+import { normalizeName } from '../src/lib/playerImport/matchPlayers'
 
 const URL = process.env.SUPABASE_URL as string
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY as string
+
+const createAdminClient = () =>
+  createClient(URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+type AdminClient = ReturnType<typeof createAdminClient>
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   if (!URL || !SERVICE_KEY) return res.status(500).json({ error: 'Manjkata SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY' })
 
-  const admin = createClient(URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const admin = createAdminClient()
 
   // --- Avtorizacija: klicatelj mora biti admin ---
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
@@ -18,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: userData, error: uErr } = await admin.auth.getUser(token)
   if (uErr || !userData.user) return res.status(401).json({ error: 'Neveljavna seja' })
   const { data: me } = await admin.from('users').select('role').eq('id', userData.user.id).single()
-  if (!me || !['admin', 'super_admin'].includes(me.role)) return res.status(403).json({ error: 'Ni administrator' })
+  if (!me || !['admin', 'super_admin'].includes(me.role as string)) return res.status(403).json({ error: 'Ni administrator' })
 
   const body = req.body as ImportRequest
   if (!body?.club?.name || !body?.target?.seasonId || !Array.isArray(body.players)) {
@@ -28,44 +33,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const report: ImportReport = { clubCreated: false, teamCreated: false, created: 0, updated: 0, transferred: 0, addedToTeam: 0, skipped: [] }
 
   try {
+    const clubName = body.club.name.trim()
+
     // --- Klub (najdi/ustvari) ---
+    // Napake iskanja NIKOLI ne obravnavamo kot "ni najden": maybeSingle() vrne napako
+    // tudi ob >1 zadetku, kar bi sicer ustvarilo nov klub in razlastilo obstoječe članstvo.
     let clubId: string
-    const { data: existingClub } = await admin.from('clubs').select('id').ilike('name', body.club.name.trim()).maybeSingle()
+    const { data: existingClub, error: clubFindErr } = await admin
+      .from('clubs').select('id').ilike('name', clubName).maybeSingle()
+    if (clubFindErr) {
+      throw new Error(`Najdenih več klubov z imenom "${clubName}" — razreši podvojene klube. (${clubFindErr.message})`)
+    }
     if (existingClub) {
-      clubId = existingClub.id
+      clubId = existingClub.id as string
     } else {
       const notes = [body.club.regId ? `Matična: ${body.club.regId}` : '', body.club.taxId ? `Davčna: ${body.club.taxId}` : ''].filter(Boolean).join(' · ')
       const { data: newClub, error } = await admin.from('clubs').insert({
-        name: body.club.name.trim(), contact_name: body.club.contactName, contact_email: body.club.email,
+        name: clubName, contact_name: body.club.contactName, contact_email: body.club.email,
         contact_phone: body.club.phone, notes: notes || null,
       }).select('id').single()
       if (error) throw new Error(`Klub: ${error.message}`)
-      clubId = newClub.id
+      clubId = newClub.id as string
       report.clubCreated = true
     }
 
     // --- Ligaška ekipa (najdi/ustvari) ---
+    // Brez iskanja bi ponovni uvoz ustvaril drugo ekipo in vanjo znova vpisal vse igralce.
     let teamId: string
     if (body.target.teamId) {
       teamId = body.target.teamId
     } else {
-      const clubName = (body.target.newTeamClubName || body.club.name).trim()
-      const { data: newTeam, error } = await admin.from('league_teams').insert({
-        season_id: body.target.seasonId, club_name: clubName,
-      }).select('id').single()
-      if (error) throw new Error(`Ekipa: ${error.message}`)
-      teamId = newTeam.id
-      report.teamCreated = true
+      const teamClubName = (body.target.newTeamClubName || body.club.name).trim()
+      const { data: existingTeam, error: teamFindErr } = await admin
+        .from('league_teams').select('id')
+        .eq('season_id', body.target.seasonId).eq('club_name', teamClubName).maybeSingle()
+      if (teamFindErr) {
+        throw new Error(`Najdenih več ekip "${teamClubName}" v tej sezoni — razreši podvojene ekipe. (${teamFindErr.message})`)
+      }
+      if (existingTeam) {
+        teamId = existingTeam.id as string
+      } else {
+        const { data: newTeam, error } = await admin.from('league_teams').insert({
+          season_id: body.target.seasonId, club_name: teamClubName,
+        }).select('id').single()
+        if (error) throw new Error(`Ekipa: ${error.message}`)
+        teamId = newTeam.id as string
+        report.teamCreated = true
+      }
     }
 
     // --- Igralci ---
     for (const p of body.players) {
+      let userId: string | null = null
+      let createdHere = false
       try {
-        let userId: string | null = null
         let prevClubId: string | null = null
+
         if (p.emso) {
-          const { data: found } = await admin.from('users').select('id, club_id').eq('emso', p.emso).maybeSingle()
-          if (found) { userId = found.id; prevClubId = found.club_id }
+          const { data: found, error: findErr } = await admin
+            .from('users').select('id, club_id').eq('emso', p.emso).maybeSingle()
+          if (findErr) throw new Error(`Iskanje po EMŠO: ${findErr.message}`)
+          if (found) { userId = found.id as string; prevClubId = (found.club_id as string | null) ?? null }
+        } else if (p.birthDate) {
+          // Brez EMŠO ujemamo po normaliziranem imenu + datumu rojstva (enako kot predogled),
+          // sicer bi vsak uvoz ustvaril nov račun za istega igralca.
+          const match = await matchByNameAndBirth(admin, p.fullName, p.birthDate)
+          if (match) { userId = match.id; prevClubId = match.club_id }
+        } else {
+          throw new Error('Brez EMŠO in datuma rojstva — ne morem varno ujeti (preskočeno, da ne podvojim)')
         }
 
         if (!userId) {
@@ -77,13 +112,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           })
           if (cErr || !created.user) throw new Error(cErr?.message || 'Napaka pri ustvarjanju računa')
           userId = created.user.id
-          report.created++
-        } else {
-          if (prevClubId && prevClubId !== clubId) report.transferred++
-          else report.updated++
+          createdHere = true
         }
 
-        const patch: Record<string, unknown> = { full_name: p.fullName, club_id: clubId, club: body.club.name.trim() }
+        const patch: Record<string, unknown> = { full_name: p.fullName, club_id: clubId, club: clubName }
         const optional: [string, unknown][] = [
           ['gender', p.gender], ['date_of_birth', p.birthDate], ['emso', p.emso],
           ['birth_city', p.birthCity], ['birth_country', p.birthCountry], ['citizenship', p.citizenship],
@@ -94,15 +126,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { error: upErr } = await admin.from('users').update(patch).eq('id', userId)
         if (upErr) throw new Error(`Profil: ${upErr.message}`)
 
-        const { data: onTeam } = await admin.from('league_team_players')
+        const { data: onTeam, error: rosterFindErr } = await admin.from('league_team_players')
           .select('id').eq('league_team_id', teamId).eq('player_id', userId).maybeSingle()
+        if (rosterFindErr) throw new Error(`Roster: ${rosterFindErr.message}`)
+        let addedToTeam = false
         if (!onTeam) {
           const { error: tErr } = await admin.from('league_team_players').insert({ league_team_id: teamId, player_id: userId })
           if (tErr) throw new Error(`Roster: ${tErr.message}`)
-          report.addedToTeam++
+          addedToTeam = true
         }
+
+        // Števci šele po zadnjem uspešnem pisanju — sicer bi igralec, ki kasneje pade,
+        // štel hkrati med created in skipped.
+        if (createdHere) report.created++
+        else if (prevClubId && prevClubId !== clubId) report.transferred++
+        else report.updated++
+        if (addedToTeam) report.addedToTeam++
       } catch (e) {
-        report.skipped.push({ player: p.fullName, reason: e instanceof Error ? e.message : String(e) })
+        let reason = e instanceof Error ? e.message : String(e)
+        // Račun, ki smo ga ustvarili v tej iteraciji, moramo pospraviti: profil ostane brez
+        // EMŠO, zato ga naslednji uvoz ne bi našel in bi ustvaril še enega — vsakič znova.
+        if (createdHere && userId) {
+          try {
+            // deleteUser napake vrne v rezultatu (ne vrže), zato preverimo oboje —
+            // sicer bi neuspelo čiščenje poročali kot uspešno razveljavitev.
+            const { error: delErr } = await admin.auth.admin.deleteUser(userId)
+            if (delErr) throw new Error(delErr.message)
+            reason += ' (ustvarjeni račun je bil razveljavljen)'
+          } catch (delErr) {
+            reason += ` (POZOR: ustvarjenega računa ${userId} ni bilo mogoče razveljaviti: ${delErr instanceof Error ? delErr.message : String(delErr)})`
+          }
+        }
+        report.skipped.push({ player: p.fullName, reason })
       }
     }
 
@@ -110,4 +165,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : String(e), report })
   }
+}
+
+/** Ujemanje brez EMŠO: kandidate zožimo po datumu rojstva, ime primerjamo normalizirano v JS. */
+async function matchByNameAndBirth(
+  admin: AdminClient,
+  fullName: string,
+  birthDate: string,
+): Promise<{ id: string; club_id: string | null } | null> {
+  const { data, error } = await admin
+    .from('users').select('id, full_name, club_id').eq('date_of_birth', birthDate)
+  if (error) throw new Error(`Iskanje po imenu in datumu rojstva: ${error.message}`)
+  const target = normalizeName(fullName)
+  const hits = (data ?? []).filter(u => normalizeName(u.full_name as string | null) === target)
+  if (hits.length > 1) {
+    throw new Error(`Najdenih več igralcev "${fullName}" z istim datumom rojstva — brez EMŠO ne morem razločiti`)
+  }
+  if (hits.length === 0) return null
+  return { id: hits[0].id as string, club_id: (hits[0].club_id as string | null) ?? null }
 }
