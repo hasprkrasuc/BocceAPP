@@ -7,7 +7,9 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../supabase'
 import { parseRegistrationFile } from '../../lib/playerImport/parseRegistrationXlsx'
 import { computeStatuses } from '../../lib/playerImport/matchPlayers'
-import type { ExistingUser, ImportReport, ImportRow, ParseResult } from '../../lib/playerImport/types'
+import { parseBirthDate } from '../../lib/playerImport/parseDate'
+import { isValidEmso, normalizeEmso } from '../../lib/playerImport/emso'
+import type { ExistingUser, ImportReport, ImportRow, ParseResult, ParsedPlayer, Gender } from '../../lib/playerImport/types'
 
 interface SeasonOption { id: string; name: string }
 interface TeamOption { id: string; club_name: string }
@@ -312,6 +314,242 @@ export default function PlayerImport() {
           )}
         </div>
       )}
+
+      <AddSinglePlayer
+        seasonId={seasonId}
+        teamId={teamId}
+        newTeamName={newTeamName}
+        clubName={parsed?.club.name || newTeamName}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Ročni vnos enega igralca med sezono (klub se registrira po začetku sezone)
+// ---------------------------------------------------------------------------
+
+interface AddSinglePlayerProps {
+  seasonId: string
+  teamId: string
+  newTeamName: string
+  clubName: string
+}
+
+function AddSinglePlayer({ seasonId, teamId, newTeamName, clubName }: AddSinglePlayerProps) {
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [emso, setEmso] = useState('')
+  const [birthDateInput, setBirthDateInput] = useState('')
+  const [gender, setGender] = useState<Gender>('M')
+
+  const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [report, setReport] = useState<ImportReport | null>(null)
+
+  function resetForm() {
+    setFirstName('')
+    setLastName('')
+    setEmso('')
+    setBirthDateInput('')
+    setGender('M')
+  }
+
+  async function onSubmit() {
+    setFormError(null)
+    setReport(null)
+
+    if (!seasonId || !lastName.trim()) {
+      setFormError('Izberi sezono in vpiši priimek.')
+      return
+    }
+    if (!clubName.trim()) {
+      setFormError('Najprej izberi ekipo ali vpiši ime kluba.')
+      return
+    }
+
+    const emsoTrimmed = emso.trim()
+    const dateTrimmed = birthDateInput.trim()
+
+    let normalizedBirthDate: string | null = null
+    if (dateTrimmed) {
+      normalizedBirthDate = parseBirthDate(dateTrimmed)
+      if (!normalizedBirthDate) {
+        setFormError('Neveljaven datum (uporabi npr. 6.5.2010)')
+        return
+      }
+    }
+
+    if (emsoTrimmed && !isValidEmso(emsoTrimmed)) {
+      setFormError('Neveljaven EMŠO')
+      return
+    }
+
+    if (!emsoTrimmed && !dateTrimmed) {
+      setFormError('Vpiši vsaj EMŠO ali datum rojstva (sicer igralca ne morem varno ujeti in bi ga ob ponovnem uvozu podvojil).')
+      return
+    }
+
+    const fullName = `${firstName} ${lastName}`.replace(/\s+/g, ' ').trim()
+
+    const player: ParsedPlayer = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      fullName,
+      gender,
+      birthDate: normalizedBirthDate,
+      emso: emsoTrimmed ? normalizeEmso(emsoTrimmed) : null,
+      birthCity: null,
+      birthCountry: null,
+      citizenship: null,
+      addressStreet: null,
+      addressHouse: null,
+      addressPostal: null,
+      addressCity: null,
+      sportNumber: null,
+      rowIndex: 0,
+    }
+
+    setBusy(true)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+
+      const res = await fetch('/api/import-players', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          club: {
+            name: clubName,
+            season: null,
+            regId: null,
+            taxId: null,
+            mailAddress: null,
+            contactName: null,
+            phone: null,
+            email: null,
+          },
+          target: {
+            seasonId,
+            teamId: teamId || null,
+            newTeamClubName: teamId ? null : newTeamName,
+          },
+          players: [player],
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Dodajanje ni uspelo')
+
+      const result = json as ImportReport
+      setReport(result)
+
+      const succeeded = (result.created > 0 || result.addedToTeam > 0) && result.skipped.length === 0
+      if (succeeded) resetForm()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-6 mt-6">
+      <h2 className="font-semibold text-gray-800 mb-1">Dodaj posameznega igralca</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Za registracijo enega igralca med sezono (klub se je pridružil pozneje).
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Ime</label>
+          <input
+            type="text"
+            value={firstName}
+            onChange={e => setFirstName(e.target.value)}
+            className="w-full border rounded p-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Priimek</label>
+          <input
+            type="text"
+            value={lastName}
+            onChange={e => setLastName(e.target.value)}
+            className="w-full border rounded p-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">EMŠO</label>
+          <input
+            type="text"
+            value={emso}
+            onChange={e => setEmso(e.target.value)}
+            placeholder="13 števk"
+            className="w-full border rounded p-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Datum rojstva</label>
+          <input
+            type="text"
+            value={birthDateInput}
+            onChange={e => setBirthDateInput(e.target.value)}
+            placeholder="npr. 6.5.2010"
+            className="w-full border rounded p-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Spol</label>
+          <select
+            value={gender}
+            onChange={e => setGender(e.target.value as Gender)}
+            className="w-full border rounded p-2 text-sm"
+          >
+            <option value="M">M</option>
+            <option value="Ž">Ž</option>
+          </select>
+        </div>
+      </div>
+
+      {formError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-4 text-sm">
+          {formError}
+        </div>
+      )}
+
+      {report && (
+        <div className="mb-4">
+          {report.skipped.length > 0 ? (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl px-4 py-3">
+              <p className="text-sm font-bold text-red-700">
+                ⚠ Igralec NI bil dodan
+              </p>
+              {report.skipped.map((s, i) => (
+                <p key={i} className="text-sm text-red-700 mt-1">
+                  <span className="font-medium">{s.player}</span>: {s.reason}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3 text-sm">
+              Igralec dodan (novih: {report.created}, dodanih v ekipo: {report.addedToTeam}).
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          onClick={onSubmit}
+          disabled={busy}
+          className="bg-bocce-green text-white text-sm font-medium px-5 py-2.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {busy ? 'Dodajam …' : 'Dodaj igralca'}
+        </button>
+      </div>
     </div>
   )
 }
