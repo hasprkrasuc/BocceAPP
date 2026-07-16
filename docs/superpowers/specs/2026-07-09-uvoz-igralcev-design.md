@@ -80,17 +80,20 @@ Standardni obrazec (ena datoteka = en klub). Struktura (potrjeno na `Begunje.xls
 - **Ključ ujemanja = EMŠO.** Če EMŠO manjka: rezervno ujemanje po `full_name` + `date_of_birth`; če tudi to ne najde, ustvari novega.
 - **Obstoječi igralec:** posodobi `club_id` (na uvozni klub), dopolni manjkajoče (naslov, datum, spol, EMŠO); NE prepiše že obstoječih ne-praznih polj po nepotrebnem (varno spajanje).
 - **Prestop** (EMŠO obstaja, drug `club_id`): **premakne v nov klub** (posodobi `club_id`) — potrjena odločitev.
-- **Idempotentno:** ponovni uvoz iste datoteke ne podvaja (EMŠO dedup) → varno za popravke in dodajanje novega igralca prek ponovnega uvoza.
+- **Idempotentno + poročilo (O4):** vsak igralec se obdela posebej; ob napaki pri enem se ta prijavi v poročilu, ostali se vseeno uvozijo. Ker je vse idempotentno (EMŠO dedup, roster "insert if not exists"), je ponovni zagon po popravku varen — ne podvaja. (Popolna vse-ali-nič transakcija ni izvedljiva, ker gre ustvarjanje računa skozi ločen Auth API, ne skozi bazo.)
 
 ## 6. Arhitektura
 
 - **Frontend (admin stran):** parsiranje Excela v brskalniku z `xlsx` (že v projektu). Sestavi seznam normaliziranih zapisov + predogled statusov (ujemanje po EMŠO prek branja `users` z anon/authenticated ključem — branje je javno dovoljeno).
-- **Backend (Supabase Edge Function, service role):** sprejme `{ klub, ciljna_ekipa_id, igralci[] }`, atomarno:
-  1. najde/ustvari `clubs` vrstico,
-  2. za vsak zapis: najde po EMŠO ali ustvari `auth.users` (prožilec `handle_new_user` ustvari `public.users`), nato **posodobi** `public.users` z vsemi polji + `club_id`,
-  3. vstavi `league_team_players` (če še ni),
-  4. vrne poročilo.
-- **Zakaj Edge Function:** `public.users.id` je FK na `auth.users(id)` → ustvarjanje igralca zahteva `auth.admin.createUser` (service role), ki v brskalniku ni dovoljen.
+- **Backend (Vercel serverless funkcija `/api/import-players`, service role):** sprejme `{ klub, ciljna_ekipa, igralci[] }`:
+  1. preveri, da je klicatelj admin (Bearer token → preveri vlogo),
+  2. najde/ustvari `clubs` vrstico,
+  3. najde/ustvari ciljno `league_teams` vrstico,
+  4. za vsak zapis: najde po EMŠO ali ustvari `auth.users` (prožilec `handle_new_user` ustvari `public.users`), nato **posodobi** `public.users` z vsemi polji + `club_id`,
+  5. vstavi `league_team_players` (če še ni),
+  6. vrne poročilo.
+- **Zakaj strežniška funkcija:** `public.users.id` je FK na `auth.users(id)` → ustvarjanje igralca zahteva `auth.admin.createUser` (service role), ki v brskalniku ni dovoljen.
+- **Zakaj Vercel (ne Supabase Edge Function):** projekt nima nastavljenih Edge Functions, je pa v celoti na Vercelu → serverless funkcija se deploya z istim `git push`, service-role ključ je varno shranjen kot Vercel okoljska spremenljivka (samo strežnik). `vercel.json` rewrite se prilagodi, da `/api/*` ne preusmeri na SPA.
 - **Prijavni računi:** ustvarijo se s sintetičnim e-naslovom (`ime.priimek.<uuid>@balinar.app`) in naključnim geslom (igralci se lahko kasneje registrirajo/ponastavijo). Vzorec kot pri obstoječih uvozih.
 
 ## 7. Robni primeri in varovala
@@ -121,4 +124,4 @@ Standardni obrazec (ena datoteka = en klub). Struktura (potrjeno na `Begunje.xls
 - **O1 — `address_city`:** doda se nov stolpec `users.address_city` (majhna migracija); Excel "Kraj" (bivališče) se mapira vanj.
 - **O2 — matična/davčna št. kluba:** shrani se v `clubs.notes` (npr. "Matična: … · Davčna: …").
 - **O3 — ustvarjanje ekipe:** uvoz zna tudi **ustvariti** ligaško ekipo v izbrani ligi, če še ne obstaja (odpade ročni korak "Dodaj ekipo"). V UI: izbereš sezono+ligo, nato obstoječo ekipo ALI vpišeš novo (ime iz glave Excela je predlagano).
-- **O4 — atomarnost:** cel uvoz je **ena transakcija (vse ali nič)** za predvidljivost; ob napaki se razveljavi in poroča vzrok.
+- **O4 — atomarnost:** popolna vse-ali-nič transakcija ni izvedljiva (ustvarjanje računa gre skozi Auth API, ne DB). Namesto tega: **idempotentna obdelava po igralcu + poročilo** — ob napaki pri enem se prijavi, ostali se uvozijo; ponovni zagon je varen (EMŠO dedup).
