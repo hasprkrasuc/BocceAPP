@@ -258,10 +258,12 @@ export function nextKnockoutStage(
 // ────────────────────────────────────────────────────────────────
 export function teamDisplayName(registration: TournamentRegistration | null | undefined): string {
   if (!registration) return '???'
-  const p1 = registration.player1?.full_name?.split(' ').at(-1) ?? '?'
+  // Gost (neregistriran/tuji igralec) nima uporabniškega zapisa → uporabi prosto ime.
+  const lastName = (full: string | null | undefined) => full?.split(' ').at(-1) ?? '?'
+  const p1 = registration.player1 ? lastName(registration.player1.full_name) : lastName(registration.player1_name)
   // Posamezna disciplina: prijava nima drugega igralca → prikaži samo eno ime
-  if (!registration.player2_id && !registration.player2) return p1
-  const p2 = registration.player2?.full_name?.split(' ').at(-1) ?? '?'
+  if (!registration.player2_id && !registration.player2 && !registration.player2_name) return p1
+  const p2 = registration.player2 ? lastName(registration.player2.full_name) : lastName(registration.player2_name)
   return `${p1} / ${p2}`
 }
 

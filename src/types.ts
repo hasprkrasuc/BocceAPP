@@ -89,8 +89,12 @@ export interface Tournament {
 export interface TournamentRegistration {
   id: string
   tournament_id: string
-  player1_id: string
+  /** UUID registriranega igralca; NULL, kadar je igralec 1 gost (neregistriran/tuji). */
+  player1_id: string | null
   player2_id: string | null
+  /** Prosto ime gosta (neregistriran pri BZS / tuji igralec), kadar player1_id ni nastavljen. */
+  player1_name: string | null
+  player2_name: string | null
   status: RegistrationStatus
   registered_at: string
   player1?: UserProfile
