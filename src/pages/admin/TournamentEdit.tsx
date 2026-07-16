@@ -108,6 +108,20 @@ export default function TournamentEdit() {
     await load()
   }
 
+  async function deleteRegistration(regId: string) {
+    // Trajni izbris (napačna prijava). group_teams se počisti prek ON DELETE CASCADE.
+    if (!window.confirm('Trajno izbrišem to prijavo? Tega ni mogoče razveljaviti.')) return
+    setMessage('')
+    const { error: err } = await supabase
+      .from('tournament_registrations')
+      .delete()
+      .eq('id', regId)
+    if (err) { setMessage(`❌ Napaka: ${err.message}`); return }
+    setMessage('✓ Prijava izbrisana')
+    if (editingRegId === regId) setEditingRegId(null)
+    await load()
+  }
+
   async function loadPlayers() {
     if (players.length > 0) return
     // Vsi z vlogo 'player' + člani ligaških postav z drugo vlogo (sodniki/admini,
@@ -592,6 +606,8 @@ export default function TournamentEdit() {
                         className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-200 transition-colors">Potrdi</button>
                       <button onClick={() => rejectRegistration(r.id)}
                         className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors">Zavrni</button>
+                      <button onClick={() => deleteRegistration(r.id)}
+                        className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors">Izbriši</button>
                     </div>
                   </div>
                 ))}
@@ -608,10 +624,16 @@ export default function TournamentEdit() {
                       <span className="font-medium text-gray-800">{r.player1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.player2_name}` : ''}</span>
                       <p className="text-xs text-gray-500">{r.player1?.club ?? '—'} · {new Date(r.registered_at).toLocaleDateString('sl')}</p>
                     </div>
-                    <button onClick={() => confirmRegistration(r.id)}
-                      className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-200 transition-colors">
-                      Obnovi
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => confirmRegistration(r.id)}
+                        className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-200 transition-colors">
+                        Obnovi
+                      </button>
+                      <button onClick={() => deleteRegistration(r.id)}
+                        className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors">
+                        Izbriši
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -683,6 +705,7 @@ export default function TournamentEdit() {
                             <button onClick={() => startEdit(r)} className="text-xs text-bocce-green hover:text-bocce-green-light">✎ Uredi</button>
                           )}
                           <button onClick={() => rejectRegistration(r.id)} className="text-xs text-red-500 hover:text-red-700">Zavrni</button>
+                          <button onClick={() => deleteRegistration(r.id)} className="text-xs text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded">Izbriši</button>
                         </div>
                       </div>
                     )}
