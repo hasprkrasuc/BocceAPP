@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
+import { loadTournamentPlayers } from '../lib/tournamentPlayers'
 import { useAuth } from '../contexts/AuthContext'
 import GroupBracket from '../components/GroupBracket'
 import KnockoutBracket from '../components/KnockoutBracket'
@@ -217,8 +218,9 @@ export function TournamentDetail() {
   }
 
   async function loadPlayers() {
-    const { data } = await supabase.from('users').select('id, full_name, club').eq('role', 'player').order('full_name')
-    setPlayers((data ?? []) as PlayerOption[])
+    // Vključi tudi igralce-sodnike/admine, ki so v ligaških postavah.
+    const all = await loadTournamentPlayers('id, full_name, club')
+    setPlayers(all as PlayerOption[])
   }
 
   async function handleRegister() {
