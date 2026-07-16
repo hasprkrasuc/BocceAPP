@@ -6,11 +6,20 @@ import { isPairDiscipline } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile } from '../../types'
 import { drawKnockout } from '../../lib/knockoutDraw'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
+import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 
 type Tab = 'registrations' | 'draw' | 'knockout'
 
 function toRangCat(cat: string): RangCategory | null {
   return cat === 'men' || cat === 'women' || cat === 'u18' ? cat : null
+}
+
+/** Najstarejši dovoljen letnik za mladinske serije/turnirje (letnik 2008 ali mlajši). */
+const YOUTH_MIN_BIRTH_YEAR = 2008
+
+/** Ali je kategorija mladinska (U-12/U-14/U-15/U-18, vključno z U-18 mladinke)? */
+function isYouthCategory(cat: string | null | undefined): boolean {
+  return youthLevel(cat) !== null || cat === 'u18_women'
 }
 
 export default function TournamentEdit() {
@@ -103,7 +112,7 @@ export default function TournamentEdit() {
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await supabase
         .from('users')
-        .select('id, full_name, club, club_id')
+        .select('id, full_name, club, club_id, date_of_birth')
         .eq('role', 'player')
         .order('full_name')
         .range(from, from + pageSize - 1)
@@ -112,7 +121,18 @@ export default function TournamentEdit() {
       all.push(...batch)
       if (batch.length < pageSize) break
     }
-    setPlayers(all)
+    // Mladinske serije/turnirji: pokaži le igralce letnika 2008 ali mlajše.
+    // Igralci brez (razberljivega) datuma rojstva se izpustijo, ker starosti ni
+    // mogoče preveriti. date_of_birth je lahko ISO ali pikčasti BZS zapis, zato
+    // uporabimo birthYearOf (robusten razčlenjevalnik).
+    if (isYouthCategory(tournament?.category)) {
+      setPlayers(all.filter(p => {
+        const y = birthYearOf(p.date_of_birth)
+        return y !== null && parseInt(y, 10) >= YOUTH_MIN_BIRTH_YEAR
+      }))
+    } else {
+      setPlayers(all)
+    }
   }
 
   function startEdit(reg: TournamentRegistration) {
