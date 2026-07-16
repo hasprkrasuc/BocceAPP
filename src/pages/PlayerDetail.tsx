@@ -155,7 +155,7 @@ export default function PlayerDetail() {
     setDrSubmitting(false)
   }
   const categoryLabel: Record<string, string> = {
-    men: 'Člani', women: 'Članice', u18: 'U-18', u18_women: 'U-18 ž.', u15: 'U-15', u12: 'U-12',
+    men: 'Člani', women: 'Članice', u18: 'U-18', u18_women: 'U-18 ž.', u15: 'U-15', u14: 'U-14', u12: 'U-12',
   }
 
   const totalStats = stats.reduce((acc, s) => ({
