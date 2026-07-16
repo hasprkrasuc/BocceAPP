@@ -162,18 +162,22 @@ export function parseRegistrationRows(rows: unknown[][]): ParseResult {
     const row = rows[i]
     if (!row || row.length === 0) continue
 
-    const firstCell = cellText(row, 0)
-    const imeCell = cellText(row, cols.ime)
-
-    if (STOP_PATTERN.test(firstCell) || STOP_PATTERN.test(imeCell)) {
+    // Noga se lahko zaradi združenih celic pojavi v katerikoli stolpec.
+    if (row.some((_, idx) => STOP_PATTERN.test(cellText(row, idx)))) {
       break
     }
 
     const firstName = cellText(row, cols.ime)
     const lastName = cellText(row, cols.priimek)
 
-    if (!firstName && !lastName) continue
-    if (!lastName) continue
+    if (!lastName) {
+      // Opozori le, če vrstica dejansko izgleda kot podatek (ne prazna, ne pod-glava).
+      const emsoHasDigits = /\d/.test(cellText(row, cols.emso))
+      if (firstName || emsoHasDigits) {
+        warnings.push(`Vrstica ${i + 1}: manjka priimek — izpuščeno (ime: "${firstName}")`)
+      }
+      continue
+    }
 
     const genderRaw = cellText(row, cols.spol).toUpperCase()
     const gender = genderRaw === 'M' ? 'M' : genderRaw === 'Ž' || genderRaw === 'Z' ? 'Ž' : null
