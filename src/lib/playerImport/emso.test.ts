@@ -29,4 +29,8 @@ describe('isValidEmso', () => {
   test('neštevilski znaki → neveljaven', () => {
     expect(isValidEmso('12060055001AB')).toBe(false)
   })
+  test('m=10 (vsota mod 11 = 1) → kontrolna števka je 0, EMŠO je VELJAVEN', () => {
+    // 0101990501000: uteženа vsota 89 → 89 mod 11 = 1 → m = 10 → K = 0 ✓
+    expect(isValidEmso('0101990501000')).toBe(true)
+  })
 })

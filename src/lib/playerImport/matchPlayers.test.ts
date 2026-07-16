@@ -31,10 +31,20 @@ describe('computeStatuses', () => {
     expect(rows[0].currentClubId).toBe('club-drug')
   })
 
-  test('neveljaven EMŠO → error', () => {
+  test('neveljaven EMŠO → ni več error, temveč opozorilo (uvoz se nadaljuje)', () => {
     const rows = computeStatuses([mk({ emso: '123' })], [], CLUB)
-    expect(rows[0].status).toBe('error')
-    expect(rows[0].error).toMatch(/EMŠO/i)
+    expect(rows[0].status).toBe('new')
+    expect(rows[0].warning).toMatch(/kontroln/i)
+    expect(rows[0].error).toBeNull()
+  })
+
+  test('neveljaven EMŠO, a ujemanje po ENAKI (tipkani) vrednosti EMŠO → update + opozorilo', () => {
+    // Klub vsako sezono pošlje isto tipkarsko napako — enakost še vedno ujame igralca.
+    const existing: ExistingUser[] = [{ id: 'u20', full_name: 'X Y', emso: '123', club_id: CLUB, date_of_birth: '1990-01-01' }]
+    const rows = computeStatuses([mk({ emso: '123' })], existing, CLUB)
+    expect(rows[0].status).toBe('update')
+    expect(rows[0].existingUserId).toBe('u20')
+    expect(rows[0].warning).toMatch(/kontroln/i)
   })
 
   test('brez EMŠO, a ujemanje po imenu+datumu → update', () => {

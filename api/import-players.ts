@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 import type { ImportRequest, ImportReport } from '../src/lib/playerImport/types'
 import { normalizeName } from '../src/lib/playerImport/matchPlayers'
-import { isValidEmso } from '../src/lib/playerImport/emso'
+import { normalizeEmso } from '../src/lib/playerImport/emso'
 
 const URL = process.env.SUPABASE_URL as string
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY as string
@@ -102,9 +102,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         let prevClubId: string | null = null
 
-        // Strežnik je meja zaupanja: predogled sicer neveljaven EMŠO označi kot error,
-        // a lahko admin POSTa mimo njega ali pa klient pošlje napačno vrstico.
-        if (p.emso && !isValidEmso(p.emso)) throw new Error('Neveljaven EMŠO')
+        // Strežnik je meja zaupanja, a preverja le OBLIKO (13 števk) — kontrolne števke
+        // ne preverjamo več: neveljavna kontrolna števka je pri realnih podatkih pogosto
+        // le tipkarska napaka kluba (ponovi se vsako sezono), zato je sprejeta in le opozorilo
+        // v predogledu, ne blokada. Pravi nesmisel (napačna dolžina/nedigitalni znaki) še vedno zavrnemo.
+        if (p.emso && !/^\d{13}$/.test(normalizeEmso(p.emso))) throw new Error('Neveljaven EMŠO (mora biti natanko 13 števk)')
 
         if (p.emso) {
           const { data: found, error: findErr } = await admin

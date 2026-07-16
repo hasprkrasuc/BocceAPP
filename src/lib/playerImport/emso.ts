@@ -11,7 +11,7 @@ export function isValidEmso(value: string | number | null | undefined): boolean 
   let sum = 0
   for (let i = 0; i < 12; i++) sum += Number(s[i]) * weights[i]
   const mod = sum % 11
-  const check = mod === 0 ? 0 : 11 - mod
-  if (check === 10) return false
-  return check === Number(s[12])
+  const m = 11 - mod
+  const expected = (m === 10 || m === 11) ? 0 : m
+  return expected === Number(s[12])
 }

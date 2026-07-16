@@ -204,6 +204,7 @@ export default function PlayerImport() {
     (acc, r) => { acc[r.status]++; return acc },
     { new: 0, update: 0, transfer: 0, error: 0 } as Record<ImportRow['status'], number>
   )
+  const warningCount = rows.filter(r => r.warning).length
 
   const importableCount = rows.length - counts.error
 
@@ -366,6 +367,11 @@ export default function PlayerImport() {
                   </span>
                 )
               ))}
+              {warningCount > 0 && (
+                <span className="text-xs px-2 py-1 rounded-full font-medium bg-yellow-100 text-yellow-800">
+                  opozorila: {warningCount}
+                </span>
+              )}
             </div>
           </div>
 
@@ -406,6 +412,11 @@ export default function PlayerImport() {
                       </span>
                       {r.status === 'error' && r.error && (
                         <span className="text-xs text-red-600 ml-2">{r.error}</span>
+                      )}
+                      {r.warning && (
+                        <span className="text-xs text-yellow-700 ml-2" title={r.warning}>
+                          ⚠ {r.warning}
+                        </span>
                       )}
                     </td>
                   </tr>

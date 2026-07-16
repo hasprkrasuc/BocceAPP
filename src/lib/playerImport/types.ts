@@ -50,7 +50,8 @@ export interface ImportRow {
   status: MatchStatus
   existingUserId: string | null
   currentClubId: string | null
-  error: string | null
+  error: string | null      // blokira uvoz (igralca ne moremo varno obdelati)
+  warning: string | null    // NE blokira (npr. neveljavna kontrolna števka EMŠO)
 }
 
 export interface ImportTarget {
