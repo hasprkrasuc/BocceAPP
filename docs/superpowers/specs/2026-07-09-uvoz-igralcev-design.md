@@ -42,7 +42,7 @@ Standardni obrazec (ena datoteka = en klub). Struktura (potrjeno na `Begunje.xls
 | Ulica | `address_street` |
 | Hišna številka | `address_house` |
 | Poštna številka | `address_postal` |
-| Kraj (bivališče) | `address_city` *(glej odprto vprašanje O1)* |
+| Kraj (bivališče) | `address_city` *(nov stolpec — migracija)* |
 | (klub iz glave) | `club` (tekst) + `club_id` (FK) |
 
 ### `clubs` (obstoječi stolpci; klub se ustvari, če ne obstaja)
@@ -53,7 +53,7 @@ Standardni obrazec (ena datoteka = en klub). Struktura (potrjeno na `Begunje.xls
 | Elektronski naslov kluba | `contact_email` |
 | Telefon | `contact_phone` |
 | Naslov (kraj) | `city` |
-| Matična/Davčna št. | `notes` *(ni namenskih stolpcev; glej O2)* |
+| Matična/Davčna št. | `notes` *(ni namenskih stolpcev)* |
 
 ### `league_team_players`
 - `league_team_id` = izbrana ekipa (iz UI), `player_id` = igralčev `users.id`.
@@ -62,7 +62,7 @@ Standardni obrazec (ena datoteka = en klub). Struktura (potrjeno na `Begunje.xls
 ## 4. Uporabniški tok
 
 ### 4a. Množičen uvoz — nova admin stran `/admin/uvoz-igralcev`
-1. Admin izbere **ciljno sezono → ligo → ekipo** (obstoječa ekipa; glej O3).
+1. Admin izbere **ciljno sezono → ligo → ekipo**: obstoječo ekipo ALI vpiše novo (ime iz glave Excela predlagano; uvoz jo ustvari).
 2. Naloži `.xlsx`.
 3. **Predogled** (brez pisanja): klub iz glave + tabela igralcev, vsak s statusom:
    - 🟢 **nov** — bo ustvarjen,
@@ -116,9 +116,9 @@ Standardni obrazec (ena datoteka = en klub). Struktura (potrjeno na `Begunje.xls
 - Ločena evidenca vodij (managerjev).
 - Uvoz fotografij / podpisov.
 
-## 10. Odprta vprašanja (za potrditev pred izvedbo)
+## 10. Potrjene odločitve
 
-- **O1 — `address_city`:** `users` ima `address_country`, a NE `address_city`, medtem ko Excel daje "Kraj" (bivališče, npr. CERKNICA). Predlog: dodati stolpec `address_city` (majhna migracija). Alternativa: shraniti v obstoječe polje. Ali dodam `address_city`?
-- **O2 — matična/davčna št. kluba:** `clubs` nima namenskih stolpcev. Predlog: shraniti v `notes` (ali izpustiti). V redu?
-- **O3 — ustvarjanje ekipe:** V1 predvideva izbiro **obstoječe** ligaške ekipe. Naj uvoz zna tudi **ustvariti** ekipo v ligi, če še ne obstaja (da odpade ročni korak "Dodaj ekipo")?
-- **O4 — atomarnost:** naj bo cel uvoz ena transakcija (vse ali nič), ali sprotno obdelovanje z delnim poročilom ob napaki? (Predlog: vse-ali-nič za predvidljivost.)
+- **O1 — `address_city`:** doda se nov stolpec `users.address_city` (majhna migracija); Excel "Kraj" (bivališče) se mapira vanj.
+- **O2 — matična/davčna št. kluba:** shrani se v `clubs.notes` (npr. "Matična: … · Davčna: …").
+- **O3 — ustvarjanje ekipe:** uvoz zna tudi **ustvariti** ligaško ekipo v izbrani ligi, če še ne obstaja (odpade ročni korak "Dodaj ekipo"). V UI: izbereš sezono+ligo, nato obstoječo ekipo ALI vpišeš novo (ime iz glave Excela je predlagano).
+- **O4 — atomarnost:** cel uvoz je **ena transakcija (vse ali nič)** za predvidljivost; ob napaki se razveljavi in poroča vzrok.
