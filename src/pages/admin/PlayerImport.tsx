@@ -3,13 +3,13 @@
  * Naloži .xlsx → predogled statusov (nov/posodobi/prestop/napaka) → potrditev → uvoz.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../supabase'
 import { parseRegistrationFile } from '../../lib/playerImport/parseRegistrationXlsx'
 import { computeStatuses } from '../../lib/playerImport/matchPlayers'
 import { parseBirthDate } from '../../lib/playerImport/parseDate'
 import { isValidEmso, normalizeEmso } from '../../lib/playerImport/emso'
-import type { ExistingUser, ImportReport, ImportRow, ParseResult, ParsedPlayer, Gender } from '../../lib/playerImport/types'
+import type { ExistingUser, ImportReport, ImportRequest, ImportRow, ParseResult, ParsedPlayer, Gender } from '../../lib/playerImport/types'
 
 interface SeasonOption { id: string; name: string }
 interface TeamOption { id: string; club_name: string }
@@ -26,6 +26,30 @@ const STATUS_CLASSES: Record<ImportRow['status'], string> = {
   update: 'bg-blue-100 text-blue-700',
   transfer: 'bg-yellow-100 text-yellow-700',
   error: 'bg-red-100 text-red-700',
+}
+
+// V ilike sta % in _ nadomestna znaka. Ime kluba je uporabniški vnos (iz Excela
+// ali natipkano), zato ga moramo ubežati — sicer "A_B" ujame tudi "AxB".
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&')
+}
+
+// Skupna pot do /api/import-players za oba obrazca (masovni uvoz in ročni vnos).
+async function postImport(body: ImportRequest): Promise<ImportReport> {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData.session?.access_token
+
+  const res = await fetch('/api/import-players', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Uvoz ni uspel')
+  return json as ImportReport
 }
 
 // users ima več tisoč vrstic — privzeta Supabase omejitev je 1000 na klic.
@@ -59,6 +83,12 @@ export default function PlayerImport() {
   const [rows, setRows] = useState<ImportRow[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
   const [parsing, setParsing] = useState(false)
+  // ali je razčlenjeni klub že v bazi — pokažemo PRED uvozom, da tipkarska
+  // napaka v imenu ne ustvari tiho podvojenega kluba
+  const [clubExists, setClubExists] = useState<boolean | null>(null)
+  // zadnja samodejno izpolnjena vrednost za newTeamName; če je admin ni ročno
+  // spremenil, jo ob branju druge datoteke smemo povoziti
+  const lastAutofillRef = useRef('')
 
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<ImportReport | null>(null)
@@ -83,6 +113,7 @@ export default function PlayerImport() {
     setRows([])
     setReport(null)
     setSubmitError(null)
+    setClubExists(null)
   }
 
   async function onFileSelected(file: File) {
@@ -94,12 +125,21 @@ export default function PlayerImport() {
       const existing = await fetchAllExistingUsers()
 
       const { data: club } = await supabase
-        .from('clubs').select('id').ilike('name', result.club.name).maybeSingle()
+        .from('clubs').select('id').ilike('name', escapeIlike(result.club.name)).maybeSingle()
       const targetClubId = club?.id || '___none___'
 
       setParsed(result)
+      setClubExists(Boolean(club?.id))
       setRows(computeStatuses(result.players, existing, targetClubId))
-      setNewTeamName(prev => prev || result.club.name)
+      // Povozimo le, če je polje prazno ali še vsebuje prejšnje samodejno
+      // izpolnjeno ime — ročnega popravka admina ne povozimo.
+      setNewTeamName(prev => {
+        if (prev === '' || prev === lastAutofillRef.current) {
+          lastAutofillRef.current = result.club.name
+          return result.club.name
+        }
+        return prev
+      })
     } catch (e) {
       setParseError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -112,35 +152,44 @@ export default function PlayerImport() {
     { new: 0, update: 0, transfer: 0, error: 0 } as Record<ImportRow['status'], number>
   )
 
+  const importableCount = rows.length - counts.error
+
+  // Ime kluba za ročni vnos: izbrana obstoječa ekipa → natipkana nova ekipa →
+  // klub iz prebrane datoteke. Ko je izbrana obstoječa ekipa, je newTeamName
+  // prazen (polje je skrito), zato se ne smemo zanašati nanj.
+  const selectedTeamName = teams.find(t => t.id === teamId)?.club_name ?? null
+  const resolvedClubName = (teamId ? selectedTeamName : newTeamName) || parsed?.club.name || ''
+
   async function confirmImport() {
     if (!parsed) return
-    setBusy(true)
     setSubmitError(null)
     setReport(null)
-    try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData.session?.access_token
-      const playersToImport = rows.filter(r => r.status !== 'error').map(r => r.player)
 
-      const res = await fetch('/api/import-players', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+    // Sezono se da po branju datoteke ponastaviti nazaj na prazno — brez tega
+    // bi poslali target.seasonId: ''
+    if (!seasonId) {
+      setSubmitError('Izberi sezono.')
+      return
+    }
+
+    const playersToImport = rows.filter(r => r.status !== 'error').map(r => r.player)
+    if (playersToImport.length === 0) {
+      setSubmitError('Ni igralcev za uvoz (vse vrstice so napaka).')
+      return
+    }
+
+    setBusy(true)
+    try {
+      const result = await postImport({
+        club: parsed.club,
+        target: {
+          seasonId,
+          teamId: teamId || null,
+          newTeamClubName: teamId ? null : (newTeamName || parsed.club.name),
         },
-        body: JSON.stringify({
-          club: parsed.club,
-          target: {
-            seasonId,
-            teamId: teamId || null,
-            newTeamClubName: teamId ? null : (newTeamName || parsed.club.name),
-          },
-          players: playersToImport,
-        }),
+        players: playersToImport,
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Uvoz ni uspel')
-      setReport(json as ImportReport)
+      setReport(result)
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -216,7 +265,15 @@ export default function PlayerImport() {
         <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
             <div>
-              <h2 className="font-semibold text-gray-800">{parsed.club.name}</h2>
+              <h2 className="font-semibold text-gray-800">
+                Klub: {parsed.club.name}{' '}
+                {clubExists === true && (
+                  <span className="text-xs font-medium text-green-700">✅ obstoječi klub</span>
+                )}
+                {clubExists === false && (
+                  <span className="text-xs font-medium text-yellow-800">⚠️ nov klub (bo ustvarjen)</span>
+                )}
+              </h2>
               <p className="text-sm text-gray-500">
                 {seasons.find(s => s.id === seasonId)?.name} · {parsed.players.length} igralcev
               </p>
@@ -231,6 +288,14 @@ export default function PlayerImport() {
               ))}
             </div>
           </div>
+
+          {clubExists === false && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-3 py-2 mb-4 text-xs">
+              Kluba »{parsed.club.name}« še ni v bazi in bo ustvarjen. Preveri, da ime ni
+              tipkarska napaka — sicer nastane podvojen klub. Ker je klub nov, bodo že
+              obstoječi igralci prikazani kot »prestop« (prehajajo iz svojega dosedanjega kluba).
+            </div>
+          )}
 
           {parsed.warnings.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-3 py-2 mb-4 text-xs space-y-0.5">
@@ -271,7 +336,7 @@ export default function PlayerImport() {
           <div className="mt-6 flex justify-end">
             <button
               onClick={confirmImport}
-              disabled={busy || rows.length === 0}
+              disabled={busy || !seasonId || importableCount === 0}
               className="bg-bocce-green text-white text-sm font-medium px-5 py-2.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {busy ? 'Uvažam …' : 'Potrdi in uvozi'}
@@ -319,7 +384,7 @@ export default function PlayerImport() {
         seasonId={seasonId}
         teamId={teamId}
         newTeamName={newTeamName}
-        clubName={parsed?.club.name || newTeamName}
+        clubName={resolvedClubName}
       />
     </div>
   )
@@ -412,38 +477,25 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubName }: AddSingleP
 
     setBusy(true)
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData.session?.access_token
-
-      const res = await fetch('/api/import-players', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+      const result = await postImport({
+        club: {
+          name: clubName,
+          season: null,
+          regId: null,
+          taxId: null,
+          mailAddress: null,
+          contactName: null,
+          phone: null,
+          email: null,
         },
-        body: JSON.stringify({
-          club: {
-            name: clubName,
-            season: null,
-            regId: null,
-            taxId: null,
-            mailAddress: null,
-            contactName: null,
-            phone: null,
-            email: null,
-          },
-          target: {
-            seasonId,
-            teamId: teamId || null,
-            newTeamClubName: teamId ? null : newTeamName,
-          },
-          players: [player],
-        }),
+        target: {
+          seasonId,
+          teamId: teamId || null,
+          // clubName je že razrešen (nova ekipa → datoteka), zato se ujema s club.name
+          newTeamClubName: teamId ? null : (newTeamName || clubName),
+        },
+        players: [player],
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Dodajanje ni uspelo')
-
-      const result = json as ImportReport
       setReport(result)
 
       const succeeded = (result.created > 0 || result.addedToTeam > 0) && result.skipped.length === 0
@@ -460,6 +512,9 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubName }: AddSingleP
       <h2 className="font-semibold text-gray-800 mb-1">Dodaj posameznega igralca</h2>
       <p className="text-sm text-gray-500 mb-4">
         Za registracijo enega igralca med sezono (klub se je pridružil pozneje).
+        {clubName
+          ? <> Klub: <span className="font-medium text-gray-700">{clubName}</span></>
+          : <> Najprej izberi ekipo ali vpiši ime kluba.</>}
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
