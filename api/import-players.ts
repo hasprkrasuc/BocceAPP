@@ -2,8 +2,17 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 import type { ImportRequest, ImportReport } from '../src/lib/playerImport/types'
-import { normalizeName } from '../src/lib/playerImport/matchPlayers'
-import { normalizeEmso } from '../src/lib/playerImport/emso'
+
+// Podvojeno iz src/lib/playerImport/emso.ts — api/ ne sme uvažati iz src/ (Vercel zapakira le api/). Sinhronizacijo varuje test api-shared-sync.test.ts.
+function normalizeEmso(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return ''
+  return String(value).replace(/\D/g, '')
+}
+
+// Podvojeno iz src/lib/playerImport/matchPlayers.ts — api/ ne sme uvažati iz src/ (Vercel zapakira le api/). Sinhronizacijo varuje test api-shared-sync.test.ts.
+const normalizeName = (s: string | null): string =>
+  (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/š/g, 's').replace(/ž/g, 'z').replace(/č/g, 'c').replace(/\s+/g, ' ').trim()
 
 const URL = process.env.SUPABASE_URL as string
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY as string
