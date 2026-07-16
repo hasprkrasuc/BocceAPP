@@ -6,13 +6,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../supabase'
 import { parseRegistrationFile } from '../../lib/playerImport/parseRegistrationXlsx'
-import { computeStatuses } from '../../lib/playerImport/matchPlayers'
+import { computeStatuses, normalizeName } from '../../lib/playerImport/matchPlayers'
 import { parseBirthDate } from '../../lib/playerImport/parseDate'
 import { isValidEmso, normalizeEmso } from '../../lib/playerImport/emso'
 import type { ExistingUser, ImportReport, ImportRequest, ImportRow, ParseResult, ParsedPlayer, Gender } from '../../lib/playerImport/types'
 
 interface SeasonOption { id: string; name: string }
 interface TeamOption { id: string; club_name: string }
+interface ClubOption { id: string; name: string }
 
 const STATUS_LABELS: Record<ImportRow['status'], string> = {
   new: 'nov',
@@ -28,10 +29,33 @@ const STATUS_CLASSES: Record<ImportRow['status'], string> = {
   error: 'bg-red-100 text-red-700',
 }
 
-// V ilike sta % in _ nadomestna znaka. Ime kluba je uporabniški vnos (iz Excela
-// ali natipkano), zato ga moramo ubežati — sicer "A_B" ujame tudi "AxB".
-function escapeIlike(value: string): string {
-  return value.replace(/[\\%_]/g, '\\$&')
+// Vodilna predpona tipa kluba (BK, BD, ŠD, KK …) — klubi so v bazi poimenovani
+// izjemno neenotno ("BK BEGUNJE" vs "BEGUNJE"), zato jo pri ujemanju odstranimo
+// z obeh strani, preden primerjamo normalizirani imeni.
+const CLUB_PREFIX_RE = /^(b\.?k\.?|bd|šd|sd|kk|bšk|šk|dbk|balin(ski)? klub)\s+/i
+
+function stripClubPrefix(raw: string): string {
+  return raw.replace(CLUB_PREFIX_RE, '').trim()
+}
+
+// Predlaga klub za samodejno izbiro (admin lahko vedno povozi) — nikoli ne odloča
+// namesto admina, le olajša izbiro. Prioriteta: ime izbrane ekipe > ime iz Excela,
+// najprej brez odstranjene predpone, nato še z odstranjeno predpono na obeh straneh.
+function suggestClubId(clubs: ClubOption[], teamClubName: string | null, excelClubName: string | null): string {
+  const candidates = [teamClubName, excelClubName].filter((s): s is string => Boolean(s && s.trim()))
+  if (candidates.length === 0 || clubs.length === 0) return ''
+
+  for (const raw of candidates) {
+    const target = normalizeName(raw)
+    const hit = clubs.find(c => normalizeName(c.name) === target)
+    if (hit) return hit.id
+  }
+  for (const raw of candidates) {
+    const target = normalizeName(stripClubPrefix(raw))
+    const hit = clubs.find(c => normalizeName(stripClubPrefix(c.name)) === target)
+    if (hit) return hit.id
+  }
+  return ''
 }
 
 // Skupna pot do /api/import-players za oba obrazca (masovni uvoz in ročni vnos).
@@ -78,28 +102,62 @@ export default function PlayerImport() {
   const [teams, setTeams] = useState<TeamOption[]>([])
   const [teamId, setTeamId] = useState('')
   const [newTeamName, setNewTeamName] = useState('')
+  const [clubs, setClubs] = useState<ClubOption[]>([])
+  const [clubId, setClubId] = useState('')
 
   const [parsed, setParsed] = useState<ParseResult | null>(null)
+  const [existingUsers, setExistingUsers] = useState<ExistingUser[]>([])
   const [rows, setRows] = useState<ImportRow[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
   const [parsing, setParsing] = useState(false)
-  // ali je razčlenjeni klub že v bazi — pokažemo PRED uvozom, da tipkarska
-  // napaka v imenu ne ustvari tiho podvojenega kluba
-  const [clubExists, setClubExists] = useState<boolean | null>(null)
   // zadnja samodejno izpolnjena vrednost za newTeamName; če je admin ni ročno
   // spremenil, jo ob branju druge datoteke smemo povoziti
   const lastAutofillRef = useRef('')
+  // enak vzorec za samodejno predlagan klub — admin lahko predlog kadarkoli
+  // povozi z izbiro v spustnem seznamu, česar potem ne smemo prepisati
+  const clubIdAutoRef = useRef('')
 
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<ImportReport | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => { loadSeasons() }, [])
+  useEffect(() => { loadClubs() }, [])
   useEffect(() => { if (seasonId) loadTeams(seasonId); else { setTeams([]); setTeamId('') } }, [seasonId])
+
+  // Samodejni predlog kluba: ob spremembi izbrane ekipe ali prebrane datoteke
+  // znova izračunamo predlog, admin pa ga vedno lahko ročno povozi (glej
+  // clubIdAutoRef zgoraj — enak vzorec kot lastAutofillRef za newTeamName).
+  useEffect(() => {
+    const teamClubName = teams.find(t => t.id === teamId)?.club_name ?? null
+    const excelClubName = parsed?.club.name ?? null
+    const suggestion = suggestClubId(clubs, teamClubName, excelClubName)
+    setClubId(prev => {
+      if (prev !== clubIdAutoRef.current) return prev
+      clubIdAutoRef.current = suggestion
+      return suggestion
+    })
+  }, [clubs, teams, teamId, parsed])
+
+  // Status vsake vrstice (nov/posodobi/prestop) je odvisen od IZBRANEGA kluba —
+  // druga izbira spremeni, kdo šteje za prestop. Preračunamo ob vsaki spremembi
+  // kluba, ne le ob branju datoteke.
+  useEffect(() => {
+    if (!parsed) { setRows([]); return }
+    const targetClubId = clubId || '___none___'
+    setRows(computeStatuses(parsed.players, existingUsers, targetClubId))
+  }, [parsed, existingUsers, clubId])
 
   async function loadSeasons() {
     const { data } = await supabase.from('league_seasons').select('id, name').order('name', { ascending: false })
     setSeasons((data ?? []) as SeasonOption[])
+  }
+
+  async function loadClubs() {
+    // 144 vrstic — privzeta Supabase omejitev 1000 na klic tu (za zdaj) ni ovira;
+    // če se seznam klubov znatno poveča, bo treba dodati paginacijo kot pri fetchAllExistingUsers.
+    const { data } = await supabase.from('clubs').select('id, name').order('name')
+    setClubs((data ?? []) as ClubOption[])
   }
 
   async function loadTeams(sId: string) {
@@ -110,10 +168,10 @@ export default function PlayerImport() {
 
   function resetParsed() {
     setParsed(null)
+    setExistingUsers([])
     setRows([])
     setReport(null)
     setSubmitError(null)
-    setClubExists(null)
   }
 
   async function onFileSelected(file: File) {
@@ -124,13 +182,8 @@ export default function PlayerImport() {
       const result = await parseRegistrationFile(file)
       const existing = await fetchAllExistingUsers()
 
-      const { data: club } = await supabase
-        .from('clubs').select('id').ilike('name', escapeIlike(result.club.name)).maybeSingle()
-      const targetClubId = club?.id || '___none___'
-
       setParsed(result)
-      setClubExists(Boolean(club?.id))
-      setRows(computeStatuses(result.players, existing, targetClubId))
+      setExistingUsers(existing)
       // Povozimo le, če je polje prazno ali še vsebuje prejšnje samodejno
       // izpolnjeno ime — ročnega popravka admina ne povozimo.
       setNewTeamName(prev => {
@@ -154,11 +207,13 @@ export default function PlayerImport() {
 
   const importableCount = rows.length - counts.error
 
-  // Ime kluba za ročni vnos: izbrana obstoječa ekipa → natipkana nova ekipa →
-  // klub iz prebrane datoteke. Ko je izbrana obstoječa ekipa, je newTeamName
-  // prazen (polje je skrito), zato se ne smemo zanašati nanj.
+  const selectedClub = clubs.find(c => c.id === clubId) ?? null
+
+  // Ime kluba za ročni vnos: IZBRAN klub (odloča clubId) → izbrana obstoječa ekipa
+  // → natipkana nova ekipa → klub iz prebrane datoteke. Ko je izbrana obstoječa
+  // ekipa, je newTeamName prazen (polje je skrito), zato se ne smemo zanašati nanj.
   const selectedTeamName = teams.find(t => t.id === teamId)?.club_name ?? null
-  const resolvedClubName = (teamId ? selectedTeamName : newTeamName) || parsed?.club.name || ''
+  const resolvedClubName = selectedClub?.name || (teamId ? selectedTeamName : newTeamName) || parsed?.club.name || ''
 
   async function confirmImport() {
     if (!parsed) return
@@ -184,6 +239,7 @@ export default function PlayerImport() {
         club: parsed.club,
         target: {
           seasonId,
+          clubId: clubId || null,
           teamId: teamId || null,
           newTeamClubName: teamId ? null : (newTeamName || parsed.club.name),
         },
@@ -241,6 +297,23 @@ export default function PlayerImport() {
           </div>
         )}
 
+        {seasonId && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Klub</label>
+            <select
+              value={clubId}
+              onChange={e => setClubId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">➕ nov klub (ustvari)</option>
+              {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Ime kluba v Excelu je le predlog — klub vedno izberi izrecno (imena v bazi so neenotna).
+            </p>
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Excel datoteka (.xlsx)</label>
           <input
@@ -266,14 +339,21 @@ export default function PlayerImport() {
           <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
             <div>
               <h2 className="font-semibold text-gray-800">
-                Klub: {parsed.club.name}{' '}
-                {clubExists === true && (
-                  <span className="text-xs font-medium text-green-700">✅ obstoječi klub</span>
-                )}
-                {clubExists === false && (
-                  <span className="text-xs font-medium text-yellow-800">⚠️ nov klub (bo ustvarjen)</span>
+                {selectedClub ? (
+                  <>Klub: {selectedClub.name}{' '}
+                    <span className="text-xs font-medium text-green-700">✅ obstoječi klub</span>
+                  </>
+                ) : (
+                  <>Klub: ➕ nov klub{' '}
+                    <span className="text-xs font-medium text-yellow-800">⚠️ nov klub (bo ustvarjen)</span>
+                  </>
                 )}
               </h2>
+              {selectedClub && parsed.club.name && normalizeName(parsed.club.name) !== normalizeName(selectedClub.name) && (
+                <p className="text-xs text-gray-500">
+                  V Excelu: "{parsed.club.name}" → uvažam v "{selectedClub.name}"
+                </p>
+              )}
               <p className="text-sm text-gray-500">
                 {seasons.find(s => s.id === seasonId)?.name} · {parsed.players.length} igralcev
               </p>
@@ -289,11 +369,12 @@ export default function PlayerImport() {
             </div>
           </div>
 
-          {clubExists === false && (
+          {!selectedClub && (
             <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-3 py-2 mb-4 text-xs">
-              Kluba »{parsed.club.name}« še ni v bazi in bo ustvarjen. Preveri, da ime ni
-              tipkarska napaka — sicer nastane podvojen klub. Ker je klub nov, bodo že
-              obstoječi igralci prikazani kot »prestop« (prehajajo iz svojega dosedanjega kluba).
+              Nov klub »{parsed.club.name}« bo ustvarjen. Preveri, da ime ni
+              tipkarska napaka — morda klub že obstaja v bazi pod drugim imenom
+              (izberi ga zgoraj). Ker je klub nov, bodo že obstoječi igralci
+              prikazani kot »prestop« (prehajajo iz svojega dosedanjega kluba).
             </div>
           )}
 
@@ -384,6 +465,7 @@ export default function PlayerImport() {
         seasonId={seasonId}
         teamId={teamId}
         newTeamName={newTeamName}
+        clubId={clubId}
         clubName={resolvedClubName}
       />
     </div>
@@ -398,10 +480,11 @@ interface AddSinglePlayerProps {
   seasonId: string
   teamId: string
   newTeamName: string
+  clubId: string
   clubName: string
 }
 
-function AddSinglePlayer({ seasonId, teamId, newTeamName, clubName }: AddSinglePlayerProps) {
+function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: AddSinglePlayerProps) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [emso, setEmso] = useState('')
@@ -490,6 +573,7 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubName }: AddSingleP
         },
         target: {
           seasonId,
+          clubId: clubId || null,
           teamId: teamId || null,
           // clubName je že razrešen (nova ekipa → datoteka), zato se ujema s club.name
           newTeamClubName: teamId ? null : (newTeamName || clubName),

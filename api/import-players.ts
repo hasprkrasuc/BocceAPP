@@ -36,18 +36,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const clubName = body.club.name.trim()
 
-    // --- Klub (najdi/ustvari) ---
-    // Napake iskanja NIKOLI ne obravnavamo kot "ni najden": maybeSingle() vrne napako
-    // tudi ob >1 zadetku, kar bi sicer ustvarilo nov klub in razlastilo obstoječe članstvo.
+    // --- Klub: admin ga IZRECNO izbere v vmesniku — ime iz Excela je le predlog,
+    // ni zaupanja vredno za samodejno ujemanje (glej ADR/komentar ob ImportTarget).
     let clubId: string
-    const { data: existingClub, error: clubFindErr } = await admin
-      .from('clubs').select('id').ilike('name', clubName).maybeSingle()
-    if (clubFindErr) {
-      throw new Error(`Napaka pri iskanju kluba "${clubName}" (morda obstaja več klubov z istim imenom): ${clubFindErr.message}`)
-    }
-    if (existingClub) {
-      clubId = existingClub.id as string
+    if (body.target.clubId) {
+      const { data: club, error: clubErr } = await admin
+        .from('clubs').select('id').eq('id', body.target.clubId).maybeSingle()
+      if (clubErr) throw new Error(`Napaka pri preverjanju izbranega kluba: ${clubErr.message}`)
+      if (!club) throw new Error('Izbrani klub ne obstaja.')
+      clubId = club.id as string
+      report.clubCreated = false
     } else {
+      // Nov klub: admin je izrecno izbral "ustvari nov klub". Kljub temu preverimo
+      // ujemanje po imenu kot varovalo pred nehotenim podvojevanjem — če se najde,
+      // naj admin raje izbere obstoječega v spustnem seznamu.
+      const { data: existingClub, error: clubFindErr } = await admin
+        .from('clubs').select('id').ilike('name', clubName).maybeSingle()
+      if (clubFindErr) {
+        throw new Error(`Napaka pri preverjanju imena kluba "${clubName}" (morda obstaja več klubov z istim imenom): ${clubFindErr.message}`)
+      }
+      if (existingClub) {
+        throw new Error(`Klub »${clubName}« že obstaja v bazi — izberi ga v spustnem seznamu namesto ustvarjanja novega.`)
+      }
       const notes = [body.club.regId ? `Matična: ${body.club.regId}` : '', body.club.taxId ? `Davčna: ${body.club.taxId}` : ''].filter(Boolean).join(' · ')
       const { data: newClub, error } = await admin.from('clubs').insert({
         name: clubName, contact_name: body.club.contactName, contact_email: body.club.email,

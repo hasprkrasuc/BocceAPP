@@ -55,8 +55,9 @@ export interface ImportRow {
 
 export interface ImportTarget {
   seasonId: string
-  teamId: string | null         // obstoječa ekipa
-  newTeamClubName: string | null // če ustvarjamo novo ekipo
+  clubId: string | null          // izbran obstoječi klub; null = ustvari nov klub iz podatkov glave
+  teamId: string | null          // obstoječa ligaška ekipa; null = ustvari novo
+  newTeamClubName: string | null // ime nove ekipe (če teamId null)
 }
 
 export interface ImportRequest {
