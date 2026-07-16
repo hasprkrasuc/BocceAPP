@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 import type { ImportRequest, ImportReport } from '../src/lib/playerImport/types'
 import { normalizeName } from '../src/lib/playerImport/matchPlayers'
+import { isValidEmso } from '../src/lib/playerImport/emso'
 
 const URL = process.env.SUPABASE_URL as string
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY as string
@@ -42,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { data: existingClub, error: clubFindErr } = await admin
       .from('clubs').select('id').ilike('name', clubName).maybeSingle()
     if (clubFindErr) {
-      throw new Error(`Najdenih več klubov z imenom "${clubName}" — razreši podvojene klube. (${clubFindErr.message})`)
+      throw new Error(`Napaka pri iskanju kluba "${clubName}" (morda obstaja več klubov z istim imenom): ${clubFindErr.message}`)
     }
     if (existingClub) {
       clubId = existingClub.id as string
@@ -64,11 +65,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       teamId = body.target.teamId
     } else {
       const teamClubName = (body.target.newTeamClubName || body.club.name).trim()
+      // ilike (ne eq): ime ekipe admin vtipka na roko, zato bi "BK Sava" / "BK sava"
+      // ob eq ustvarila dve ekipi — enaka past kot pri klubu.
       const { data: existingTeam, error: teamFindErr } = await admin
         .from('league_teams').select('id')
-        .eq('season_id', body.target.seasonId).eq('club_name', teamClubName).maybeSingle()
+        .eq('season_id', body.target.seasonId).ilike('club_name', teamClubName).maybeSingle()
       if (teamFindErr) {
-        throw new Error(`Najdenih več ekip "${teamClubName}" v tej sezoni — razreši podvojene ekipe. (${teamFindErr.message})`)
+        throw new Error(`Napaka pri iskanju ekipe "${teamClubName}" v tej sezoni (morda obstaja več ekip z istim imenom): ${teamFindErr.message}`)
       }
       if (existingTeam) {
         teamId = existingTeam.id as string
@@ -88,6 +91,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let createdHere = false
       try {
         let prevClubId: string | null = null
+
+        // Strežnik je meja zaupanja: predogled sicer neveljaven EMŠO označi kot error,
+        // a lahko admin POSTa mimo njega ali pa klient pošlje napačno vrstico.
+        if (p.emso && !isValidEmso(p.emso)) throw new Error('Neveljaven EMŠO')
 
         if (p.emso) {
           const { data: found, error: findErr } = await admin

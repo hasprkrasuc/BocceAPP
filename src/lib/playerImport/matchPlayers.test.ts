@@ -70,6 +70,26 @@ describe('computeStatuses', () => {
     expect(rows[0].status).toBe('new')
   })
 
+  test('brez EMŠO in brez datuma rojstva → error (ne ujemanje po samem imenu)', () => {
+    // null === null bi se sicer izšlo in bi se ujeli zgolj po imenu; strežnik tako vrstico preskoči.
+    const existing: ExistingUser[] = [{ id: 'u13', full_name: 'X Y', emso: null, club_id: CLUB, date_of_birth: null }]
+    const rows = computeStatuses([mk({ emso: null, birthDate: null })], existing, CLUB)
+    expect(rows[0].status).toBe('error')
+    expect(rows[0].error).toBe('Brez EMŠO in datuma rojstva')
+    expect(rows[0].existingUserId).toBeNull()
+  })
+
+  test('brez EMŠO, več kandidatov z istim imenom in datumom → error (ne ugibaj prvega)', () => {
+    const existing: ExistingUser[] = [
+      { id: 'u14', full_name: 'Žan Dajčman', emso: null, club_id: CLUB, date_of_birth: '2012-01-01' },
+      { id: 'u15', full_name: 'ZAN DAJCMAN', emso: null, club_id: 'club-drug', date_of_birth: '2012-01-01' },
+    ]
+    const rows = computeStatuses([mk({ emso: null, fullName: 'Žan Dajčman', birthDate: '2012-01-01' })], existing, CLUB)
+    expect(rows[0].status).toBe('error')
+    expect(rows[0].error).toMatch(/Več kandidatov/)
+    expect(rows[0].existingUserId).toBeNull()
+  })
+
   test('obstoječ uporabnik brez kluba (club_id null), ujemanje po EMŠO → update (ne transfer)', () => {
     const existing: ExistingUser[] = [{ id: 'u12', full_name: 'X Y', emso: '1206005500150', club_id: null, date_of_birth: '1990-01-01' }]
     const rows = computeStatuses([mk({ emso: '1206005500150' })], existing, CLUB)
