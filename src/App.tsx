@@ -27,6 +27,7 @@ import LeagueMatchScoresheetDemo from './pages/admin/LeagueMatchScoresheetDemo'
 import Series from './pages/Series'
 import SeriesAdmin from './pages/admin/SeriesAdmin'
 import SeriesEdit from './pages/admin/SeriesEdit'
+import PlayerImport from './pages/admin/PlayerImport'
 
 const queryClient = new QueryClient()
 
@@ -79,6 +80,7 @@ export default function App() {
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
               <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
               <Route path="/admin/liga" element={<AdminRoute><LeagueAdmin /></AdminRoute>} />
+              <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />
               <Route path="/admin/liga/tekma/:fixtureId" element={<ProtectedRoute><LeagueMatchScoresheet /></ProtectedRoute>} />
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />
               <Route path="/admin/klubi" element={<AdminRoute><ClubAdmin /></AdminRoute>} />

@@ -27,6 +27,13 @@ export default function AdminDashboard() {
       color: 'border-bocce-gold hover:bg-bocce-gold/5',
     },
     {
+      to: '/admin/uvoz-igralcev',
+      icon: '📥',
+      title: 'Uvoz igralcev (Excel)',
+      desc: 'Naloži BZS registracijski obrazec kluba → igralci v klub in ligaško ekipo',
+      color: 'border-teal-300 hover:bg-teal-50',
+    },
+    {
       to: '/admin/dvojna-registracija',
       icon: '🔄',
       title: 'Dvojne registracije',
