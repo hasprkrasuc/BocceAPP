@@ -95,8 +95,24 @@ export default function TournamentEdit() {
 
   async function loadPlayers() {
     if (players.length > 0) return
-    const { data } = await supabase.from('users').select('id, full_name, club, club_id').eq('role', 'player').order('full_name')
-    setPlayers((data ?? []) as UserProfile[])
+    // PostgREST privzeto vrne največ 1000 vrstic. Igralcev je >1000, zato je
+    // seznam brez ostranjevanja odrezan po abecedi (npr. samo do črke »T«).
+    // Beremo po straneh po 1000 in združimo vse igralce.
+    const pageSize = 1000
+    const all: UserProfile[] = []
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, full_name, club, club_id')
+        .eq('role', 'player')
+        .order('full_name')
+        .range(from, from + pageSize - 1)
+      if (error) break
+      const batch = (data ?? []) as UserProfile[]
+      all.push(...batch)
+      if (batch.length < pageSize) break
+    }
+    setPlayers(all)
   }
 
   function startEdit(reg: TournamentRegistration) {
