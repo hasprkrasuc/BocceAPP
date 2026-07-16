@@ -474,7 +474,7 @@ export function TournamentDetail() {
                   <span className="text-gray-400 text-sm w-6">{i + 1}.</span>
                   <div>
                     <span className="font-medium text-gray-800">
-                      {r.player1?.full_name} / {r.player2?.full_name}
+                      {r.player1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.player2_name}` : ''}
                     </span>
                     {(r.player1?.club || r.player2?.club) && (
                       <p className="text-xs text-gray-500">{r.player1?.club ?? r.player2?.club}</p>
