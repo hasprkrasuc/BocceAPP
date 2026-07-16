@@ -506,6 +506,15 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
   const [formError, setFormError] = useState<string | null>(null)
   const [report, setReport] = useState<ImportReport | null>(null)
 
+  // Neveljavna kontrolna števka NE blokira (glej onSubmit) — le opozorimo, da lahko
+  // admin preveri pri klubu. Prikažemo šele, ko je oblika pravilna (13 števk), sicer
+  // bi med tipkanjem opozarjali na "napako", ki je zgolj nedokončan vnos.
+  const emsoDigits = normalizeEmso(emso.trim())
+  const emsoChecksumWarning =
+    emso.trim() && /^\d{13}$/.test(emsoDigits) && !isValidEmso(emsoDigits)
+      ? '⚠ Neveljavna kontrolna števka EMŠO — preveri pri klubu (vseeno lahko dodaš)'
+      : null
+
   function resetForm() {
     setFirstName('')
     setLastName('')
@@ -539,8 +548,11 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
       }
     }
 
-    if (emsoTrimmed && !isValidEmso(emsoTrimmed)) {
-      setFormError('Neveljaven EMŠO')
+    // Blokiramo le OBLIKO (13 števk) — napačna kontrolna števka je pri realnih podatkih
+    // pogosto le tipkarska napaka kluba na uradnem obrazcu, zato jo (enako kot masovni
+    // uvoz) le označimo z opozorilom ob polju in dovolimo vnos.
+    if (emsoTrimmed && !/^\d{13}$/.test(normalizeEmso(emsoTrimmed))) {
+      setFormError('EMŠO mora imeti 13 števk')
       return
     }
 
@@ -640,6 +652,11 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
             placeholder="13 števk"
             className="w-full border rounded p-2 text-sm"
           />
+          {emsoChecksumWarning && (
+            <p className="mt-1 text-xs text-yellow-800 bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
+              {emsoChecksumWarning}
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Datum rojstva</label>
