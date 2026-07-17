@@ -287,6 +287,12 @@ export default function TournamentEdit() {
     try {
       const dist = suggestGroupDistribution(confirmed.length, manualGroups || undefined)
 
+      if (!dist.isValid) {
+        setMessage(`❌ ${confirmed.length} parov ne sede v ${dist.totalGroups} skupin — vsaka skupina mora imeti 3–5 ekip (za ${dist.totalGroups} skupin: ${3 * dist.totalGroups}–${5 * dist.totalGroups} parov). Spremeni število skupin.`)
+        setDrawLoading(false)
+        return
+      }
+
       await supabase.from('tournament_groups').delete().eq('tournament_id', id)
 
       // Fisher-Yates shuffle
@@ -414,7 +420,9 @@ export default function TournamentEdit() {
     setMessage('')
     try {
       const confirmed = registrations.filter(r => r.status === 'confirmed')
-      const dist = suggestGroupDistribution(confirmed.length)
+      // Uporabi DEJANSKO število skupin (kot je bilo žrebano), ne le števila ekip,
+      // sicer se lahko določitev stopnje (extra/direct) razlikuje od žreba.
+      const dist = suggestGroupDistribution(confirmed.length, groups.length || undefined)
 
       const { data: finalMatches } = await supabase.from('matches')
         .select('*, group:tournament_groups(*)')
@@ -438,7 +446,9 @@ export default function TournamentEdit() {
         const m1st = gMatches.find(m => m.match_number === winnersMatchNum)
         const m2nd = gMatches.find(m => m.match_number === lastMatchNum)
 
-        const isExtra = size === 3
+        // Skupina po 3 igra dodatni krog LE, kadar tak krog obstaja (G ni potenca 2).
+        // Pri potenci 2 (npr. 8 skupin) so tudi skupine po 3 direktne → po 2 naprej.
+        const isExtra = size === 3 && dist.extraStage !== null
         const target = isExtra ? extraQualifiers : directQualifiers
 
         if (m1st?.winner_id) target.push({ groupNumber: g.group_number, position: 1, teamId: m1st.winner_id })
@@ -834,7 +844,18 @@ export default function TournamentEdit() {
                   {dist.groups3}× skupina po 3 → {stageLabel(dist.extraStage)} → {stageLabel(dist.directStage)}
                 </span>
               )}
+              {dist.groups3 > 0 && !dist.extraStage && (
+                <span className="text-xs px-2 py-1 rounded-full bg-amber-200 text-amber-800 font-medium">
+                  {dist.groups3}× skupina po 3 → direktno v {stageLabel(dist.directStage)}
+                </span>
+              )}
             </div>
+            {!dist.isValid && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                ⚠️ {confirmed.length} parov ne sede v {dist.totalGroups} skupin — vsaka skupina mora imeti 3–5 ekip
+                (za {dist.totalGroups} skupin: {3 * dist.totalGroups}–{5 * dist.totalGroups} parov). Spremeni število skupin.
+              </p>
+            )}
             <div className="flex items-center gap-3 mb-3">
               <label className="text-xs text-blue-700 font-medium">Število skupin:</label>
               <input
@@ -850,7 +871,7 @@ export default function TournamentEdit() {
                 </button>
               )}
             </div>
-            <button onClick={handleDraw} disabled={drawLoading || confirmed.length === 0}
+            <button onClick={handleDraw} disabled={drawLoading || confirmed.length === 0 || !dist.isValid}
               className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors disabled:opacity-50">
               {drawLoading ? 'Žrebam...' : groups.length > 0 ? '↺ Ponovi žreb' : 'Naredi žreb'}
             </button>

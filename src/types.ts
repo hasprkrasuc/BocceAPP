@@ -133,6 +133,8 @@ export interface GroupDistribution {
   targetKnockout: number
   directStage: MatchStage
   extraStage: MatchStage | null
+  /** Ali izbrano število ekip sede v izbrano število skupin (vsaka skupina 3–5 ekip). */
+  isValid: boolean
 }
 
 export interface GroupTeam {
