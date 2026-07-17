@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { bergerFixtures, MAX_BERGER_TEAMS } from '../../engines/berger'
 import { phase2Fixtures, validateDraw, type Phase2Team } from '../../engines/leagueGroups'
-import { calculateStandings } from '../../engines/league'
+import { calculateStandings, type MatchResultWithDisc } from '../../engines/league'
 import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueSeasonFormat, LeagueCategory, LeagueTier, LeagueSeasonDiscipline, UserProfile, DisciplineType } from '../../types'
 
@@ -84,6 +84,10 @@ export default function LeagueAdmin() {
   const [teamForm, setTeamForm] = useState<TeamForm>({ club_name: '', short_name: '', captain_id: '' })
   const [scoreEditing, setScoreEditing] = useState<ScoreEditing>({})
   const [phase2Draft, setPhase2Draft] = useState<Phase2Draft | null>(null)
+  /** Disciplinski rezultati — nujni za pravilno uvrstitev ob izenačenju (razlika iger).
+   *  Nalagajo se SAMO za format='groups' (drugje jih ta stran ne potrebuje). */
+  const [matchResults, setMatchResults] = useState<MatchResultWithDisc[]>([])
+  const [matchResultsLoaded, setMatchResultsLoaded] = useState(false)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [copyFromSeasonId, setCopyFromSeasonId] = useState('')
@@ -95,7 +99,15 @@ export default function LeagueAdmin() {
   }>({ name: '', discipline_type: 'posamezno', players_per_side: 1, has_reserve: false, block_number: 1, order_num: 1 })
 
   useEffect(() => { loadSeasons() }, [])
-  useEffect(() => { if (selectedSeason) { loadTeams(); loadFixtures(); loadDisciplines() } }, [selectedSeason])
+  useEffect(() => {
+    if (!selectedSeason) return
+    // ob menjavi sezone razveljavi rezultate prejšnje, da predlog faze 2 ne more
+    // teči nad tujimi/zastarelimi podatki
+    setMatchResults([])
+    setMatchResultsLoaded(false)
+    setPhase2Draft(null)
+    loadTeams(); loadFixtures(); loadDisciplines()
+  }, [selectedSeason])
   useEffect(() => {
     supabase.from('users').select('id, full_name, club').order('full_name')
       .then(({ data }) => setPlayers((data ?? []) as Pick<UserProfile, 'id' | 'full_name' | 'club'>[]))
@@ -186,7 +198,42 @@ export default function LeagueAdmin() {
     const { data } = await supabase.from('league_fixtures')
       .select('*, home_team:league_teams!league_fixtures_home_team_id_fkey(*), away_team:league_teams!league_fixtures_away_team_id_fkey(*)')
       .eq('season_id', selectedSeason.id).order('round_number').order('scheduled_date')
-    setFixtures((data ?? []) as LeagueFixture[])
+    const fixturesRaw = (data ?? []) as LeagueFixture[]
+    setFixtures(fixturesRaw)
+    await loadMatchResults(fixturesRaw)
+  }
+
+  /**
+   * Disciplinski rezultati sezone — enaka poizvedba in oblika kot na javni strani
+   * (League.tsx), da predlog faze 2 uvrsti izenačene ekipe enako kot prikazana lestvica.
+   * Brez tega bi bile vse boule vrednosti 0 in izenačenje bi padlo na sort po imenu.
+   *
+   * Ni potrebno straničenje: league_match_results ima eno vrstico na tekmo, skupinska
+   * sezona jih ima največ 96 (60 faza 1 + 36 faza 2) — krepko pod privzeto mejo 1000.
+   * Vgnezdeni league_match_discipline_results so embedded resource in jih meja
+   * najvišjega nivoja ne odreže.
+   */
+  async function loadMatchResults(fixtureList: LeagueFixture[]) {
+    if (!selectedSeason || selectedSeason.format !== 'groups') {
+      setMatchResults([])
+      setMatchResultsLoaded(true)
+      return
+    }
+    if (fixtureList.length === 0) {
+      setMatchResults([])
+      setMatchResultsLoaded(true)
+      return
+    }
+    const { data, error } = await supabase.from('league_match_results')
+      .select('*, discipline_results:league_match_discipline_results(*)')
+      .in('fixture_id', fixtureList.map(f => f.id))
+    if (error) {
+      setMatchResults([])
+      setMatchResultsLoaded(false)
+      return
+    }
+    setMatchResults((data ?? []) as MatchResultWithDisc[])
+    setMatchResultsLoaded(true)
   }
 
   function set(field: keyof SeasonForm) {
@@ -370,10 +417,15 @@ export default function LeagueAdmin() {
   const hasPhase1 = phase1FixturesA.length > 0 && phase1FixturesB.length > 0
   const hasPhase2 = fixtures.some(f => f.group_label === '1-6' || f.group_label === '7-12')
 
-  /** Predlog delitve v nadaljevalni skupini po lestvici faze 1 (obstoječi calculateStandings, brez novega izračuna). */
+  /**
+   * Predlog delitve v nadaljevalni skupini po lestvici faze 1 (obstoječi calculateStandings,
+   * brez novega izračuna). matchResults so OBVEZNI — nosijo razliko iger (boule), ki ob
+   * izenačenju odloča o uvrstitvi; brez njih bi admin videl drugačen vrstni red kot javna
+   * lestvica (League.tsx), in to ravno takrat, ko predlog odloča o napredovanju.
+   */
   function proposePhase2(): Phase2Draft {
-    const standingsA = calculateStandings(groupATeams, phase1FixturesA, selectedSeason)
-    const standingsB = calculateStandings(groupBTeams, phase1FixturesB, selectedSeason)
+    const standingsA = calculateStandings(groupATeams, phase1FixturesA, selectedSeason, matchResults)
+    const standingsB = calculateStandings(groupBTeams, phase1FixturesB, selectedSeason, matchResults)
     return {
       a16: standingsA.slice(0, 3).map(s => s.team.id) as Phase2Slot,
       b16: standingsB.slice(0, 3).map(s => s.team.id) as Phase2Slot,
@@ -382,8 +434,19 @@ export default function LeagueAdmin() {
     }
   }
 
+  /** Tekme faze 1, ki so odigrane — te bi morale imeti disciplinske rezultate. */
+  const completedPhase1 = [...phase1FixturesA, ...phase1FixturesB].filter(f => f.status === 'completed').length
+  /** Odigrane tekme obstajajo, disciplinskih rezultatov pa ni → razlika iger bo povsod 0. */
+  const missingDisciplineResults =
+    selectedSeason?.format === 'groups' && hasPhase1 && completedPhase1 > 0 &&
+    matchResultsLoaded && matchResults.length === 0
+
   function openPhase2Proposal() {
     if (!hasPhase1) { setMessage('Faza 1 še ni generirana.'); return }
+    if (!matchResultsLoaded) {
+      setMessage('⚠ Disciplinski rezultati še niso naloženi — predlog bi lahko bil napačen ob izenačenju. Poskusi znova čez trenutek.')
+      return
+    }
     const unfinished = [...phase1FixturesA, ...phase1FixturesB].filter(f => f.status !== 'completed').length
     if (unfinished > 0) {
       if (!window.confirm(`${unfinished} tekem faze 1 še ni odigranih — lestvica morda ni dokončna. Vseeno izračunam predlog delitve za fazo 2?`)) return
@@ -939,18 +1002,23 @@ export default function LeagueAdmin() {
 
                   {/* FAZA 2 */}
                   <div className="flex items-center gap-3 mb-2 flex-wrap">
-                    <button onClick={openPhase2Proposal} disabled={loading || !hasPhase1}
-                      title={!hasPhase1 ? 'Najprej generiraj fazo 1' : ''}
+                    <button onClick={openPhase2Proposal} disabled={loading || !hasPhase1 || !matchResultsLoaded}
+                      title={!hasPhase1 ? 'Najprej generiraj fazo 1' : !matchResultsLoaded ? 'Disciplinski rezultati se še nalagajo' : ''}
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                      {hasPhase2 ? '↺ Nov predlog faze 2' : 'Predlog faze 2'}
+                      {!matchResultsLoaded && hasPhase1 ? 'Nalagam rezultate…' : hasPhase2 ? '↺ Nov predlog faze 2' : 'Predlog faze 2'}
                     </button>
                     <span className="text-xs text-gray-500">
                       Nadaljevalni skupini 1-6 / 7-12 · kola 11-16
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mb-6">
+                  <p className="text-xs text-gray-400 mb-4">
                     Predlog po lestvici faze 1 (najboljše 3 → 1-6, spodnje 3 → 7-12). Admin lahko pred generiranjem ročno popravi vrstni red — dokončno izenačenje o napredovanju odloči žreb na BZS.
                   </p>
+                  {missingDisciplineResults && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 mb-6 text-xs">
+                      Ni disciplinskih rezultatov — vrstni red ob izenačenju morda ni dokončen; preveri ročno.
+                    </div>
+                  )}
 
                   {phase2Draft && (() => {
                     const draftErrors = validatePhase2Draft(phase2Draft)

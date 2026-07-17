@@ -18,7 +18,7 @@ import type {
 } from '../types'
 
 /** Match-result z naloženimi disciplinskimi rezultati (za boule točke). */
-type MatchResultWithDisc = LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }
+export type MatchResultWithDisc = LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }
 
 /** fixtureId → seštevek boule (disciplinskih) točk domačih/gostov. */
 export function bouleByFixture(
