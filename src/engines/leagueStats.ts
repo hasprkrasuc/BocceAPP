@@ -167,11 +167,17 @@ export interface PlayerSeasonStat {
  * home_players / away_players arrays store:
  *   - UUID strings when the player was chosen from the team roster
  *   - Plain "Ime Priimek" strings when entered as free text (no roster linked)
- *   - "R: Ime Priimek" prefix for reserves (excluded from stats)
+ *   - "R: <id ali ime>" prefix for reserves — a reserve who entered the lineup
+ *     as a substitution. They actually played, so they ARE included in stats
+ *     under their stripped identity (see stripReserve/isReserve below).
  *
  * The caller is responsible for resolving UUIDs to display names by joining
  * against the users table.
  */
+
+/** Vpis v postavi je lahko "R: <id ali ime>" — rezerva, ki je vstopila kot menjava. Šteje kot nastop. */
+export const stripReserve = (p: string): string => p.startsWith('R: ') ? p.slice(3) : p
+export const isReserve = (p: string): boolean => p.startsWith('R: ')
 export function aggregatePlayerStats(
   matchResults: Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>,
   fixtures: LeagueFixture[],
@@ -214,8 +220,8 @@ export function aggregatePlayerStats(
       if (!discMap[dr.discipline_id]) continue
 
       for (const pid of (dr.home_players ?? [])) {
-        if (!pid || pid.startsWith('R: ')) continue
-        record(pid, dr.discipline_id,
+        if (!pid) continue
+        record(stripReserve(pid), dr.discipline_id,
           dr.home_match_points ?? 0,
           dr.home_score        ?? 0,
           dr.away_score        ?? 0,
@@ -223,8 +229,8 @@ export function aggregatePlayerStats(
       }
 
       for (const pid of (dr.away_players ?? [])) {
-        if (!pid || pid.startsWith('R: ')) continue
-        record(pid, dr.discipline_id,
+        if (!pid) continue
+        record(stripReserve(pid), dr.discipline_id,
           dr.away_match_points ?? 0,
           dr.away_score        ?? 0,
           dr.home_score        ?? 0,
