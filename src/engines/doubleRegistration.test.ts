@@ -209,7 +209,9 @@ describe('calcAge — BZS pikčasti format datuma (DD.MM.YYYY)', () => {
   it('neveljaven datum vrne null', () => {
     expect(calcAge('20.8..1959')).toBeNull()
     expect(calcAge('ni datum')).toBeNull()
-    expect(calcAge('12.11.2018.1211018505236')).toBeNull()
+    // datum + EMŠO zlepljena skupaj (tipična napaka pri vnosu). Sintetični podatek:
+    // v javen repo ne sodijo resnični EMŠO (nacionalna ID številka).
+    expect(calcAge('1.1.1990.0101990500011')).toBeNull()
   })
 })
 
