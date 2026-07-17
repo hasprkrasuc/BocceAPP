@@ -6,6 +6,7 @@ import { BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import type { LeagueFixture, LeagueSeasonDiscipline, LeagueMatchResult, LeagueMatchDisciplineResult, DisciplineType, UserProfile } from '../../types'
 import { evaluatePlayerLineup, seasonUsesBlock2Rule, type LineupDisc } from '../../engines/leagueLineup'
 import { formatMatchDateTime } from '../../lib/matchDate'
+import { USER_PUBLIC_COLS } from '../../lib/userColumns'
 
 const TECHNICAL_TYPES: DisciplineType[] = ['stafeta', 'hitrostno', 'natancno']
 
@@ -78,7 +79,7 @@ function computeStats(disciplines: LeagueSeasonDiscipline[], forms: Record<strin
 }
 
 // Player select — shows team roster as dropdown options with constraint info
-function PlayerSelect({ value, onChange, roster, stats, currentDiscType, currentBlock, isTechnical, useBlock2Rule }: {
+function PlayerSelect({ value, onChange, roster, stats, currentDiscType, currentBlock, isTechnical, useBlock2Rule, canEdit }: {
   value: string
   onChange: (v: string) => void
   roster: RosterPlayer[]
@@ -87,7 +88,13 @@ function PlayerSelect({ value, onChange, roster, stats, currentDiscType, current
   currentBlock: number | null
   isTechnical: boolean
   useBlock2Rule: boolean
+  canEdit: boolean
 }) {
+  if (!canEdit) {
+    const label = value ? (roster.find(p => p.playerId === value)?.name ?? value) : '—'
+    return <p className="text-xs text-gray-600 px-2 py-1">{label}</p>
+  }
+
   if (roster.length === 0) {
     return (
       <input value={value} onChange={e => onChange(e.target.value)}
@@ -153,19 +160,27 @@ export default function LeagueMatchScoresheet() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { if (fixtureId) load() }, [fixtureId])
+  // Seznam sodnikov/adminov za delegacijo je viden le adminom (glej spodaj `isAdmin &&`),
+  // zato ga naložimo ločeno in šele ko je admin status znan — s tem se anonimnim/navadnim
+  // obiskovalcem ta poizvedba sploh ne izvede.
+  useEffect(() => { if (isAdmin) loadJudgeCandidates() }, [isAdmin])
+
+  async function loadJudgeCandidates() {
+    const { data: usersData } = await supabase
+      .from('users').select('id, full_name').in('role', ['judge', 'admin', 'super_admin']).order('full_name')
+    setAllUsers((usersData ?? []) as Pick<UserProfile, 'id' | 'full_name'>[])
+  }
 
   async function load() {
     if (!fixtureId) return
-    const [{ data: fx }, { data: existing }, { data: usersData }] = await Promise.all([
+    const [{ data: fx }, { data: existing }] = await Promise.all([
       supabase.from('league_fixtures')
-        .select('*, home_team:league_teams!league_fixtures_home_team_id_fkey(*, league_team_players(*, player:users(*))), away_team:league_teams!league_fixtures_away_team_id_fkey(*, league_team_players(*, player:users(*)))')
+        .select(`*, home_team:league_teams!league_fixtures_home_team_id_fkey(*, league_team_players(*, player:users(${USER_PUBLIC_COLS}))), away_team:league_teams!league_fixtures_away_team_id_fkey(*, league_team_players(*, player:users(${USER_PUBLIC_COLS})))`)
         .eq('id', fixtureId).single(),
       supabase.from('league_match_results')
         .select('*, discipline_results:league_match_discipline_results(*)')
         .eq('fixture_id', fixtureId).maybeSingle(),
-      supabase.from('users').select('id, full_name').in('role', ['judge', 'admin', 'super_admin']).order('full_name'),
     ])
-    setAllUsers((usersData ?? []) as Pick<UserProfile, 'id' | 'full_name'>[])
     if (!fx) { setLoading(false); return }
     const f = fx as LeagueFixture & { home_team: { league_team_players?: Array<{ player: { id: string; full_name: string | null } }> }; away_team: { league_team_players?: Array<{ player: { id: string; full_name: string | null } }> } }
     setFixture(fx as LeagueFixture)
@@ -582,12 +597,12 @@ export default function LeagueMatchScoresheet() {
                         <div className="flex-1 min-w-[140px] space-y-1">
                           {f.homePlayers.map((p, i) => (
                             <PlayerSelect key={i} value={p} onChange={v => setPlayer(disc.id, 'home', i, v)}
-                              roster={homeRoster} stats={homeStats}
+                              roster={homeRoster} stats={homeStats} canEdit={canEdit}
                               currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
                           ))}
                           {disc.has_reserve && (
                             <PlayerSelect value={f.homeReserve} onChange={v => setFormField(disc.id, 'homeReserve', v)}
-                              roster={homeRoster} stats={homeStats}
+                              roster={homeRoster} stats={homeStats} canEdit={canEdit}
                               currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={false} useBlock2Rule={useBlock2Rule} />
                           )}
                         </div>
@@ -610,12 +625,12 @@ export default function LeagueMatchScoresheet() {
                         <div className="flex-1 min-w-[140px] space-y-1">
                           {f.awayPlayers.map((p, i) => (
                             <PlayerSelect key={i} value={p} onChange={v => setPlayer(disc.id, 'away', i, v)}
-                              roster={awayRoster} stats={awayStats}
+                              roster={awayRoster} stats={awayStats} canEdit={canEdit}
                               currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={isTech} useBlock2Rule={useBlock2Rule} />
                           ))}
                           {disc.has_reserve && (
                             <PlayerSelect value={f.awayReserve} onChange={v => setFormField(disc.id, 'awayReserve', v)}
-                              roster={awayRoster} stats={awayStats}
+                              roster={awayRoster} stats={awayStats} canEdit={canEdit}
                               currentDiscType={disc.discipline_type as DisciplineType} currentBlock={disc.block_number ?? null} isTechnical={false} useBlock2Rule={useBlock2Rule} />
                           )}
                         </div>
