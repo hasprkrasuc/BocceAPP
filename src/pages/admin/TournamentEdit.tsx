@@ -521,8 +521,14 @@ export default function TournamentEdit() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex items-center justify-between gap-3 mb-2">
         <Link to="/admin/turnirji" className="text-sm text-gray-500 hover:text-bocce-green">← Nazaj</Link>
+        <a
+          href={`${tournament.kind === 'championship' ? '/prvenstva' : '/turnirji'}/${id}`}
+          target="_blank" rel="noopener noreferrer"
+          className="text-sm bg-bocce-green text-white px-3 py-1.5 rounded-lg hover:bg-bocce-green-light transition-colors">
+          Odpri javno stran (vnos rezultatov) ↗
+        </a>
       </div>
       <h1 className="text-2xl font-bold text-gray-800 mb-1">{tournament.name}</h1>
       <p className="text-sm text-gray-500 mb-6">{tournament.date} · {tournament.location}</p>
@@ -817,7 +823,7 @@ export default function TournamentEdit() {
             {drawLoading ? 'Žrebam...' : groups.length > 0 ? '↺ Ponovi izločilni žreb' : 'Naredi izločilni žreb'}
           </button>
           <p className="text-xs text-gray-500 mt-3">
-            Rezultate vnašaj na <Link to={`/prvenstva/${id}`} className="text-bocce-green hover:underline">javni strani</Link>; krogi napredujejo samodejno.
+            Rezultate vnašaj na <Link to={`${tournament.kind === 'championship' ? '/prvenstva' : '/turnirji'}/${id}`} className="text-bocce-green hover:underline">javni strani</Link>; krogi napredujejo samodejno.
           </p>
         </div>
       )}
