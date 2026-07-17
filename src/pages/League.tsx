@@ -208,7 +208,7 @@ function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: s
   const chief = f.chief_judge?.full_name
   const hasBanner = !!(time || f.venue || chief)
   return (
-    <Link to={`/admin/liga/tekma/${f.id}`}
+    <Link to={`/liga/tekma/${f.id}`}
       className={`block bg-white border rounded-xl overflow-hidden transition-colors hover:bg-gray-50 group
         ${isMyMatch ? 'border-bocce-green/30 bg-bocce-green/5 hover:bg-bocce-green/10' : 'border-gray-200'}`}>
       <div className="flex items-center gap-4 px-5 py-3">

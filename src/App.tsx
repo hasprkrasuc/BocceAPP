@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from './contexts/AuthContext'
 import { ProtectedRoute, AdminRoute } from './components/ProtectedRoute'
@@ -30,6 +30,13 @@ import SeriesEdit from './pages/admin/SeriesEdit'
 import PlayerImport from './pages/admin/PlayerImport'
 
 const queryClient = new QueryClient()
+
+// Zapisnik je zdaj javna stran (glej /liga/tekma/:fixtureId) — stare povezave na
+// /admin/liga/tekma/:fixtureId preusmerimo, da ne pokvarimo zaznamkov.
+function OldScoresheetRedirect() {
+  const { fixtureId } = useParams<{ fixtureId: string }>()
+  return <Navigate to={`/liga/tekma/${fixtureId}`} replace />
+}
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -67,6 +74,7 @@ export default function App() {
               <Route path="/koledar" element={<Calendar />} />
               <Route path="/serije" element={<Series />} />
               <Route path="/serija/:id" element={<Series />} />
+              <Route path="/liga/tekma/:fixtureId" element={<LeagueMatchScoresheet />} />
 
               {/* Auth */}
               <Route path="/prijava" element={<Login />} />
@@ -81,7 +89,7 @@ export default function App() {
               <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
               <Route path="/admin/liga" element={<AdminRoute><LeagueAdmin /></AdminRoute>} />
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />
-              <Route path="/admin/liga/tekma/:fixtureId" element={<ProtectedRoute><LeagueMatchScoresheet /></ProtectedRoute>} />
+              <Route path="/admin/liga/tekma/:fixtureId" element={<OldScoresheetRedirect />} />
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />
               <Route path="/admin/klubi" element={<AdminRoute><ClubAdmin /></AdminRoute>} />
               <Route path="/admin/uporabniki" element={<AdminRoute><UserAdmin /></AdminRoute>} />

@@ -223,7 +223,7 @@ export default function Profile() {
                           {f.home_score} : {f.away_score}
                         </span>
                       )}
-                      <Link to={`/admin/liga/tekma/${f.id}`}
+                      <Link to={`/liga/tekma/${f.id}`}
                         className="flex items-center gap-1 bg-bocce-green text-white text-xs px-3 py-1.5 rounded-lg hover:bg-bocce-green-light transition-colors">
                         ✏ Uredi zapisnik
                       </Link>
@@ -254,7 +254,7 @@ export default function Profile() {
                           {f.home_score} : {f.away_score}
                         </span>
                       )}
-                      <Link to={`/admin/liga/tekma/${f.id}`}
+                      <Link to={`/liga/tekma/${f.id}`}
                         className="text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
                         Oglej zapisnik
                       </Link>
