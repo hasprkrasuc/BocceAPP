@@ -1,6 +1,47 @@
 import { describe, it, expect } from 'vitest'
-import { buildGroupSchedule, applyScore, teamDisplayName } from './tournament'
+import { buildGroupSchedule, applyScore, teamDisplayName, suggestGroupDistribution } from './tournament'
 import type { TournamentRegistration } from '../types'
+
+describe('suggestGroupDistribution', () => {
+  const sizesSum = (d: ReturnType<typeof suggestGroupDistribution>) =>
+    d.groups3 * 3 + d.groups4 * 4 + d.groups5 * 5
+
+  it('spreads 26 teams into 8 groups as 2×4 + 6×3 (no extra round), all valid', () => {
+    const d = suggestGroupDistribution(26, 8)
+    expect(d.isValid).toBe(true)
+    expect(d.groups3 + d.groups4 + d.groups5).toBe(8)
+    expect(d.groups5).toBe(0)
+    expect(d.groups4).toBe(2)
+    expect(d.groups3).toBe(6)
+    expect(sizesSum(d)).toBe(26)
+    expect(d.extraStage).toBeNull()       // power of 2 → no extra round
+    expect(d.groups3).toBeGreaterThan(0)  // groups of 3 are allowed and direct
+  })
+
+  it('never produces negative group counts (no "Invalid array length")', () => {
+    for (let n = 4; n <= 60; n++) {
+      const d = suggestGroupDistribution(n)
+      expect(d.groups3).toBeGreaterThanOrEqual(0)
+      expect(d.groups4).toBeGreaterThanOrEqual(0)
+      expect(d.groups5).toBeGreaterThanOrEqual(0)
+      if (d.isValid) expect(sizesSum(d)).toBe(n)
+    }
+  })
+
+  it('exact fits stay as full groups of 4 / 5', () => {
+    const d32 = suggestGroupDistribution(32, 8)
+    expect(d32.isValid).toBe(true)
+    expect(d32.groups4).toBe(8)
+    const d40 = suggestGroupDistribution(40, 8)
+    expect(d40.isValid).toBe(true)
+    expect(d40.groups5).toBe(8)
+  })
+
+  it('marks impossible counts invalid instead of crashing (too few teams for the groups)', () => {
+    const d = suggestGroupDistribution(10, 8) // needs 24–40 for 8 groups
+    expect(d.isValid).toBe(false)
+  })
+})
 
 describe('buildGroupSchedule', () => {
   it('creates 5 matches for a 3-team group', () => {

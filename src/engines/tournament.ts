@@ -318,18 +318,40 @@ export function suggestGroupDistribution(numTeams: number, forceGroups?: number)
   // Step 2: extra vs direct groups
   const fp2 = floorPow2(G)
   const target = 2 * fp2
-  const G_extra = 2 * G - target   // groups of 3 (play extra knockout round)
-  const G_direct = G - G_extra     // groups of 4/5 (go directly)
+  const G_extra = 2 * G - target   // skupine po 3, ki igrajo dodatni izločilni krog
+  const G_direct = G - G_extra     // skupine, ki gredo direktno naprej
 
-  // Step 3: distribute teams among direct groups (sizes 4 or 5)
-  // G5*5 + G4*4 = teamsInDirect  →  G5 = teamsInDirect - 4*G_direct
+  // Step 3: velikosti skupin.
+  // Skupine za dodatni krog so vedno po 3 (definicija). Preostale ekipe
+  // razdelimo med "direktne" skupine.
   const teamsInExtra = 3 * G_extra
   const teamsInDirect = numTeams - teamsInExtra
+  let G3 = G_extra
+  let G4 = 0
   let G5 = 0
-  let G4 = G_direct
-  if (G_direct > 0) {
-    G5 = teamsInDirect - 4 * G_direct  // fixed: was teamsInDirect % G_direct
+  let isValid: boolean
+
+  if (G_extra === 0) {
+    // G je potenca 2 → ni dodatnega kroga. Vse skupine gredo direktno (po 2
+    // naprej). Ekipe razdelimo ČIM BOLJ ENAKOMERNO, velikosti 3–5 — tako
+    // deluje tudi za "vmesna" števila (npr. 26 ekip v 8 skupin = 2×4 + 6×3).
+    const q = G_direct > 0 ? Math.floor(teamsInDirect / G_direct) : 0
+    const r = G_direct > 0 ? teamsInDirect - q * G_direct : 0
+    const add = (size: number, count: number) => {
+      if (size === 3) G3 += count
+      else if (size === 4) G4 += count
+      else if (size === 5) G5 += count
+    }
+    add(q, G_direct - r)   // (G_direct − r) skupin velikosti q
+    add(q + 1, r)          // r skupin velikosti q+1
+    // Veljavno, če vsaka skupina dobi 3–5 ekip.
+    isValid = numTeams >= 3 * G && numTeams <= 5 * G
+  } else {
+    // G ni potenca 2 → direktne skupine so po 4/5 (skupine po 3 = dodatni krog).
+    G5 = G_direct > 0 ? teamsInDirect - 4 * G_direct : 0
     G4 = G_direct - G5
+    isValid = G_direct > 0 && G5 >= 0 && G5 <= G_direct
+    if (!isValid) { G5 = Math.max(0, Math.min(G5, G_direct)); G4 = G_direct - G5 }
   }
 
   // Step 4: stages
@@ -338,7 +360,7 @@ export function suggestGroupDistribution(numTeams: number, forceGroups?: number)
 
   return {
     totalGroups: G,
-    groups3: G_extra,
+    groups3: G3,
     groups4: G4,
     groups5: G5,
     extraRoundGroups: G_extra,
@@ -346,5 +368,6 @@ export function suggestGroupDistribution(numTeams: number, forceGroups?: number)
     targetKnockout: target,
     directStage,
     extraStage,
+    isValid,
   }
 }
