@@ -11,6 +11,7 @@ import { sl as dateSl } from 'date-fns/locale'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueTier, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline } from '../types'
 import { LeagueStatsPanel, LeagueRangPanel } from '../components/LeagueStats'
 import { resolvePlayerNames, type ResolvedPlayer } from '../lib/playerNames'
+import { stripReserve } from '../engines/leagueStats'
 import { matchDatePart, matchTimePart } from '../lib/matchDate'
 
 const STATUS_LABELS: Record<LeagueSeasonStatus, string> = {
@@ -373,7 +374,8 @@ export function LeagueDetail() {
 
     const ids = results.flatMap(r => (r.discipline_results ?? [])
       .flatMap(dr => [...(dr.home_players ?? []), ...(dr.away_players ?? [])]))
-      .filter(p => p && !p.startsWith('R: '))
+      .filter((p): p is string => !!p)
+      .map(stripReserve)
     setNames(await resolvePlayerNames(ids))
 
     setLoading(false)

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { aggregatePlayerStats, aggregateTeamDisciplineStats, calculateRang } from './leagueStats'
+import { aggregatePlayerStats, aggregateTeamDisciplineStats, calculateRang, stripReserve, isReserve } from './leagueStats'
 import type { LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline } from '../types'
 
 const disciplines: LeagueSeasonDiscipline[] = [
@@ -23,7 +23,7 @@ const matchResults: Array<LeagueMatchResult & { discipline_results?: LeagueMatch
 ]
 
 describe('aggregatePlayerStats', () => {
-  test('sešteje točke in koše po igralcu in disciplini; izloči rezerve', () => {
+  test('sešteje točke in koše po igralcu in disciplini; rezerva (menjava) šteje kot nastop', () => {
     const ps = aggregatePlayerStats(matchResults, fixtures, disciplines)
     const pA = ps.find(p => p.playerId === 'pA')!
     expect(pA.totalPlayed).toBe(2)
@@ -31,8 +31,36 @@ describe('aggregatePlayerStats', () => {
     const hit = pA.byDiscipline.find(d => d.disciplineId === 'd2')!
     expect(hit.played).toBe(1)
     expect(hit.scoreFor).toBe(20)
-    // rezerva "R: ..." ni igralec
+
+    // rezerva "R: Rez Erva" je vstopila kot menjava v d2 (away) -> šteje kot nastop
+    // pod svojo golo (stripped) identiteto, ne kot "R: ..." vnos.
     expect(ps.find(p => p.playerId.startsWith('R:'))).toBeUndefined()
+    const rez = ps.find(p => p.playerId === 'Rez Erva')!
+    expect(rez).toBeDefined()
+    expect(rez.totalPlayed).toBe(1)
+    expect(rez.totalMatchPointsFor).toBe(0)
+    const rezHit = rez.byDiscipline.find(d => d.disciplineId === 'd2')!
+    expect(rezHit.played).toBe(1)
+    expect(rezHit.scoreFor).toBe(15)
+    expect(rezHit.scoreAgainst).toBe(20)
+  })
+
+  test('rezerva vpisana kot "R: <uuid>" se združi z ostalimi nastopi istega igralca', () => {
+    // pB nastopi normalno v d1 (away_players: ['pB']), nato kot rezerva v d2 (away_players: ['R: pB'])
+    const withReserveUuid: Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }> = [
+      { id: 'mr1', fixture_id: 'f1', judges: null, chief_judge: null, viewers: null, time_end: null, draw_natancno_field: null, draw_blok4: null, created_at: '', discipline_results: [
+        dr({ id: 'dr1', discipline_id: 'd1', home_score: 12, away_score: 8, home_match_points: 2, away_match_points: 0, home_players: ['pA'], away_players: ['pB'] }),
+        dr({ id: 'dr2', discipline_id: 'd2', home_score: 20, away_score: 15, home_match_points: 2, away_match_points: 0, home_players: ['pA'], away_players: ['R: pB'] }),
+      ] },
+    ]
+    const ps = aggregatePlayerStats(withReserveUuid, fixtures, disciplines)
+    // ni ločenega vnosa "R: pB" -- vse se združi pod "pB"
+    expect(ps.find(p => p.playerId.startsWith('R:'))).toBeUndefined()
+    const pB = ps.find(p => p.playerId === 'pB')!
+    expect(pB).toBeDefined()
+    expect(pB.totalPlayed).toBe(2)
+    expect(pB.byDiscipline.find(d => d.disciplineId === 'd1')!.played).toBe(1)
+    expect(pB.byDiscipline.find(d => d.disciplineId === 'd2')!.played).toBe(1)
   })
 
   test('upošteva samo zaključene tekme', () => {
@@ -40,6 +68,15 @@ describe('aggregatePlayerStats', () => {
       [{ ...matchResults[0], fixture_id: 'f2' }], fixtures, disciplines,
     )
     expect(onlyScheduled).toHaveLength(0)
+  })
+})
+
+describe('stripReserve / isReserve', () => {
+  test('stripReserve odstrani "R: " predpono, isReserve jo zazna', () => {
+    expect(stripReserve('R: Rez Erva')).toBe('Rez Erva')
+    expect(stripReserve('pB')).toBe('pB')
+    expect(isReserve('R: pB')).toBe(true)
+    expect(isReserve('pB')).toBe(false)
   })
 })
 

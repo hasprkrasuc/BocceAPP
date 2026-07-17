@@ -15,7 +15,7 @@
  */
 
 import { supabase } from '../supabase'
-import { aggregatePlayerStats, calculateRang } from '../engines/leagueStats'
+import { aggregatePlayerStats, calculateRang, stripReserve } from '../engines/leagueStats'
 import { placementPoints, placementLabel } from './dpPlacement'
 import type {
   LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline,
@@ -204,7 +204,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
       for (const mr of b.matchResults)
         for (const dr of (mr.discipline_results ?? []))
           for (const pid of [...(dr.home_players ?? []), ...(dr.away_players ?? [])])
-            if (pid) leaguePids.add(pid)
+            if (pid) leaguePids.add(stripReserve(pid))
     const genderMap: Record<string, string | null> = {}
     const gArr = [...leaguePids].filter(id => UUID_RE.test(id))
     for (let i = 0; i < gArr.length; i += 300) {
