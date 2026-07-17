@@ -719,7 +719,7 @@ export default function LeagueAdmin() {
                             )}
                           </div>
                           <span className="flex-1 text-left text-sm font-medium text-gray-800">{f.away_team?.club_name}</span>
-                          <Link to={`/admin/liga/tekma/${f.id}`}
+                          <Link to={`/liga/tekma/${f.id}`}
                             className="text-xs bg-bocce-green text-white px-3 py-1.5 rounded-lg hover:bg-bocce-green-light whitespace-nowrap">
                             Zapisnik
                           </Link>
