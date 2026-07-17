@@ -5,7 +5,14 @@ export const PLACEMENT_POINTS = { p1: 16, p2: 10, p3: 8, p4: 7, p5_8: 3, p9_16: 
 export type PlacementBucket = 1 | 2 | 3 | 4 | '5-8' | '9-16'
 
 export interface PlacementInput {
-  registrations: { id: string; player1_id: string | null; player2_id: string | null }[]
+  registrations: {
+    id: string
+    player1_id: string | null
+    player2_id: string | null
+    // Gost-igralec (guest_players) ima svoj stabilen UUID — šteje v lestvico serije.
+    player1_guest_id?: string | null
+    player2_guest_id?: string | null
+  }[]
   groupTeams: { id: string; registration_id: string }[]
   knockoutMatches: {
     stage: string
@@ -71,9 +78,12 @@ export function tournamentPlayerPoints(input: PlacementInput): PlayerPoints[] {
   for (const r of registrations) {
     const bucket = bucketByReg.get(r.id)!
     const points = bucketPoints(bucket)
-    // Gost (player*_id NULL) ne prejme točk v rang lestvico.
-    if (r.player1_id) out.push({ player_id: r.player1_id, points, bucket })
-    if (r.player2_id) out.push({ player_id: r.player2_id, points, bucket })
+    // Registriran igralec (users) ali gost-igralec (guest_players) — oba imata
+    // stabilen UUID in štejeta v lestvico serije. Prosto ime brez UUID se izpusti.
+    const p1 = r.player1_id ?? r.player1_guest_id ?? null
+    const p2 = r.player2_id ?? r.player2_guest_id ?? null
+    if (p1) out.push({ player_id: p1, points, bucket })
+    if (p2) out.push({ player_id: p2, points, bucket })
   }
   return out
 }

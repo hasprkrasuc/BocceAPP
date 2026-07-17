@@ -198,7 +198,7 @@ export function TournamentDetail() {
         supabase.from('tournaments').select('*').eq('id', id).single(),
         supabase.from('tournament_groups').select('*').eq('tournament_id', id).order('group_number'),
         supabase.from('matches').select(`*, team_a:group_teams!matches_team_a_id_fkey(*, registration:tournament_registrations(*)), team_b:group_teams!matches_team_b_id_fkey(*, registration:tournament_registrations(*))`).eq('tournament_id', id),
-        supabase.from('tournament_registrations').select(`*, player1:users!tournament_registrations_player1_id_fkey(${USER_PUBLIC_COLS}), player2:users!tournament_registrations_player2_id_fkey(${USER_PUBLIC_COLS})`).eq('tournament_id', id),
+        supabase.from('tournament_registrations').select(`*, player1:users!tournament_registrations_player1_id_fkey(${USER_PUBLIC_COLS}), player2:users!tournament_registrations_player2_id_fkey(${USER_PUBLIC_COLS}), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)`).eq('tournament_id', id),
       ])
       if (tErr) throw tErr
       setTournament(t as Tournament)
@@ -476,7 +476,7 @@ export function TournamentDetail() {
                   <span className="text-gray-400 text-sm w-6">{i + 1}.</span>
                   <div>
                     <span className="font-medium text-gray-800">
-                      {r.player1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.player2_name}` : ''}
+                      {r.player1?.full_name ?? r.guest1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_guest_id || r.guest2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.guest2?.full_name ?? r.player2_name}` : ''}
                     </span>
                     {(r.player1?.club || r.player2?.club) && (
                       <p className="text-xs text-gray-500">{r.player1?.club ?? r.player2?.club}</p>

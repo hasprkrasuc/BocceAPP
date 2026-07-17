@@ -258,13 +258,16 @@ export function nextKnockoutStage(
 // ────────────────────────────────────────────────────────────────
 export function teamDisplayName(registration: TournamentRegistration | null | undefined): string {
   if (!registration) return '???'
-  // Gost (neregistriran/tuji igralec) nima uporabniškega zapisa → uporabi prosto ime.
   const lastName = (full: string | null | undefined) => full?.split(' ').at(-1) ?? '?'
-  const p1 = registration.player1 ? lastName(registration.player1.full_name) : lastName(registration.player1_name)
+  // Ime igralca: registriran uporabnik → gost-igralec (guest_players) → prosto ime.
+  const name1 = registration.player1?.full_name ?? registration.guest1?.full_name ?? registration.player1_name
+  const p1 = lastName(name1)
   // Posamezna disciplina: prijava nima drugega igralca → prikaži samo eno ime
-  if (!registration.player2_id && !registration.player2 && !registration.player2_name) return p1
-  const p2 = registration.player2 ? lastName(registration.player2.full_name) : lastName(registration.player2_name)
-  return `${p1} / ${p2}`
+  const hasP2 = registration.player2_id || registration.player2 ||
+    registration.player2_guest_id || registration.guest2 || registration.player2_name
+  if (!hasP2) return p1
+  const name2 = registration.player2?.full_name ?? registration.guest2?.full_name ?? registration.player2_name
+  return `${p1} / ${lastName(name2)}`
 }
 
 export function matchTypeLabel(type: MatchType): string {

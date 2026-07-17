@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel } from '../../engines/tournament'
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
-import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile } from '../../types'
+import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer } from '../../types'
 import { drawKnockout } from '../../lib/knockoutDraw'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
@@ -38,11 +38,15 @@ export default function TournamentEdit() {
   // Manual registration form
   const [showAddForm, setShowAddForm] = useState(false)
   const [players, setPlayers] = useState<UserProfile[]>([])
-  // guestN + guestNName: gost = neregistriran (BZS) ali tuji igralec, vnesen kot prosto ime.
+  // Ponovno uporabni tuji/neregistrirani igralci (guest_players) — izbirljivi na turnirjih.
+  const [guestPlayers, setGuestPlayers] = useState<GuestPlayer[]>([])
+  // guestN = "Neregistriran / tuji": izbereš obstoječega gosta (guestNId) ali ustvariš
+  // novega (guestNId === '__new__' + guestNNewName).
   const [addForm, setAddForm] = useState({
     player1: '', player2: '',
     guest1: false, guest2: false,
-    guest1Name: '', guest2Name: '',
+    guest1Id: '', guest2Id: '',
+    guest1NewName: '', guest2NewName: '',
   })
   const [addLoading, setAddLoading] = useState(false)
 
@@ -67,11 +71,11 @@ export default function TournamentEdit() {
       const [{ data: t, error: tErr }, { data: r }, { data: g }, { data: gt }] = await Promise.all([
         supabase.from('tournaments').select('*').eq('id', id).single(),
         supabase.from('tournament_registrations')
-          .select('*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*)')
+          .select('*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)')
           .eq('tournament_id', id).order('registered_at'),
         supabase.from('tournament_groups').select('*').eq('tournament_id', id).order('group_number'),
         ids.length > 0
-          ? supabase.from('group_teams').select('*, registration:tournament_registrations(*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*))').in('group_id', ids)
+          ? supabase.from('group_teams').select('*, registration:tournament_registrations(*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*))').in('group_id', ids)
           : Promise.resolve({ data: [] }),
       ])
       if (tErr) throw tErr
@@ -122,7 +126,13 @@ export default function TournamentEdit() {
     await load()
   }
 
+  async function loadGuestPlayers() {
+    const { data } = await supabase.from('guest_players').select('*').order('full_name')
+    setGuestPlayers((data ?? []) as GuestPlayer[])
+  }
+
   async function loadPlayers() {
+    loadGuestPlayers()
     if (players.length > 0) return
     // Vsi z vlogo 'player' + člani ligaških postav z drugo vlogo (sodniki/admini,
     // ki tudi igrajo) — sicer bi manjkali na seznamu.
@@ -170,19 +180,60 @@ export default function TournamentEdit() {
     await load()
   }
 
+  /** Razreši gost-slot v guest_players ID: obstoječi izbrani ali na novo ustvarjen. */
+  async function resolveGuest(existingId: string, newName: string):
+    Promise<{ id: string; name: string } | { error: string }> {
+    if (existingId && existingId !== '__new__') {
+      const gp = guestPlayers.find(g => g.id === existingId)
+      return { id: existingId, name: gp?.full_name ?? '' }
+    }
+    const name = newName.trim()
+    if (!name) return { error: 'Izberi ali vpiši tujega igralca' }
+    const { data, error } = await supabase
+      .from('guest_players').insert({ full_name: name }).select('id, full_name').single()
+    if (error || !data) return { error: error?.message ?? 'Napaka pri ustvarjanju gosta' }
+    return { id: (data as GuestPlayer).id, name: (data as GuestPlayer).full_name }
+  }
+
+  function guestSlotFilled(isGuest: boolean, guestId: string, newName: string, playerId: string): boolean {
+    if (isGuest) return (!!guestId && guestId !== '__new__') || !!newName.trim()
+    return !!playerId
+  }
+
   async function handleManualRegister(e: FormEvent) {
     e.preventDefault()
     const isPair = tournament?.discipline_type ? isPairDiscipline(tournament.discipline_type) : true
 
-    // Razreši vsak slot: registriran igralec (UUID) ali gost (prosto ime).
-    const p1Id = addForm.guest1 ? null : addForm.player1
-    const p1Name = addForm.guest1 ? addForm.guest1Name.trim() : null
-    const p2Id = !isPair ? null : (addForm.guest2 ? null : addForm.player2)
-    const p2Name = isPair && addForm.guest2 ? addForm.guest2Name.trim() : null
+    // Validacija vnosa (pred morebitnim ustvarjanjem gosta).
+    if (!guestSlotFilled(addForm.guest1, addForm.guest1Id, addForm.guest1NewName, addForm.player1)) {
+      setMessage('❌ Izberi ali vpiši igralca 1'); return
+    }
+    if (isPair && !guestSlotFilled(addForm.guest2, addForm.guest2Id, addForm.guest2NewName, addForm.player2)) {
+      setMessage('❌ Izberi ali vpiši igralca 2'); return
+    }
+    if (isPair && !addForm.guest1 && !addForm.guest2 && addForm.player1 === addForm.player2) {
+      setMessage('❌ Igralca morata biti različna'); return
+    }
 
-    if (addForm.guest1 ? !p1Name : !p1Id) { setMessage('❌ Izberi ali vpiši igralca'); return }
-    if (isPair && (addForm.guest2 ? !p2Name : !p2Id)) { setMessage('❌ Izberi ali vpiši oba igralca'); return }
-    if (isPair && !addForm.guest1 && !addForm.guest2 && p1Id === p2Id) { setMessage('❌ Igralca morata biti različna'); return }
+    setAddLoading(true)
+    setMessage('')
+
+    // Razreši/ustvari gosta ali uporabi registriranega igralca.
+    let p1Id: string | null = null, p1GuestId: string | null = null, p1Name: string | null = null
+    if (addForm.guest1) {
+      const g = await resolveGuest(addForm.guest1Id, addForm.guest1NewName)
+      if ('error' in g) { setAddLoading(false); setMessage(`❌ ${g.error}`); return }
+      p1GuestId = g.id; p1Name = g.name
+    } else { p1Id = addForm.player1 }
+
+    let p2Id: string | null = null, p2GuestId: string | null = null, p2Name: string | null = null
+    if (isPair) {
+      if (addForm.guest2) {
+        const g = await resolveGuest(addForm.guest2Id, addForm.guest2NewName)
+        if ('error' in g) { setAddLoading(false); setMessage(`❌ ${g.error}`); return }
+        p2GuestId = g.id; p2Name = g.name
+      } else { p2Id = addForm.player2 }
+    }
 
     // Preveri dvojno prijavo le za registrirane igralce (gostov ni v drugih prijavah).
     const ids = [p1Id, p2Id].filter(Boolean) as string[]
@@ -190,23 +241,20 @@ export default function TournamentEdit() {
       (r.player1_id != null && ids.includes(r.player1_id)) ||
       (r.player2_id != null && ids.includes(r.player2_id))
     )
-    if (alreadyRegistered) { setMessage('❌ Eden od igralcev je že prijavljen'); return }
+    if (alreadyRegistered) { setAddLoading(false); setMessage('❌ Eden od igralcev je že prijavljen'); return }
 
-    setAddLoading(true)
-    setMessage('')
     const { error: err } = await supabase.from('tournament_registrations').insert({
       tournament_id: id,
-      player1_id: p1Id,
-      player1_name: p1Name,
-      player2_id: p2Id,
-      player2_name: p2Name,
+      player1_id: p1Id, player1_guest_id: p1GuestId, player1_name: p1Name,
+      player2_id: p2Id, player2_guest_id: p2GuestId, player2_name: p2Name,
       status: 'confirmed',
     })
     setAddLoading(false)
     if (err) { setMessage(`❌ Napaka: ${err.message}`); return }
     setMessage('✓ Ekipa dodana in potrjena')
-    setAddForm({ player1: '', player2: '', guest1: false, guest2: false, guest1Name: '', guest2Name: '' })
+    setAddForm({ player1: '', player2: '', guest1: false, guest2: false, guest1Id: '', guest2Id: '', guest1NewName: '', guest2NewName: '' })
     setShowAddForm(false)
+    loadGuestPlayers()
     await load()
   }
 
@@ -522,12 +570,26 @@ export default function TournamentEdit() {
                       </label>
                     </div>
                     {addForm.guest1 ? (
-                      <input
-                        type="text" required
-                        value={addForm.guest1Name}
-                        onChange={e => setAddForm(f => ({ ...f, guest1Name: e.target.value }))}
-                        placeholder="Ime in priimek (npr. tuji igralec)"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none" />
+                      <div className="space-y-2">
+                        <select
+                          value={addForm.guest1Id}
+                          onChange={e => setAddForm(f => ({ ...f, guest1Id: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                          <option value="">Izberi tujega igralca...</option>
+                          {guestPlayers.map(g => (
+                            <option key={g.id} value={g.id}>{g.full_name}{g.club ? ` — ${g.club}` : ''}</option>
+                          ))}
+                          <option value="__new__">+ Nov tuji igralec…</option>
+                        </select>
+                        {addForm.guest1Id === '__new__' && (
+                          <input
+                            type="text"
+                            value={addForm.guest1NewName}
+                            onChange={e => setAddForm(f => ({ ...f, guest1NewName: e.target.value }))}
+                            placeholder="Ime in priimek novega tujega igralca"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none" />
+                        )}
+                      </div>
                     ) : (
                       <select
                         required
@@ -554,12 +616,26 @@ export default function TournamentEdit() {
                         </label>
                       </div>
                       {addForm.guest2 ? (
-                        <input
-                          type="text" required
-                          value={addForm.guest2Name}
-                          onChange={e => setAddForm(f => ({ ...f, guest2Name: e.target.value }))}
-                          placeholder="Ime in priimek (npr. tuji igralec)"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none" />
+                        <div className="space-y-2">
+                          <select
+                            value={addForm.guest2Id}
+                            onChange={e => setAddForm(f => ({ ...f, guest2Id: e.target.value }))}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                            <option value="">Izberi tujega igralca...</option>
+                            {guestPlayers.map(g => (
+                              <option key={g.id} value={g.id}>{g.full_name}{g.club ? ` — ${g.club}` : ''}</option>
+                            ))}
+                            <option value="__new__">+ Nov tuji igralec…</option>
+                          </select>
+                          {addForm.guest2Id === '__new__' && (
+                            <input
+                              type="text"
+                              value={addForm.guest2NewName}
+                              onChange={e => setAddForm(f => ({ ...f, guest2NewName: e.target.value }))}
+                              placeholder="Ime in priimek novega tujega igralca"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none" />
+                          )}
+                        </div>
                       ) : (
                         <select
                           required
@@ -598,7 +674,7 @@ export default function TournamentEdit() {
                 {pending.map(r => (
                   <div key={r.id} className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
                     <div>
-                      <span className="font-medium text-gray-800">{r.player1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.player2_name}` : ''}</span>
+                      <span className="font-medium text-gray-800">{r.player1?.full_name ?? r.guest1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_guest_id || r.guest2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.guest2?.full_name ?? r.player2_name}` : ''}</span>
                       <p className="text-xs text-gray-500">{r.player1?.club ?? '—'} · {new Date(r.registered_at).toLocaleDateString('sl')}</p>
                     </div>
                     <div className="flex gap-2">
@@ -621,7 +697,7 @@ export default function TournamentEdit() {
                 {rejected.map(r => (
                   <div key={r.id} className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
                     <div>
-                      <span className="font-medium text-gray-800">{r.player1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.player2_name}` : ''}</span>
+                      <span className="font-medium text-gray-800">{r.player1?.full_name ?? r.guest1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_guest_id || r.guest2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.guest2?.full_name ?? r.player2_name}` : ''}</span>
                       <p className="text-xs text-gray-500">{r.player1?.club ?? '—'} · {new Date(r.registered_at).toLocaleDateString('sl')}</p>
                     </div>
                     <div className="flex gap-2">
@@ -695,13 +771,13 @@ export default function TournamentEdit() {
                         <div className="flex items-center gap-3">
                           <span className="text-gray-400 text-sm w-6">{i + 1}.</span>
                           <div>
-                            <span className="font-medium text-gray-800">{r.player1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.player2_name}` : ''}</span>
+                            <span className="font-medium text-gray-800">{r.player1?.full_name ?? r.guest1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_guest_id || r.guest2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.guest2?.full_name ?? r.player2_name}` : ''}</span>
                             <p className="text-xs text-gray-500">{r.player1?.club ?? '—'}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
                           {/* Urejanje podpira le registrirane igralce; gost (prosto ime) se lahko le odstrani. */}
-                          {!r.player1_name && !r.player2_name && (
+                          {!r.player1_name && !r.player2_name && !r.player1_guest_id && !r.player2_guest_id && (
                             <button onClick={() => startEdit(r)} className="text-xs text-bocce-green hover:text-bocce-green-light">✎ Uredi</button>
                           )}
                           <button onClick={() => rejectRegistration(r.id)} className="text-xs text-red-500 hover:text-red-700">Zavrni</button>

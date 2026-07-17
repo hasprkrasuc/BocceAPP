@@ -20,7 +20,7 @@ export async function loadSeriesStandings(series: TournamentSeries): Promise<Ser
   for (const t of tournaments ?? []) {
     const [{ data: regs }, { data: groups }, { data: matches }] = await Promise.all([
       supabase.from('tournament_registrations')
-        .select('id, player1_id, player2_id')
+        .select('id, player1_id, player2_id, player1_guest_id, player2_guest_id')
         .eq('tournament_id', t.id).eq('status', 'confirmed'),
       supabase.from('tournament_groups')
         .select('id, group_teams(id, registration_id)')
@@ -43,12 +43,18 @@ export async function loadSeriesStandings(series: TournamentSeries): Promise<Ser
 
   const standings = seriesStandings(perTournament, series.counting_results)
 
-  // pridruži imena
+  // pridruži imena — ID je lahko registriran uporabnik (users) ali gost (guest_players)
   const ids = standings.map(s => s.player_id)
-  const { data: users } = ids.length
-    ? await supabase.from('users').select('id, full_name').in('id', ids)
-    : { data: [] as { id: string; full_name: string | null }[] }
-  const nameById = new Map((users ?? []).map(u => [u.id, u.full_name]))
+  const [{ data: users }, { data: guests }] = ids.length
+    ? await Promise.all([
+        supabase.from('users').select('id, full_name').in('id', ids),
+        supabase.from('guest_players').select('id, full_name').in('id', ids),
+      ])
+    : [{ data: [] as { id: string; full_name: string | null }[] },
+       { data: [] as { id: string; full_name: string | null }[] }]
+  const nameById = new Map<string, string | null>()
+  for (const u of users ?? []) nameById.set(u.id, u.full_name)
+  for (const g of guests ?? []) nameById.set(g.id, g.full_name)
 
   return standings.map(s => ({ ...s, full_name: nameById.get(s.player_id) ?? null }))
 }

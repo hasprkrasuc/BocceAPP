@@ -86,19 +86,32 @@ export interface Tournament {
   format: 'groups' | 'knockout' | 'round_robin'
 }
 
+/** Ponovno uporabni tuji/neregistrirani igralec (stabilen UUID, ni v auth.users). */
+export interface GuestPlayer {
+  id: string
+  full_name: string
+  club: string | null
+  created_at: string
+}
+
 export interface TournamentRegistration {
   id: string
   tournament_id: string
   /** UUID registriranega igralca; NULL, kadar je igralec 1 gost (neregistriran/tuji). */
   player1_id: string | null
   player2_id: string | null
-  /** Prosto ime gosta (neregistriran pri BZS / tuji igralec), kadar player1_id ni nastavljen. */
+  /** UUID ponovno uporabnega gosta-igralca (guest_players); NULL, če ni gost. */
+  player1_guest_id: string | null
+  player2_guest_id: string | null
+  /** Prosto ime gosta (denormalizirano / stara prosta prijava), kadar player*_id ni nastavljen. */
   player1_name: string | null
   player2_name: string | null
   status: RegistrationStatus
   registered_at: string
   player1?: UserProfile
   player2?: UserProfile
+  guest1?: GuestPlayer
+  guest2?: GuestPlayer
 }
 
 export interface TournamentGroup {
