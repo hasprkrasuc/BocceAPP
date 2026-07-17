@@ -149,6 +149,8 @@ export interface Match {
   team_b?: GroupTeam
 }
 
+export type LeagueSeasonFormat = 'flat' | 'groups'
+
 export interface LeagueSeason {
   id: string
   name: string
@@ -161,6 +163,8 @@ export interface LeagueSeason {
   win_points: number
   draw_points: number
   loss_points: number
+  /** 'flat' = raven round robin čez vse ekipe (privzeto). 'groups' = 2 skupini po 6 + nadaljevalni skupini. */
+  format: LeagueSeasonFormat
 }
 
 export interface LeagueTeam {
@@ -169,8 +173,10 @@ export interface LeagueTeam {
   club_name: string
   short_name: string | null
   captain_id: string | null
-  /** Žrebana številka (1..N) za Bergerjev razpored; NULL = žreb še ni opravljen */
+  /** Žrebana številka (1..N oz. 1..6 znotraj skupine) za Bergerjev razpored; NULL = žreb še ni opravljen */
   draw_number: number | null
+  /** Samo za format='groups': v kateri skupini faze 1 je ekipa ('A'/'B'). NULL = žreb še ni vnešen. */
+  group_label: 'A' | 'B' | null
   captain?: UserProfile
   league_team_players?: LeagueTeamPlayer[]
 }
