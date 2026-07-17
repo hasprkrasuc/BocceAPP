@@ -914,9 +914,7 @@ export default function TournamentEdit() {
                               {gt.seed}
                             </span>
                             <span className="text-gray-700">
-                              {gt.registration
-                                ? `${gt.registration.player1?.full_name?.split(' ').at(-1)} / ${gt.registration.player2?.full_name?.split(' ').at(-1)}`
-                                : 'Neznano'}
+                              {gt.registration ? teamDisplayName(gt.registration) : 'Neznano'}
                             </span>
                             {isSource && <span className="ml-auto text-xs text-amber-600">↕</span>}
                           </div>
