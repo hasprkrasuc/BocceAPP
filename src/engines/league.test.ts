@@ -5,12 +5,13 @@ import type { LeagueTeam, LeagueFixture, LeagueSeason, LeagueMatchResult, League
 const makeSeason = (overrides?: Partial<LeagueSeason>): LeagueSeason => ({
   id: 's1', name: 'Test', year: 2025, category: 'men',
   status: 'active', tier: 'super_liga', obz_name: null, rounds_count: 99,
-  win_points: 2, draw_points: 1, loss_points: 0,
+  win_points: 2, draw_points: 1, loss_points: 0, format: 'flat',
   ...overrides,
 })
 
 const makeTeam = (id: string, name: string): LeagueTeam => ({
   id, season_id: 's1', club_name: name, short_name: null, captain_id: null,
+  draw_number: null, group_label: null,
 })
 
 const makeFixture = (
