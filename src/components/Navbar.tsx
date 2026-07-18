@@ -20,6 +20,7 @@ export default function Navbar() {
     { to: '/klubi', label: sl.nav.clubs },
     { to: '/turnirji', label: sl.nav.tournaments },
     { to: '/prvenstva', label: sl.nav.championships },
+    { to: '/serije', label: sl.nav.series },
     { to: '/liga', label: sl.nav.league },
     { to: '/statistika', label: sl.nav.statistics },
     { to: '/arhiv', label: sl.nav.archive },
