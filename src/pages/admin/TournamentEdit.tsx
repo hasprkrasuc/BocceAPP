@@ -4,7 +4,8 @@ import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel } from '../../engines/tournament'
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer } from '../../types'
-import { drawKnockout } from '../../lib/knockoutDraw'
+import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
+import { pairsFromSeededTeams } from '../../engines/knockout'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
@@ -61,7 +62,19 @@ export default function TournamentEdit() {
   // Swap teams between groups
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null)
 
+  // Izločilni del: način sestave parov + napredovalci + ročni pari
+  type KoQualifier = { teamId: string; label: string; groupNumber: number; position: 1 | 2 }
+  const [koMethod, setKoMethod] = useState<'auto' | 'draw' | 'manual'>('auto')
+  const [koQualifiers, setKoQualifiers] = useState<KoQualifier[]>([])
+  const [koPairs, setKoPairs] = useState<Array<[string, string]>>([])
+
   useEffect(() => { load() }, [id])
+
+  // Ob odprtju zavihka Izločilni del naloži napredovalce (za ročne/žrebne pare).
+  useEffect(() => {
+    if (tab === 'knockout' && groups.length > 0) loadKoQualifiers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, groups.length])
 
   async function load() {
     try {
@@ -416,96 +429,140 @@ export default function TournamentEdit() {
     setDrawLoading(false)
   }
 
+  /** Napredovalci iz skupin (1. in 2. mesto vsake skupine) — za sestavo izločilnih parov. */
+  async function fetchQualifiers(): Promise<KoQualifier[]> {
+    const { data: gm } = await supabase.from('matches')
+      .select('group_id, match_number, winner_id')
+      .eq('tournament_id', id).eq('stage', 'group').eq('status', 'completed')
+    const gmr = (gm ?? []) as Array<{ group_id: string; match_number: number; winner_id: string | null }>
+    const nameByTeam = new Map(groupTeams.map(gt => [gt.id, gt.registration ? teamDisplayName(gt.registration) : '?']))
+    const quals: KoQualifier[] = []
+    for (const g of [...groups].sort((a, b) => a.group_number - b.group_number)) {
+      const size = g.group_size ?? 4
+      const winnersMatchNum = size <= 4 ? 3 : 7
+      const lastMatchNum = size <= 4 ? 5 : 9
+      const gMatches = gmr.filter(m => m.group_id === g.id)
+      const found: Array<[1 | 2, string | null | undefined]> = [
+        [1, gMatches.find(m => m.match_number === winnersMatchNum)?.winner_id],
+        [2, gMatches.find(m => m.match_number === lastMatchNum)?.winner_id],
+      ]
+      for (const [pos, wid] of found) {
+        if (wid) quals.push({
+          teamId: wid, groupNumber: g.group_number, position: pos,
+          label: `${nameByTeam.get(wid) ?? '?'} (S${g.group_number}·${pos}.)`,
+        })
+      }
+    }
+    return quals
+  }
+
+  /** Samodejni nosilni pari: zmagovalci = nosilci 1..G, drugouvrščeni = G+1..2G (obratno). */
+  function autoSeedPairs(quals: KoQualifier[]): Array<[string | null, string | null]> {
+    const byGroup = (a: KoQualifier, b: KoQualifier) => a.groupNumber - b.groupNumber
+    const winners = quals.filter(q => q.position === 1).sort(byGroup).map(q => q.teamId)
+    const runners = quals.filter(q => q.position === 2).sort(byGroup).map(q => q.teamId)
+    return pairsFromSeededTeams([...winners, ...runners.reverse()])
+  }
+
+  /** Naloži napredovalce (ko odpreš zavihek Izločilni del) + pripravi privzete ročne pare. */
+  async function loadKoQualifiers() {
+    const quals = await fetchQualifiers()
+    setKoQualifiers(quals)
+    // Privzeti ročni pari = samodejni razpored — le če je napredovalcev potenca 2 (≥2).
+    const n = quals.length
+    if (n >= 2 && (n & (n - 1)) === 0) {
+      setKoPairs(autoSeedPairs(quals).map(([a, b]) => [a ?? '', b ?? ''] as [string, string]))
+    } else {
+      setKoPairs([])
+    }
+  }
+
   async function generateKnockout() {
+    if (!window.confirm('Ustvarjanje izločilnega dela pobriše morebitne obstoječe izločilne tekme in njihove rezultate. Nadaljujem?')) return
     setMessage('')
     try {
       const confirmed = registrations.filter(r => r.status === 'confirmed')
-      // Uporabi DEJANSKO število skupin (kot je bilo žrebano), ne le števila ekip,
-      // sicer se lahko določitev stopnje (extra/direct) razlikuje od žreba.
       const dist = suggestGroupDistribution(confirmed.length, groups.length || undefined)
 
-      const { data: finalMatches } = await supabase.from('matches')
-        .select('*, group:tournament_groups(*)')
-        .eq('tournament_id', id)
-        .eq('stage', 'group')
-        .eq('status', 'completed')
+      // Konfiguracija z dodatnim krogom (skupine niso potenca 2) → poseben razpored.
+      if (dist.extraStage !== null) { await legacyGenerateExtra(dist); return }
 
-      // Collect qualifiers from each group
-      const directQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
-      const extraQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
+      const quals = await fetchQualifiers()
+      const n = quals.length
+      if (n < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
+      if ((n & (n - 1)) !== 0) { setMessage(`Število napredovalcev (${n}) ni potenca 2 — izločilni del ni mogoč`); return }
 
-      for (const g of groups) {
-        const size = (g.group_size ?? 4) as 3 | 4 | 5
-        const winnersMatchNum = size <= 4 ? 3 : 7
-        const lastMatchNum = size <= 4 ? 5 : 9
-
-        const gMatches = ((finalMatches ?? []) as Array<{
-          group_id: string; match_number: number; winner_id: string | null
-        }>).filter(m => m.group_id === g.id)
-
-        const m1st = gMatches.find(m => m.match_number === winnersMatchNum)
-        const m2nd = gMatches.find(m => m.match_number === lastMatchNum)
-
-        // Skupina po 3 igra dodatni krog LE, kadar tak krog obstaja (G ni potenca 2).
-        // Pri potenci 2 (npr. 8 skupin) so tudi skupine po 3 direktne → po 2 naprej.
-        const isExtra = size === 3 && dist.extraStage !== null
-        const target = isExtra ? extraQualifiers : directQualifiers
-
-        if (m1st?.winner_id) target.push({ groupNumber: g.group_number, position: 1, teamId: m1st.winner_id })
-        if (m2nd?.winner_id) target.push({ groupNumber: g.group_number, position: 2, teamId: m2nd.winner_id })
-      }
-
-      if (directQualifiers.length + extraQualifiers.length < 2) {
-        setMessage('Ni dovolj napredovalcev za izločilni del')
-        return
-      }
-
-      let matchNum = 1
-
-      // Create extra stage matches (groups of 3 qualifiers)
-      if (extraQualifiers.length > 0 && dist.extraStage) {
-        const pos1 = extraQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
-        const pos2 = extraQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
-        const n = Math.min(pos1.length, pos2.length)
-        for (let i = 0; i < n; i++) {
-          await supabase.from('matches').insert({
-            tournament_id: id, group_id: null, stage: dist.extraStage,
-            match_type: 'knockout', match_number: matchNum++,
-            team_a_id: pos1[i]?.teamId ?? null,
-            team_b_id: pos2[n - 1 - i]?.teamId ?? null,
-            status: 'pending',
-          })
+      let pairs: Array<[string | null, string | null]>
+      if (koMethod === 'manual') {
+        const flat = koPairs.flat()
+        const used = flat.filter(Boolean)
+        if (used.length !== n || new Set(used).size !== n) {
+          setMessage('❌ Ročni pari: vsaka ekipa mora biti izbrana natanko enkrat'); return
         }
+        pairs = koPairs.map(([a, b]) => [a || null, b || null])
+      } else if (koMethod === 'draw') {
+        const ids = quals.map(q => q.teamId)
+        for (let i = ids.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]
+        }
+        pairs = []
+        for (let i = 0; i < ids.length; i += 2) pairs.push([ids[i], ids[i + 1]])
+      } else {
+        pairs = autoSeedPairs(quals)
       }
 
-      // Create direct stage matches (groups of 4/5 qualifiers)
-      const pos1d = directQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
-      const pos2d = directQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
-      const nd = Math.min(pos1d.length, pos2d.length)
-      matchNum = 1
-      for (let i = 0; i < nd; i++) {
-        await supabase.from('matches').insert({
-          tournament_id: id, group_id: null, stage: dist.directStage,
-          match_type: 'knockout', match_number: matchNum++,
-          team_a_id: pos1d[i]?.teamId ?? null,
-          team_b_id: pos2d[nd - 1 - i]?.teamId ?? null,
-          status: 'pending',
-        })
-        await supabase.from('matches').insert({
-          tournament_id: id, group_id: null, stage: dist.directStage,
-          match_type: 'knockout', match_number: matchNum++,
-          team_a_id: pos2d[i]?.teamId ?? null,
-          team_b_id: pos1d[nd - 1 - i]?.teamId ?? null,
-          status: 'pending',
-        })
-      }
-
-      const extraMsg = dist.extraStage ? ` + ${stageLabel(dist.extraStage)} za skupini po 3` : ''
-      setMessage(`✓ Izločilni del ustvarjen — ${stageLabel(dist.directStage)} za direktne${extraMsg}`)
+      await insertKnockoutBracket(id!, pairs)
+      setMessage(`✓ Izločilni del ustvarjen (${koMethod === 'manual' ? 'ročno' : koMethod === 'draw' ? 'žreb' : 'samodejno'})`)
       load()
     } catch (err) {
       setMessage('Napaka: ' + (err as Error).message)
     }
+  }
+
+  /** Star razpored za konfiguracije z DODATNIM krogom (skupine niso potenca 2). */
+  async function legacyGenerateExtra(dist: GroupDistribution) {
+    const { data: finalMatches } = await supabase.from('matches')
+      .select('*, group:tournament_groups(*)')
+      .eq('tournament_id', id).eq('stage', 'group').eq('status', 'completed')
+    const directQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
+    const extraQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
+    for (const g of groups) {
+      const size = (g.group_size ?? 4) as 3 | 4 | 5
+      const winnersMatchNum = size <= 4 ? 3 : 7
+      const lastMatchNum = size <= 4 ? 5 : 9
+      const gMatches = ((finalMatches ?? []) as Array<{ group_id: string; match_number: number; winner_id: string | null }>).filter(m => m.group_id === g.id)
+      const m1st = gMatches.find(m => m.match_number === winnersMatchNum)
+      const m2nd = gMatches.find(m => m.match_number === lastMatchNum)
+      const isExtra = size === 3 && dist.extraStage !== null
+      const target = isExtra ? extraQualifiers : directQualifiers
+      if (m1st?.winner_id) target.push({ groupNumber: g.group_number, position: 1, teamId: m1st.winner_id })
+      if (m2nd?.winner_id) target.push({ groupNumber: g.group_number, position: 2, teamId: m2nd.winner_id })
+    }
+    if (directQualifiers.length + extraQualifiers.length < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
+    let matchNum = 1
+    if (extraQualifiers.length > 0 && dist.extraStage) {
+      const pos1 = extraQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
+      const pos2 = extraQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
+      const n = Math.min(pos1.length, pos2.length)
+      for (let i = 0; i < n; i++) {
+        await supabase.from('matches').insert({
+          tournament_id: id, group_id: null, stage: dist.extraStage, match_type: 'knockout', match_number: matchNum++,
+          team_a_id: pos1[i]?.teamId ?? null, team_b_id: pos2[n - 1 - i]?.teamId ?? null, status: 'pending',
+        })
+      }
+    }
+    const pos1d = directQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
+    const pos2d = directQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
+    const nd = Math.min(pos1d.length, pos2d.length)
+    matchNum = 1
+    for (let i = 0; i < nd; i++) {
+      await supabase.from('matches').insert({
+        tournament_id: id, group_id: null, stage: dist.directStage, match_type: 'knockout', match_number: matchNum++,
+        team_a_id: pos1d[i]?.teamId ?? null, team_b_id: pos2d[nd - 1 - i]?.teamId ?? null, status: 'pending',
+      })
+    }
+    setMessage(`✓ Izločilni del ustvarjen — ${stageLabel(dist.directStage)}`)
+    load()
   }
 
   if (loading) return <div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-bocce-green" /></div>
@@ -938,22 +995,71 @@ export default function TournamentEdit() {
       {/* Knockout tab */}
       {tab === 'knockout' && (
         <div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-            <p className="text-sm text-amber-800 font-medium mb-1">Izločilni del</p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 space-y-3">
+            <p className="text-sm text-amber-800 font-medium">Izločilni del</p>
             {dist.extraStage ? (
-              <p className="text-xs text-amber-700 mb-3">
+              <p className="text-xs text-amber-700">
                 Skupini po 4/5 → direktno v <strong>{stageLabel(dist.directStage)}</strong> ·
                 Skupini po 3 → najprej <strong>{stageLabel(dist.extraStage)}</strong>, nato {stageLabel(dist.directStage)}
+                <br />(dodatni krog — samodejni razpored)
               </p>
             ) : (
-              <p className="text-xs text-amber-700 mb-3">
-                Vse skupini → direktno v <strong>{stageLabel(dist.directStage)}</strong>
-              </p>
+              <>
+                <p className="text-xs text-amber-700">
+                  Vse skupini → direktno v <strong>{stageLabel(dist.directStage)}</strong> · napredovalcev: <strong>{koQualifiers.length}</strong>
+                </p>
+                {/* Način sestave parov */}
+                <div className="flex flex-wrap gap-2">
+                  {([['auto', 'Samodejno (križanje)'], ['draw', 'Žreb (naključno)'], ['manual', 'Ročno']] as const).map(([m, label]) => (
+                    <button key={m} onClick={() => setKoMethod(m)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${koMethod === m
+                        ? 'bg-bocce-green text-white border-bocce-green'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {/* Ročni urejevalnik parov */}
+                {koMethod === 'manual' && (
+                  koQualifiers.length >= 2 && (koQualifiers.length & (koQualifiers.length - 1)) === 0 ? (
+                    <div className="space-y-1.5 bg-white rounded-lg p-3 border border-amber-100">
+                      <p className="text-xs text-gray-500">Sestavi pare prvega kroga (vsaka ekipa enkrat):</p>
+                      {koPairs.map((pair, pi) => (
+                        <div key={pi} className="flex items-center gap-1.5">
+                          <span className="text-xs text-gray-400 w-5">{pi + 1}.</span>
+                          <select value={pair[0]}
+                            onChange={e => setKoPairs(prev => { const cp = prev.map(p => [...p] as [string, string]); cp[pi][0] = e.target.value; return cp })}
+                            className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                            <option value="">—</option>
+                            {koQualifiers.map(q => <option key={q.teamId} value={q.teamId}>{q.label}</option>)}
+                          </select>
+                          <span className="text-xs text-gray-400">–</span>
+                          <select value={pair[1]}
+                            onChange={e => setKoPairs(prev => { const cp = prev.map(p => [...p] as [string, string]); cp[pi][1] = e.target.value; return cp })}
+                            className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                            <option value="">—</option>
+                            {koQualifiers.map(q => <option key={q.teamId} value={q.teamId}>{q.label}</option>)}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-red-600">
+                      Za ročni razpored morajo biti vpisani vsi rezultati skupin — napredovalcev mora biti potenca 2 (trenutno {koQualifiers.length}).
+                    </p>
+                  )
+                )}
+              </>
             )}
-            <button onClick={generateKnockout}
-              className="bg-bocce-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-gold-light transition-colors">
-              Ustvari izločilni del
-            </button>
+            <div>
+              <button onClick={generateKnockout}
+                className="bg-bocce-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-gold-light transition-colors">
+                Ustvari izločilni del
+              </button>
+              <p className="text-[11px] text-amber-700 mt-2">
+                ⚠️ Ponovno ustvarjanje pobriše obstoječe izločilne tekme in njihove rezultate.
+              </p>
+            </div>
           </div>
           <p className="text-sm text-gray-500 italic">
             Za vnos rezultatov pojdi na <Link to={`/turnirji/${id}`} className="text-bocce-green hover:underline">javno stran turnirja</Link>.

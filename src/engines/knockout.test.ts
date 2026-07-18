@@ -1,8 +1,47 @@
 import { describe, test, expect } from 'vitest'
 import { bracketSize, seedOrder, firstStageForSize } from './knockout'
-import { buildKnockoutBracket } from './knockout'
+import { buildKnockoutBracket, buildBracketFromFirstRound } from './knockout'
 import { knockoutPropagation, type KoMatchRow } from './knockout'
 import { seedRegistrations, type SeedableReg } from './knockout'
+
+describe('buildBracketFromFirstRound', () => {
+  test('8 parov (16 ekip) → r16(8)+qf(4)+sf(2)+final(1)+3.mesto; vsaka ekipa enkrat', () => {
+    const teams = Array.from({ length: 16 }, (_, i) => `t${i + 1}`)
+    const pairs: Array<[string | null, string | null]> = []
+    for (let i = 0; i < 8; i++) pairs.push([teams[2 * i], teams[2 * i + 1]])
+    const m = buildBracketFromFirstRound(pairs)
+    const count = (s: string) => m.filter(x => x.stage === s).length
+    expect(count('r16')).toBe(8)
+    expect(count('qf')).toBe(4)
+    expect(count('sf')).toBe(2)
+    expect(count('final')).toBe(1)
+    expect(count('third_place')).toBe(1)
+    // Prvi krog vsebuje vseh 16 ekip natanko enkrat (brez podvajanja — regresija)
+    const r16 = m.filter(x => x.stage === 'r16')
+    const used = r16.flatMap(x => [x.teamA, x.teamB]).filter(Boolean)
+    expect(used).toHaveLength(16)
+    expect(new Set(used).size).toBe(16)
+  })
+
+  test('lih par (bye) → tekma je označena kot bye z zmagovalcem', () => {
+    const m = buildBracketFromFirstRound([['a', 'b'], ['c', null]])
+    const byes = m.filter(x => x.isBye)
+    expect(byes).toHaveLength(1)
+    expect(byes[0].winner).toBe('c')
+  })
+
+  test('zavrne število parov, ki ne da potence 2', () => {
+    expect(() => buildBracketFromFirstRound([['a', 'b'], ['c', 'd'], ['e', 'f']])).toThrow()
+  })
+
+  test('buildKnockoutBracket ostane skladen (16 nosilcev → r16 8 tekem)', () => {
+    const teams = Array.from({ length: 16 }, (_, i) => `s${i + 1}`)
+    const m = buildKnockoutBracket(teams)
+    expect(m.filter(x => x.stage === 'r16')).toHaveLength(8)
+    const used = m.filter(x => x.stage === 'r16').flatMap(x => [x.teamA, x.teamB]).filter(Boolean)
+    expect(new Set(used).size).toBe(16)
+  })
+})
 
 describe('bracketSize', () => {
   test('najbližja potenca 2 ≥ n', () => {
