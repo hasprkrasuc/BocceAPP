@@ -257,7 +257,8 @@ export function TournamentDetail() {
 
     if (match.group_id) {
       await propagateGroup(match.group_id)
-    } else if (tournament?.format === 'knockout' && match.stage !== 'group') {
+    } else if (match.stage !== 'group') {
+      // Izločilna tekma (velja za oba formata — čisti izločilni IN skupine→izločilni).
       await propagateKnockout(match.tournament_id)
     }
 
