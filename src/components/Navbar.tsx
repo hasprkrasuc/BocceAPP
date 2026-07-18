@@ -15,12 +15,12 @@ export default function Navbar() {
     setMenuOpen(false)
   }
 
-  const links = [
+  const links: Array<{ to: string; label: string; activeOn?: string[] }> = [
     { to: '/', label: sl.nav.home },
     { to: '/klubi', label: sl.nav.clubs },
     { to: '/turnirji', label: sl.nav.tournaments },
     { to: '/prvenstva', label: sl.nav.championships },
-    { to: '/serije', label: sl.nav.series },
+    { to: '/serije', label: sl.nav.series, activeOn: ['/serija'] },
     { to: '/liga', label: sl.nav.league },
     { to: '/statistika', label: sl.nav.statistics },
     { to: '/arhiv', label: sl.nav.archive },
@@ -28,9 +28,11 @@ export default function Navbar() {
     { to: '/koledar', label: sl.nav.calendar },
   ]
 
-  const isActive = (path: string): boolean => path === '/'
+  const matchPath = (p: string): boolean => p === '/'
     ? location.pathname === '/'
-    : location.pathname.startsWith(path)
+    : location.pathname.startsWith(p)
+  const isActive = (path: string, activeOn: string[] = []): boolean =>
+    [path, ...activeOn].some(matchPath)
 
   return (
     <nav className="bg-bocce-green shadow-md sticky top-0 z-50">
@@ -48,7 +50,7 @@ export default function Navbar() {
                 key={l.to}
                 to={l.to}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isActive(l.to)
+                  isActive(l.to, l.activeOn)
                     ? 'bg-bocce-green-dark text-white'
                     : 'text-green-100 hover:bg-bocce-green-light hover:text-white'
                 }`}
@@ -132,7 +134,7 @@ export default function Navbar() {
                 to={l.to}
                 onClick={() => setMenuOpen(false)}
                 className={`block px-3 py-2 rounded-md text-sm font-medium ${
-                  isActive(l.to) ? 'bg-bocce-green text-white' : 'text-green-100 hover:bg-bocce-green'
+                  isActive(l.to, l.activeOn) ? 'bg-bocce-green text-white' : 'text-green-100 hover:bg-bocce-green'
                 }`}
               >
                 {l.label}
