@@ -1,8 +1,25 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { format } from 'date-fns'
+import { sl as dateSl } from 'date-fns/locale'
 import { supabase } from '../supabase'
 import { loadSeriesStandings, type SeriesStandingRow } from '../lib/series'
-import type { TournamentSeries } from '../types'
+import type { TournamentSeries, TournamentStatus, TournamentKind } from '../types'
+
+interface SeriesTournament {
+  id: string
+  name: string
+  date: string
+  status: TournamentStatus
+  kind: TournamentKind
+}
+
+const T_STATUS: Record<TournamentStatus, { label: string; cls: string }> = {
+  draft: { label: 'Osnutek', cls: 'bg-gray-100 text-gray-600' },
+  registration_open: { label: 'Prijave odprte', cls: 'bg-green-100 text-green-700' },
+  in_progress: { label: 'V teku', cls: 'bg-amber-100 text-amber-700' },
+  completed: { label: 'Zaključen', cls: 'bg-blue-100 text-blue-700' },
+}
 
 export default function Series() {
   const { id } = useParams<{ id: string }>()
@@ -34,34 +51,64 @@ function SeriesList() {
 function SeriesDetail({ id }: { id: string }) {
   const [series, setSeries] = useState<TournamentSeries | null>(null)
   const [standings, setStandings] = useState<SeriesStandingRow[]>([])
+  const [tournaments, setTournaments] = useState<SeriesTournament[]>([])
   useEffect(() => {
     supabase.from('tournament_series').select('*').eq('id', id).single().then(async ({ data }) => {
       if (!data) return
       setSeries(data as TournamentSeries)
       setStandings(await loadSeriesStandings(data as TournamentSeries))
     })
+    supabase.from('tournaments').select('id, name, date, status, kind')
+      .eq('series_id', id).order('date', { ascending: true })
+      .then(({ data }) => setTournaments((data ?? []) as SeriesTournament[]))
   }, [id])
   if (!series) return <div className="p-6">Nalagam…</div>
+  const pubPath = (t: SeriesTournament) => `${t.kind === 'championship' ? '/prvenstva' : '/turnirji'}/${t.id}`
   return (
-    <div className="max-w-3xl mx-auto p-6">
+    <div className="max-w-4xl mx-auto p-6">
       <Link to="/serije" className="text-sm text-gray-500">← Serije</Link>
       <h1 className="text-xl font-bold mb-1">{series.name}</h1>
       <p className="text-xs text-gray-500 mb-6">{series.category.toUpperCase()} · {series.year} · {series.counting_results ? `najboljših ${series.counting_results}` : 'vsi štejejo'}</p>
-      <table className="w-full text-sm">
-        <thead><tr className="text-left text-gray-500 border-b">
-          <th className="py-1 w-10">#</th><th>Igralec</th><th className="text-right">Točke</th><th className="text-right">Turnirjev</th>
-        </tr></thead>
-        <tbody>
-          {standings.map((r, i) => (
-            <tr key={r.player_id} className="border-b">
-              <td className="py-1">{i + 1}</td><td>{r.full_name ?? '—'}</td>
-              <td className="text-right font-semibold">{r.total}</td>
-              <td className="text-right text-gray-500">{r.tournaments_played}</td>
-            </tr>
-          ))}
-          {standings.length === 0 && <tr><td colSpan={4} className="py-2 text-gray-400">Še ni rezultatov.</td></tr>}
-        </tbody>
-      </table>
+
+      <div className="grid md:grid-cols-[minmax(0,15rem)_1fr] gap-6 items-start">
+        {/* Turnirji serije — gumbi do rezultatov */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700 mb-2">Turnirji</h2>
+          <div className="space-y-2">
+            {tournaments.map(t => (
+              <Link key={t.id} to={pubPath(t)}
+                className="block bg-white border border-gray-200 rounded-xl px-3 py-2.5 hover:border-bocce-green hover:bg-gray-50 transition-colors">
+                <span className="block font-medium text-sm text-gray-800">{t.name}</span>
+                <span className="flex items-center justify-between mt-1">
+                  <span className="text-xs text-gray-500">{format(new Date(t.date), 'd. MMM yyyy', { locale: dateSl })}</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${T_STATUS[t.status].cls}`}>{T_STATUS[t.status].label}</span>
+                </span>
+              </Link>
+            ))}
+            {tournaments.length === 0 && <p className="text-sm text-gray-400">Ni turnirjev.</p>}
+          </div>
+        </div>
+
+        {/* Skupna lestvica serije */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700 mb-2">Skupna lestvica</h2>
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-gray-500 border-b">
+              <th className="py-1 w-10">#</th><th>Igralec</th><th className="text-right">Točke</th><th className="text-right">Turnirjev</th>
+            </tr></thead>
+            <tbody>
+              {standings.map((r, i) => (
+                <tr key={r.player_id} className="border-b">
+                  <td className="py-1">{i + 1}</td><td>{r.full_name ?? '—'}</td>
+                  <td className="text-right font-semibold">{r.total}</td>
+                  <td className="text-right text-gray-500">{r.tournaments_played}</td>
+                </tr>
+              ))}
+              {standings.length === 0 && <tr><td colSpan={4} className="py-2 text-gray-400">Še ni rezultatov.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
