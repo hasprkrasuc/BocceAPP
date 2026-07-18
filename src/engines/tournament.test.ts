@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { buildGroupSchedule, applyScore, teamDisplayName, suggestGroupDistribution } from './tournament'
+import {
+  buildGroupSchedule, applyScore, teamDisplayName, suggestGroupDistribution,
+  computePropagation, GROUP_TEMPLATES, type PropagationRow,
+} from './tournament'
 import type { TournamentRegistration } from '../types'
 
 describe('suggestGroupDistribution', () => {
@@ -113,6 +116,80 @@ describe('applyScore', () => {
   it('throws for non-existent match number', () => {
     const schedule = buildGroupSchedule(4, ['A', 'B', 'C', 'D'])
     expect(() => applyScore(schedule, 99, 11, 7)).toThrow()
+  })
+})
+
+describe('computePropagation', () => {
+  // 3-team template:
+  //  1: zm seed0 vs seed1        4: po losesMatch1 vs BYE
+  //  2: bye seed2 vs BYE         5: r  losesMatch3 vs winsMatch4
+  //  3: zm winsMatch1 vs winsMatch2
+  const template3 = GROUP_TEMPLATES[3]
+
+  it('regression: returns an EMPTY list once everything is already propagated (no infinite loop)', () => {
+    const rows: PropagationRow[] = [
+      { match_number: 1, status: 'completed', is_bye: false, team_a_id: 't1', team_b_id: 't2', winner_id: 't1' },
+      { match_number: 2, status: 'completed', is_bye: true,  team_a_id: 't3', team_b_id: null, winner_id: 't3' },
+      { match_number: 3, status: 'pending',   is_bye: false, team_a_id: 't1', team_b_id: 't3', winner_id: null },
+      { match_number: 4, status: 'completed', is_bye: true,  team_a_id: 't2', team_b_id: null, winner_id: 't2' },
+      { match_number: 5, status: 'pending',   is_bye: false, team_a_id: null, team_b_id: 't2', winner_id: null },
+    ]
+
+    const first = computePropagation(rows, template3)
+    expect(first).toEqual([])
+
+    // Running it again on the same (unchanged) state must also be empty —
+    // this is what the old "always assign" code got wrong: it kept
+    // rewriting the same values forever because `changed` never went false.
+    const second = computePropagation(rows, template3)
+    expect(second).toEqual([])
+  })
+
+  it('propagates match #1 into pending match #3 and bye match #4 when they are not yet resolved', () => {
+    const rows: PropagationRow[] = [
+      { match_number: 1, status: 'completed', is_bye: false, team_a_id: 't1', team_b_id: 't2', winner_id: 't1' },
+      { match_number: 2, status: 'completed', is_bye: true,  team_a_id: 't3', team_b_id: null, winner_id: 't3' },
+      { match_number: 3, status: 'pending',   is_bye: false, team_a_id: null, team_b_id: null, winner_id: null },
+      { match_number: 4, status: 'completed', is_bye: true,  team_a_id: null, team_b_id: null, winner_id: null },
+      { match_number: 5, status: 'pending',   is_bye: false, team_a_id: null, team_b_id: null, winner_id: null },
+    ]
+
+    const result = computePropagation(rows, template3)
+
+    const m3 = result.find(u => u.match_number === 3)
+    expect(m3?.updates).toEqual({ team_a_id: 't1', team_b_id: 't3' })
+
+    const m4 = result.find(u => u.match_number === 4)
+    expect(m4?.updates).toEqual({ team_a_id: 't2', winner_id: 't2' })
+  })
+
+  it('sets a bye match winner once, and not again on a second pass', () => {
+    const rows: PropagationRow[] = [
+      { match_number: 1, status: 'completed', is_bye: false, team_a_id: 't1', team_b_id: 't2', winner_id: 't1' },
+      { match_number: 2, status: 'completed', is_bye: true,  team_a_id: 't3', team_b_id: null, winner_id: 't3' },
+      { match_number: 3, status: 'pending',   is_bye: false, team_a_id: null, team_b_id: null, winner_id: null },
+      { match_number: 4, status: 'completed', is_bye: true,  team_a_id: null, team_b_id: null, winner_id: null },
+      { match_number: 5, status: 'pending',   is_bye: false, team_a_id: null, team_b_id: null, winner_id: null },
+    ]
+
+    const first = computePropagation(rows, template3)
+    const m4Update = first.find(u => u.match_number === 4)
+    expect(m4Update?.updates.winner_id).toBe('t2')
+
+    // Apply the update exactly like propagateGroup does, then re-run.
+    const m4 = rows.find(r => r.match_number === 4)!
+    Object.assign(m4, m4Update!.updates)
+
+    const second = computePropagation(rows, template3)
+    expect(second.find(u => u.match_number === 4)).toBeUndefined()
+  })
+
+  it('leaves a completed non-bye match untouched even when a template entry exists for it', () => {
+    const rows: PropagationRow[] = [
+      { match_number: 1, status: 'completed', is_bye: false, team_a_id: 't1', team_b_id: 't2', winner_id: 't1' },
+    ]
+    const result = computePropagation(rows, GROUP_TEMPLATES[4])
+    expect(result).toEqual([])
   })
 })
 
