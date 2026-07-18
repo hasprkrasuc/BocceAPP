@@ -217,4 +217,55 @@ describe('teamDisplayName', () => {
     } as unknown as TournamentRegistration
     expect(teamDisplayName(reg)).toBe('Janez / Ana')
   })
+
+  // Regression tests for the "? / ?" score-modal bug: a registration of two
+  // REGISTERED USERS must resolve names either from the nested player1/player2
+  // objects or (documented failure mode below) fall back to '?' when those
+  // nested objects are missing from the query embed.
+
+  it('resolves registered-user pair from nested player1/player2', () => {
+    const reg = {
+      player1_id: 't1', player2_id: 't2',
+      player1: { full_name: 'Janez Novak' },
+      player2: { full_name: 'Miha Kovač' },
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg)).toBe('Novak / Kovač')
+  })
+
+  it('documents the "? / ?" failure mode: ids present but no nested objects and no free-text name', () => {
+    const reg = {
+      player1_id: 't1', player2_id: 't2',
+      // No nested player1/player2 (query didn't embed them) and no player1_name/player2_name.
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg)).toBe('? / ?')
+  })
+
+  it('resolves guest free-text names', () => {
+    const reg = {
+      player1_name: 'Novak', player2_name: 'Kovač',
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg)).toBe('Novak / Kovač')
+  })
+
+  it('resolves nested guest1/guest2 objects', () => {
+    const reg = {
+      player1_guest_id: 'g1', player2_guest_id: 'g2',
+      guest1: { full_name: 'Janez Novak' },
+      guest2: { full_name: 'Miha Kovač' },
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg)).toBe('Novak / Kovač')
+  })
+
+  it('returns ??? for a null registration (undecided slot)', () => {
+    expect(teamDisplayName(null)).toBe('???')
+  })
+
+  it('returns just one surname for a single-player registration', () => {
+    const reg = {
+      player1_id: 't1',
+      player1: { full_name: 'Janez Novak' },
+      player2_id: null, player2_guest_id: null, player2_name: null,
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg)).toBe('Novak')
+  })
 })
