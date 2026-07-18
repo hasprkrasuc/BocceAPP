@@ -246,6 +246,26 @@ export default function TournamentAdmin() {
                   Zaključi
                 </button>
               )}
+
+              {/* Vrnitev statusa nazaj (npr. če je bil turnir prezgodaj premaknjen naprej) */}
+              {t.status === 'registration_open' && (
+                <button onClick={() => updateStatus(t.id, 'draft')}
+                  className="text-xs bg-gray-50 text-gray-600 border border-gray-200 px-3 py-1 rounded-lg hover:bg-gray-100 transition-colors">
+                  ← Nazaj v osnutek
+                </button>
+              )}
+              {t.status === 'in_progress' && (
+                <button onClick={() => updateStatus(t.id, 'registration_open')}
+                  className="text-xs bg-gray-50 text-gray-600 border border-gray-200 px-3 py-1 rounded-lg hover:bg-gray-100 transition-colors">
+                  ← Nazaj na prijave
+                </button>
+              )}
+              {t.status === 'completed' && (
+                <button onClick={() => updateStatus(t.id, 'in_progress')}
+                  className="text-xs bg-gray-50 text-gray-600 border border-gray-200 px-3 py-1 rounded-lg hover:bg-gray-100 transition-colors">
+                  ← Ponovno odpri (v teku)
+                </button>
+              )}
             </div>
           </div>
         ))}
