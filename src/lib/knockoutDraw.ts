@@ -1,25 +1,57 @@
 import { supabase } from '../supabase'
 import {
-  bracketSize, buildKnockoutBracket, knockoutPropagation, seedRegistrations,
-  type KoMatchRow, type SeedableReg,
+  bracketSize, buildKnockoutBracket, buildBracketFromFirstRound, knockoutPropagation,
+  seedRegistrations, type KoMatchRow, type SeedableReg,
 } from '../engines/knockout'
 
-/** Prebere izločilne tekme turnirja, napolni mesta naslednjih krogov iz zmagovalcev. */
+/**
+ * Prebere izločilne tekme turnirja, napolni mesta naslednjih krogov iz zmagovalcev.
+ * Deluje za oba formata (čisti izločilni IN skupine→izločilni) — obravnava le
+ * izločilne kroge (stage != 'group'), skupinskih tekem se ne dotakne.
+ */
 export async function propagateKnockout(tournamentId: string): Promise<void> {
-  const { data: t } = await supabase
-    .from('tournaments').select('format').eq('id', tournamentId).single()
-  if (t?.format !== 'knockout') return
-
   const { data } = await supabase
     .from('matches')
     .select('id, stage, match_number, team_a_id, team_b_id, winner_id, is_bye')
     .eq('tournament_id', tournamentId)
     .neq('stage', 'group')
   const rows = (data ?? []) as KoMatchRow[]
+  if (rows.length === 0) return
   const updates = knockoutPropagation(rows)
   for (const u of updates) {
     await supabase.from('matches').update({ [u.slot]: u.teamId }).eq('id', u.id)
   }
+}
+
+/**
+ * Vstavi celotno izločilno mrežo iz eksplicitnih parov prvega kroga (team id =
+ * group_teams.id). Počisti obstoječe izločilne tekme (NE skupinskih), vstavi
+ * mrežo in razreši morebitne bye naprej. Uporabljata jo samodejni, žrebni in
+ * ročni način — za oba formata turnirja.
+ */
+export async function insertKnockoutBracket(
+  tournamentId: string,
+  pairs: Array<[string | null, string | null]>,
+): Promise<void> {
+  const planned = buildBracketFromFirstRound(pairs)
+  await supabase.from('matches').delete().eq('tournament_id', tournamentId).neq('stage', 'group')
+  const rows = planned.map(p => ({
+    tournament_id: tournamentId,
+    group_id: null,
+    stage: p.stage,
+    match_type: p.isBye ? 'bye' : 'knockout',
+    match_number: p.matchNumber,
+    team_a_id: p.teamA,
+    team_b_id: p.teamB,
+    winner_id: p.winner,
+    score_a: p.isBye ? 6 : null,
+    score_b: p.isBye ? 0 : null,
+    is_bye: p.isBye,
+    status: p.winner ? 'completed' : 'pending',
+  }))
+  const { error } = await supabase.from('matches').insert(rows)
+  if (error) throw error
+  await propagateKnockout(tournamentId)
 }
 
 /** Naredi (ali ponovi) direktni izločilni žreb: nosilci → mreža → tekme. */
