@@ -3,9 +3,9 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel } from '../../engines/tournament'
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
-import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer } from '../../types'
+import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
 import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
-import { pairsFromSeededTeams } from '../../engines/knockout'
+import { pairsFromSeededTeams, KO_STAGE_ORDER } from '../../engines/knockout'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
@@ -67,6 +67,12 @@ export default function TournamentEdit() {
   const [koMethod, setKoMethod] = useState<'auto' | 'draw' | 'manual'>('auto')
   const [koQualifiers, setKoQualifiers] = useState<KoQualifier[]>([])
   const [koPairs, setKoPairs] = useState<Array<[string, string]>>([])
+  // Trenutne izločilne tekme (za ponovni žreb kasnejših krogov)
+  type KoMatchRow = { id: string; stage: MatchStage; match_number: number; team_a_id: string | null; team_b_id: string | null; winner_id: string | null; status: string }
+  const [koMatches, setKoMatches] = useState<KoMatchRow[]>([])
+  // Način + ročni pari na krog (za ponovni žreb)
+  const [koRoundMethod, setKoRoundMethod] = useState<Record<string, 'auto' | 'draw' | 'manual'>>({})
+  const [koRoundPairs, setKoRoundPairs] = useState<Record<string, Array<[string, string]>>>({})
 
   useEffect(() => { load() }, [id])
 
@@ -81,7 +87,7 @@ export default function TournamentEdit() {
       const { data: groupIds } = await supabase.from('tournament_groups').select('id').eq('tournament_id', id)
       const ids = groupIds?.map(x => x.id) ?? []
 
-      const [{ data: t, error: tErr }, { data: r }, { data: g }, { data: gt }] = await Promise.all([
+      const [{ data: t, error: tErr }, { data: r }, { data: g }, { data: gt }, { data: km }] = await Promise.all([
         supabase.from('tournaments').select('*').eq('id', id).single(),
         supabase.from('tournament_registrations')
           .select('*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)')
@@ -90,12 +96,16 @@ export default function TournamentEdit() {
         ids.length > 0
           ? supabase.from('group_teams').select('*, registration:tournament_registrations(*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*))').in('group_id', ids)
           : Promise.resolve({ data: [] }),
+        supabase.from('matches')
+          .select('id, stage, match_number, team_a_id, team_b_id, winner_id, status')
+          .eq('tournament_id', id).neq('stage', 'group'),
       ])
       if (tErr) throw tErr
       setTournament(t as Tournament)
       setRegistrations((r ?? []) as TournamentRegistration[])
       setGroups((g ?? []) as TournamentGroup[])
       setGroupTeams((gt ?? []) as (GroupTeam & { registration?: TournamentRegistration })[])
+      setKoMatches((km ?? []) as KoMatchRow[])
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -427,6 +437,83 @@ export default function TournamentEdit() {
       setMessage('❌ Napaka pri žrebu: ' + (err as Error).message)
     }
     setDrawLoading(false)
+  }
+
+  /** Ime ekipe (group_teams.id) za prikaz v izločilnem delu. */
+  function koTeamName(teamId: string | null): string {
+    if (!teamId) return '—'
+    const gt = groupTeams.find(g => g.id === teamId)
+    return gt?.registration ? teamDisplayName(gt.registration) : '?'
+  }
+
+  /** Prisotni izločilni krogi v vrstnem redu (r16 → … → final). */
+  function koPresentStages(): MatchStage[] {
+    const present = new Set(koMatches.map(m => m.stage))
+    return KO_STAGE_ORDER.filter(s => present.has(s))
+  }
+
+  /** Krogi, ki jih je mogoče na novo sestaviti/žrebati (za vsakega: napredovale ekipe). */
+  function redrawableRounds() {
+    const present = koPresentStages()
+    const out: Array<{ stage: MatchStage; advancing: Array<{ teamId: string; label: string }>; feederComplete: boolean }> = []
+    for (let i = 1; i < present.length; i++) {
+      const stage = present[i]
+      const matchCount = koMatches.filter(m => m.stage === stage).length
+      if (matchCount < 2) continue // finale (1 tekma) — brez žreba
+      const feederMatches = koMatches.filter(m => m.stage === present[i - 1]).sort((a, b) => a.match_number - b.match_number)
+      const feederComplete = feederMatches.length > 0 && feederMatches.every(m => !!m.winner_id)
+      const advancing = feederMatches
+        .filter(m => m.winner_id)
+        .map(m => ({ teamId: m.winner_id as string, label: koTeamName(m.winner_id) }))
+      out.push({ stage, advancing, feederComplete })
+    }
+    return out
+  }
+
+  /** Na novo sestavi (samodejno/žreb/ročno) izbrani krog + počisti vse naslednje. */
+  async function redrawRound(stage: MatchStage) {
+    const present = koPresentStages()
+    const idx = present.indexOf(stage)
+    const feederMatches = koMatches.filter(m => m.stage === present[idx - 1]).sort((a, b) => a.match_number - b.match_number)
+    if (feederMatches.some(m => !m.winner_id)) { setMessage('❌ Prejšnji krog ni dokončan'); return }
+    const teams = feederMatches.map(m => m.winner_id as string)
+    const method = koRoundMethod[stage] ?? 'auto'
+
+    let pairs: Array<[string, string]>
+    if (method === 'manual') {
+      const mp = koRoundPairs[stage] ?? []
+      const used = mp.flat().filter(Boolean)
+      if (used.length !== teams.length || new Set(used).size !== teams.length) {
+        setMessage('❌ Ročni pari: vsaka ekipa mora biti izbrana natanko enkrat'); return
+      }
+      pairs = mp
+    } else if (method === 'draw') {
+      const ids = [...teams]
+      for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]] }
+      pairs = []
+      for (let i = 0; i < ids.length; i += 2) pairs.push([ids[i], ids[i + 1]])
+    } else {
+      pairs = []
+      for (let i = 0; i < teams.length; i += 2) pairs.push([teams[i], teams[i + 1]])
+    }
+
+    if (!window.confirm(`Ponovni žreb kroga »${stageLabel(stage)}« pobriše rezultate tega in vseh naslednjih krogov. Nadaljujem?`)) return
+
+    const targetMatches = koMatches.filter(m => m.stage === stage).sort((a, b) => a.match_number - b.match_number)
+    for (let i = 0; i < targetMatches.length; i++) {
+      const p = pairs[i] ?? ['', '']
+      await supabase.from('matches').update({
+        team_a_id: p[0] || null, team_b_id: p[1] || null, winner_id: null, score_a: null, score_b: null, status: 'pending', is_bye: false,
+      }).eq('id', targetMatches[i].id)
+    }
+    // Počisti naslednje kroge + tekmo za 3. mesto (pari se spremenijo, zato so nadaljnji krogi neveljavni).
+    for (const ds of [...present.slice(idx + 1), 'third_place' as MatchStage]) {
+      await supabase.from('matches').update({
+        team_a_id: null, team_b_id: null, winner_id: null, score_a: null, score_b: null, status: 'pending', is_bye: false,
+      }).eq('tournament_id', id).eq('stage', ds)
+    }
+    setMessage(`✓ Krog »${stageLabel(stage)}« na novo sestavljen (${method === 'manual' ? 'ročno' : method === 'draw' ? 'žreb' : 'samodejno'})`)
+    await load()
   }
 
   /** Napredovalci iz skupin (1. in 2. mesto vsake skupine) — za sestavo izločilnih parov. */
@@ -1061,6 +1148,75 @@ export default function TournamentEdit() {
               </p>
             </div>
           </div>
+
+          {/* Ponovni žreb kasnejših krogov (četrtfinale, polfinale …) */}
+          {redrawableRounds().length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 space-y-4">
+              <p className="text-sm font-semibold text-gray-700">Ponovni žreb kroga</p>
+              {redrawableRounds().map(r => {
+                const method = koRoundMethod[r.stage] ?? 'auto'
+                return (
+                  <div key={r.stage} className="border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">{stageLabel(r.stage)}</span>
+                      {!r.feederComplete && <span className="text-xs text-gray-400 italic">prejšnji krog ni dokončan</span>}
+                    </div>
+                    {r.feederComplete && (
+                      <>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {([['auto', 'Samodejno'], ['draw', 'Žreb'], ['manual', 'Ročno']] as const).map(([m, label]) => (
+                            <button key={m}
+                              onClick={() => {
+                                setKoRoundMethod(prev => ({ ...prev, [r.stage]: m }))
+                                if (m === 'manual') {
+                                  const ids = r.advancing.map(a => a.teamId)
+                                  const p: Array<[string, string]> = []
+                                  for (let i = 0; i < ids.length; i += 2) p.push([ids[i], ids[i + 1] ?? ''])
+                                  setKoRoundPairs(prev => ({ ...prev, [r.stage]: p }))
+                                }
+                              }}
+                              className={`text-xs px-3 py-1 rounded-lg border transition-colors ${method === m
+                                ? 'bg-bocce-green text-white border-bocce-green'
+                                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {method === 'manual' && (
+                          <div className="space-y-1.5 mb-2">
+                            {(koRoundPairs[r.stage] ?? []).map((pair, pi) => (
+                              <div key={pi} className="flex items-center gap-1.5">
+                                <span className="text-xs text-gray-400 w-5">{pi + 1}.</span>
+                                <select value={pair[0]}
+                                  onChange={e => setKoRoundPairs(prev => { const arr = (prev[r.stage] ?? []).map(x => [...x] as [string, string]); arr[pi][0] = e.target.value; return { ...prev, [r.stage]: arr } })}
+                                  className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                                  <option value="">—</option>
+                                  {r.advancing.map(a => <option key={a.teamId} value={a.teamId}>{a.label}</option>)}
+                                </select>
+                                <span className="text-xs text-gray-400">–</span>
+                                <select value={pair[1]}
+                                  onChange={e => setKoRoundPairs(prev => { const arr = (prev[r.stage] ?? []).map(x => [...x] as [string, string]); arr[pi][1] = e.target.value; return { ...prev, [r.stage]: arr } })}
+                                  className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                                  <option value="">—</option>
+                                  {r.advancing.map(a => <option key={a.teamId} value={a.teamId}>{a.label}</option>)}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button onClick={() => redrawRound(r.stage)}
+                          className="text-xs bg-bocce-gold text-white px-3 py-1.5 rounded-lg hover:bg-bocce-gold-light transition-colors">
+                          Sestavi krog
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+              <p className="text-[11px] text-gray-500">Sestava kroga pobriše rezultate tega in vseh naslednjih krogov.</p>
+            </div>
+          )}
+
           <p className="text-sm text-gray-500 italic">
             Za vnos rezultatov pojdi na <Link to={`/turnirji/${id}`} className="text-bocce-green hover:underline">javno stran turnirja</Link>.
           </p>

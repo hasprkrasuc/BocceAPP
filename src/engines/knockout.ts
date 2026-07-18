@@ -133,7 +133,10 @@ export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
   const want = (target: KoMatchRow | undefined, slot: KoSlotUpdate['slot'], teamId: string) => {
     if (!target) return
     const cur = slot === 'team_a_id' ? target.team_a_id : target.team_b_id
-    if (cur !== teamId) updates.push({ id: target.id, slot, teamId })
+    // Polni SAMO prazna mesta — tako se ročno sestavljeni ali žrebani krogi (že
+    // napolnjeni) ne povozijo nazaj na fiksno mrežo. Prazna mesta naslednjih
+    // krogov se napolnijo iz zmagovalcev, kot doslej.
+    if (cur === null || cur === undefined) updates.push({ id: target.id, slot, teamId })
   }
 
   for (let si = 0; si < koStages.length - 1; si++) {
