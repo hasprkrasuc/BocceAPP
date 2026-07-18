@@ -163,6 +163,82 @@ export function applyScore<T>(
 }
 
 // ────────────────────────────────────────────────────────────────
+// GROUP PROPAGATION (decide dependent matches from completed ones)
+// ────────────────────────────────────────────────────────────────
+export interface PropagationRow {
+  match_number: number
+  status: string
+  is_bye: boolean
+  team_a_id: string | null
+  team_b_id: string | null
+  winner_id: string | null
+}
+
+/**
+ * Za dano stanje tekem v skupini izračuna, katere odvisne tekme je treba
+ * posodobiti (izpolnjeni team_a_id/team_b_id/winner_id iz že odigranih tekem).
+ *
+ * Vrne SAMO resnične spremembe — če je vrednost na tekmi že enaka izračunani,
+ * je ne vrne. To je ključno za preprečitev neskončne zanke v propagateGroup:
+ * klicatelj ponavlja klic, dokler se kaj spremeni, zato mora "nič se ni
+ * spremenilo" pomeniti prazen seznam, ne seznam z enakimi vrednostmi.
+ */
+export function computePropagation(
+  rows: PropagationRow[],
+  template: MatchTemplate[],
+): Array<{ match_number: number; updates: Partial<PropagationRow> }> {
+  const results: Record<number, { winner: string | null; loser: string | null }> = {}
+  for (const m of rows) {
+    if (m.winner_id) {
+      const loser = m.team_a_id === m.winner_id ? m.team_b_id : m.team_a_id
+      results[m.match_number] = { winner: m.winner_id, loser }
+    }
+  }
+
+  const out: Array<{ match_number: number; updates: Partial<PropagationRow> }> = []
+
+  for (const tpl of template) {
+    // Tekme, ki jih je še treba izpolniti: čakajoče ali proste (bye) brez zmagovalca.
+    const dep = rows.find(m => m.match_number === tpl.num &&
+      (m.status !== 'completed' || (m.is_bye && m.winner_id === null)))
+    if (!dep) continue
+
+    const updates: Partial<PropagationRow> = {}
+
+    const setIfChanged = (field: 'team_a_id' | 'team_b_id', next: string | null | undefined) => {
+      if (next && next !== dep[field]) updates[field] = next
+    }
+
+    if (tpl.teamA !== 'BYE' && !('seed' in tpl.teamA)) {
+      const num = 'winsMatch' in tpl.teamA ? tpl.teamA.winsMatch : tpl.teamA.losesMatch
+      const isWin = 'winsMatch' in tpl.teamA
+      const r = results[num]
+      if (r) setIfChanged('team_a_id', isWin ? r.winner : r.loser)
+    }
+    if (tpl.teamB !== 'BYE' && !('seed' in tpl.teamB)) {
+      const num = 'winsMatch' in tpl.teamB ? tpl.teamB.winsMatch : tpl.teamB.losesMatch
+      const isWin = 'winsMatch' in tpl.teamB
+      const r = results[num]
+      if (r) setIfChanged('team_b_id', isWin ? r.winner : r.loser)
+    }
+
+    // Tekma s prostim žrebom: zmagovalec = team A, a samo če se dejansko spremeni.
+    if (dep.is_bye) {
+      const resolvedTeamA = updates.team_a_id ?? dep.team_a_id
+      if (resolvedTeamA && resolvedTeamA !== dep.winner_id) {
+        updates.winner_id = resolvedTeamA
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      out.push({ match_number: dep.match_number, updates })
+    }
+  }
+
+  return out
+}
+
+// ────────────────────────────────────────────────────────────────
 // GET GROUP QUALIFIERS FROM COMPLETED MATCHES
 // ────────────────────────────────────────────────────────────────
 export function getGroupQualifiers<T>(

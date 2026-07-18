@@ -10,7 +10,7 @@ import RoundRobinStandings from '../components/RoundRobinStandings'
 import ScoreModal from '../components/ScoreModal'
 import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
-import { GROUP_TEMPLATES } from '../engines/tournament'
+import { GROUP_TEMPLATES, computePropagation } from '../engines/tournament'
 import { propagateKnockout } from '../lib/knockoutDraw'
 import type {
   Tournament, TournamentGroup, Match, TournamentRegistration,
@@ -275,51 +275,28 @@ export function TournamentDetail() {
     const groupSize = ((group?.group_size ?? 4) as GroupSize)
     const template = GROUP_TEMPLATES[groupSize]
 
-    // Iterate until no more changes (handles chains: T1→T6→T7)
+    // Iterate until no more changes (handles chains: T1→T6→T7).
+    // Hard cap as a backstop — the longest template (5 teams) has only 9
+    // matches, so a real chain never comes close to 20 passes.
+    const MAX_PASSES = 20
     let changed = true
+    let pass = 0
     while (changed) {
+      if (pass >= MAX_PASSES) {
+        console.warn(`propagateGroup: hit iteration cap (${MAX_PASSES}) for group ${groupId}`)
+        break
+      }
+      pass++
       changed = false
 
-      // Rebuild results from current state of fresh array
-      const results: Record<number, { winner: string | null; loser: string | null }> = {}
-      for (const m of fresh) {
-        if (m.winner_id) {
-          const loser = m.team_a_id === m.winner_id ? m.team_b_id : m.team_a_id
-          results[m.match_number] = { winner: m.winner_id, loser }
-        }
-      }
-
-      for (const tpl of template) {
-        // Update: pending matches AND bye matches that still have no team/winner
-        const dep = fresh.find(m => m.match_number === tpl.num &&
-          (m.status !== 'completed' || (m.is_bye && m.winner_id === null)))
+      const propagationUpdates = computePropagation(fresh, template)
+      for (const { match_number, updates } of propagationUpdates) {
+        const dep = fresh.find(m => m.match_number === match_number)
         if (!dep) continue
-
-        const updates: Record<string, string | null> = {}
-
-        if (tpl.teamA !== 'BYE' && !('seed' in tpl.teamA)) {
-          const num = 'winsMatch' in tpl.teamA ? tpl.teamA.winsMatch : tpl.teamA.losesMatch
-          const isWin = 'winsMatch' in tpl.teamA
-          const r = results[num]
-          if (r) updates.team_a_id = isWin ? r.winner : r.loser
-        }
-        if (tpl.teamB !== 'BYE' && !('seed' in tpl.teamB)) {
-          const num = 'winsMatch' in tpl.teamB ? tpl.teamB.winsMatch : tpl.teamB.losesMatch
-          const isWin = 'winsMatch' in tpl.teamB
-          const r = results[num]
-          if (r) updates.team_b_id = isWin ? r.winner : r.loser
-        }
-
-        // Bye match: auto-set winner_id = team_a_id (bye winner is automatic)
-        if (dep.is_bye && updates.team_a_id) {
-          updates.winner_id = updates.team_a_id
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await supabase.from('matches').update(updates).eq('id', dep.id)
-          Object.assign(dep, updates)  // update local copy for next iteration
-          changed = true
-        }
+        const { error } = await supabase.from('matches').update(updates).eq('id', dep.id)
+        if (error) throw error
+        Object.assign(dep, updates)  // update local copy for next iteration
+        changed = true
       }
     }
   }
