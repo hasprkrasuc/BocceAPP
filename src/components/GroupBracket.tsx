@@ -61,11 +61,11 @@ function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
 
       <div className="space-y-1">
         <div className={`flex items-center justify-between gap-2 px-2 py-1 rounded ${winnerIsA ? 'bg-white/70 font-semibold' : ''}`}>
-          <span className="text-sm truncate flex-1">{nameA}</span>
+          <span className="text-sm break-words leading-tight flex-1">{nameA}</span>
           <ScoreBadge score={match.score_a} isWinner={!!winnerIsA} />
         </div>
         <div className={`flex items-center justify-between gap-2 px-2 py-1 rounded ${winnerIsB ? 'bg-white/70 font-semibold' : ''} ${match.is_bye ? 'text-gray-400' : ''}`}>
-          <span className="text-sm truncate flex-1">{nameB}</span>
+          <span className="text-sm break-words leading-tight flex-1">{nameB}</span>
           <ScoreBadge score={match.is_bye ? 0 : match.score_b} isWinner={!!winnerIsB} />
         </div>
       </div>
