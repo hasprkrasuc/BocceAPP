@@ -16,8 +16,8 @@ interface CardProps {
 }
 
 function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: CardProps) {
-  const nameA = match.teamA ? teamDisplayName(match.teamA.registration) : '???'
-  const nameB = match.teamB ? teamDisplayName(match.teamB.registration) : '???'
+  const nameA = match.teamA ? teamDisplayName(match.teamA.registration, true) : '???'
+  const nameB = match.teamB ? teamDisplayName(match.teamB.registration, true) : '???'
   const winnerIsA = match.winner_id && match.winner_id === match.team_a_id
   const winnerIsB = match.winner_id && match.winner_id === match.team_b_id
 
