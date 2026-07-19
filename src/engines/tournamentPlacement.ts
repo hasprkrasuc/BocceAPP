@@ -63,10 +63,16 @@ export function tournamentPlayerPoints(input: PlacementInput): PlayerPoints[] {
     assign(regOfGt.get(final.winner_id!), 1)
     assign(regOfGt.get(loserGt(final)!), 2)
   }
+  const thirdExists = knockoutMatches.some(m => m.stage === 'third_place')
   const third = knockoutMatches.find(m => m.stage === 'third_place' && m.winner_id)
   if (third) {
     assign(regOfGt.get(third.winner_id!), 3)
     assign(regOfGt.get(loserGt(third)!), 4)
+  } else if (!thirdExists) {
+    // Ni tekme za 3. mesto → oba poraženca polfinala si delita 3. mesto (8 točk).
+    for (const m of knockoutMatches.filter(m => m.stage === 'sf' && m.winner_id)) {
+      assign(regOfGt.get(loserGt(m)!), 3)
+    }
   }
   for (const m of knockoutMatches.filter(m => m.stage === 'qf' && m.winner_id)) {
     assign(regOfGt.get(loserGt(m)!), '5-8')

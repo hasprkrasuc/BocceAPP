@@ -34,6 +34,16 @@ describe('buildBracketFromFirstRound', () => {
     expect(() => buildBracketFromFirstRound([['a', 'b'], ['c', 'd'], ['e', 'f']])).toThrow()
   })
 
+  test('thirdPlace:false → brez tekme za 3. mesto', () => {
+    const teams = Array.from({ length: 8 }, (_, i) => `t${i + 1}`)
+    const pairs: Array<[string | null, string | null]> = []
+    for (let i = 0; i < 4; i++) pairs.push([teams[2 * i], teams[2 * i + 1]])
+    const m = buildBracketFromFirstRound(pairs, { thirdPlace: false })
+    expect(m.some(x => x.stage === 'third_place')).toBe(false)
+    expect(m.filter(x => x.stage === 'qf')).toHaveLength(4)
+    expect(m.filter(x => x.stage === 'final')).toHaveLength(1)
+  })
+
   test('buildKnockoutBracket ostane skladen (16 nosilcev → r16 8 tekem)', () => {
     const teams = Array.from({ length: 16 }, (_, i) => `s${i + 1}`)
     const m = buildKnockoutBracket(teams)
