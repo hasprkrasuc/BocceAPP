@@ -131,25 +131,29 @@ razideta s staršem, in ne prinese ničesar.
 
 Vsak `country_id` dobi indeks — filtriramo po njem ob vsakem nalaganju strani.
 
-### Odprto vprašanje: dedovanje pri `matches`
+### Dedovanje pri `matches` — preverjeno 2026-07-19
 
-`matches.tournament_id` je **nullable** (`uuid references public.tournaments(id)`,
-brez `not null`), prav tako `group_id`. Predpostavka, da vsak otrok doseže državo
-prek starša, tu ni zajamčena s shemo.
+`matches.tournament_id` in `group_id` sta v shemi **nullable**, zato dedovanje
+države prek starša ni bilo zajamčeno. Preverjeno v produkciji:
 
-Pred izvedbo je treba preveriti v produkcijski bazi:
+| | |
+|---|---|
+| `matches` skupaj | 541 |
+| brez `tournament_id` | **0** |
+| brez `group_id` | 164 (izločilne tekme — pričakovano) |
+| osirotele (oba null) | **0** |
+| `tournament_groups` brez `tournament_id` | **0** od 68 |
+
+Veriga je cela. `tournament_id` je v praksi že obvezen — shemi manjka le izjava o
+tem. Ukrep v migraciji:
 
 ```sql
-select count(*) from matches where tournament_id is null and group_id is null;
+alter table public.matches alter column tournament_id set not null;
 ```
 
-- Če je rezultat 0 in gre le za manjkajočo omejitev, dodaj
-  `check (tournament_id is not null or group_id is not null)` in dedovanje drži.
-- Če obstajajo osirotele vrstice, jih je treba raziskati posebej — morda gre za
-  ostanek, ki ga je treba počistiti, ne pa razlog za `country_id` na `matches`.
-
-Enako preveri, da ima `tournament_groups.tournament_id` omejitev `not null`;
-sicer se veriga pretrga tudi prek `group_id`.
+To je čistejše od predlaganega `check (tournament_id is not null or group_id is
+not null)`: podatki kažejo, da je `tournament_id` vedno prisoten, `group_id` pa
+legitimno ni. `country_id` na `matches` ni potreben.
 
 ### Unique omejitve
 
@@ -166,10 +170,31 @@ Obstoječi `emso` **ostane** kot ločen stolpec — vezan je na uvoz iz BZS Exce
 in ga A1 ne premika. Za SI vrstice `registration_number` v A1 ostane prazen;
 polni ga šele podprojekt B za HR.
 
-Opomba: `users.license_number` že obstaja v shemi. Pred izvedbo preveri, kako je
-danes zapolnjen — če hrani ravno nacionalno registrsko številko, se
-`registration_number` ne doda in se namesto tega omeji `license_number` z
-`unique (country_id, license_number)`.
+#### Zakaj ne obstoječi `license_number` — preverjeno 2026-07-19
+
+`users.license_number` že obstaja, zato je bilo treba preveriti, ali ni morda
+ravno nacionalna registrska številka. **Ni.**
+
+| | |
+|---|---|
+| uporabniki skupaj | 1176 |
+| z `license_number` | 164 (14 %) |
+| z `emso` | 906 |
+| različnih vrednosti | 150 od 164 — **5 podvojenih** |
+
+Oblike so nedosledne (maskirano, `9` = števka, `A` = črka): `9999` (47×), `999`
+(26×), `99/9999` (22×), `9/999` (21×), `9/ 9999` (16×, **s presledkom sredi**),
+`A99` (13×), `99`, `999/A`, `9-9-99/999`, in ena vrednost je **prazen niz**.
+
+Odločilno: `unique (country_id, license_number)` bi ob uveljavitvi **padel**
+zaradi petih podvojenih vrednosti. Gre za prostotekstno starino, ne za register.
+
+`license_number` se torej v A1 **ne dotika** — ne preimenuje, ne omejuje, ne
+migrira. Doda se ločen `registration_number`. Čiščenje ali opustitev
+`license_number` je svoje delo, zunaj A1.
+
+Opomba za pisanje omejitve: prazen niz ni `null`, zato ga `not null` ne ujame.
+Če bo `registration_number` kdaj obvezen, potrebuje tudi `check (length(trim(...)) > 0)`.
 
 ## Usmerjanje in stanje v UI
 
@@ -319,6 +344,10 @@ po introspekciji produkcijske baze, ne po repu**.
 primerjava s trditvami repa. Razhajanja se dokumentirajo, preden se karkoli
 spremeni. Varnostna kopija prizadetih tabel (ista praksa kot `_bak_zapisnik_*`
 pri prepisu liga zapisnika).
+
+Delno že opravljeno 2026-07-19 — glej ugotovitvi o `matches` in
+`license_number` zgoraj. Ostalo (unique omejitve iz
+`2026-07-09_import_unique_constraints.sql`, PII stolpci `users`) je še odprto.
 
 **Korak 1.** `countries` + vsebina. Slovenija `is_active = true`; Hrvaška,
 Srbija, Črna gora, BiH vpisane a `is_active = false`. Ne spremeni ničesar
