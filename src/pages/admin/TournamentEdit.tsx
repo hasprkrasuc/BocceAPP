@@ -65,6 +65,8 @@ export default function TournamentEdit() {
   // Izločilni del: način sestave parov + napredovalci + ročni pari
   type KoQualifier = { teamId: string; label: string; groupNumber: number; position: 1 | 2 }
   const [koMethod, setKoMethod] = useState<'auto' | 'draw' | 'manual'>('auto')
+  // Ali se igra tekma za 3. mesto (privzeto da).
+  const [koThirdPlace, setKoThirdPlace] = useState(true)
   const [koQualifiers, setKoQualifiers] = useState<KoQualifier[]>([])
   const [koPairs, setKoPairs] = useState<Array<[string, string]>>([])
   // Trenutne izločilne tekme (za ponovni žreb kasnejših krogov)
@@ -430,7 +432,7 @@ export default function TournamentEdit() {
       const rangPoints: Record<string, number> = {}
       if (cat) for (const row of rang.byCategory[cat]) rangPoints[row.playerId] = row.rang
       const regs = confirmed.map(r => ({ id: r.id, player1_id: r.player1_id, player2_id: r.player2_id }))
-      const res = await drawKnockout(id!, regs, rangPoints)
+      const res = await drawKnockout(id!, regs, rangPoints, { thirdPlace: koThirdPlace })
       setMessage(`✓ Izločilni žreb opravljen: mreža ${res.bracket} (${res.teams} ekip)`)
       await load()
     } catch (err) {
@@ -516,6 +518,28 @@ export default function TournamentEdit() {
     await load()
   }
 
+  /** Doda ali odstrani tekmo za 3. mesto na obstoječi izločilni mreži. */
+  async function toggleThirdPlace() {
+    const exists = koMatches.some(m => m.stage === 'third_place')
+    if (exists) {
+      if (!window.confirm('Odstranim tekmo za 3. mesto? Njen rezultat (če obstaja) bo izbrisan.')) return
+      await supabase.from('matches').delete().eq('tournament_id', id).eq('stage', 'third_place')
+      setMessage('✓ Tekma za 3. mesto odstranjena')
+    } else {
+      const sf = koMatches.filter(m => m.stage === 'sf').sort((a, b) => a.match_number - b.match_number)
+      if (sf.length < 2) { setMessage('❌ Tekma za 3. mesto ni mogoča (ni polfinala)'); return }
+      const loserOf = (m: KoMatchRow) => m.winner_id ? (m.winner_id === m.team_a_id ? m.team_b_id : m.team_a_id) : null
+      const { error } = await supabase.from('matches').insert({
+        tournament_id: id, group_id: null, stage: 'third_place', match_type: 'knockout',
+        match_number: 1, team_a_id: loserOf(sf[0]), team_b_id: loserOf(sf[1]), winner_id: null,
+        score_a: null, score_b: null, is_bye: false, status: 'pending',
+      })
+      if (error) { setMessage('❌ Napaka: ' + error.message); return }
+      setMessage('✓ Tekma za 3. mesto dodana')
+    }
+    await load()
+  }
+
   /** Napredovalci iz skupin (1. in 2. mesto vsake skupine) — za sestavo izločilnih parov. */
   async function fetchQualifiers(): Promise<KoQualifier[]> {
     const { data: gm } = await supabase.from('matches')
@@ -598,7 +622,7 @@ export default function TournamentEdit() {
         pairs = autoSeedPairs(quals)
       }
 
-      await insertKnockoutBracket(id!, pairs)
+      await insertKnockoutBracket(id!, pairs, { thirdPlace: koThirdPlace })
       setMessage(`✓ Izločilni del ustvarjen (${koMethod === 'manual' ? 'ročno' : koMethod === 'draw' ? 'žreb' : 'samodejno'})`)
       load()
     } catch (err) {
@@ -1138,6 +1162,12 @@ export default function TournamentEdit() {
                 )}
               </>
             )}
+            <label className="flex items-center gap-2 text-xs text-amber-800 cursor-pointer">
+              <input type="checkbox" checked={koThirdPlace}
+                onChange={e => setKoThirdPlace(e.target.checked)}
+                className="rounded border-gray-300" />
+              Igraj tekmo za 3. mesto
+            </label>
             <div>
               <button onClick={generateKnockout}
                 className="bg-bocce-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-gold-light transition-colors">
@@ -1148,6 +1178,26 @@ export default function TournamentEdit() {
               </p>
             </div>
           </div>
+
+          {/* Tekma za 3. mesto — dodaj/odstrani na obstoječi mreži */}
+          {koMatches.some(m => m.stage === 'sf') && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-gray-700">Tekma za 3. mesto</p>
+                <p className="text-xs text-gray-500">
+                  {koMatches.some(m => m.stage === 'third_place')
+                    ? 'Trenutno se igra. Če je ne igrate, jo odstranite — polfinalna poraženca si delita 3. mesto.'
+                    : 'Trenutno se NE igra. Polfinalna poraženca si delita 3. mesto.'}
+                </p>
+              </div>
+              <button onClick={toggleThirdPlace}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${koMatches.some(m => m.stage === 'third_place')
+                  ? 'bg-white text-red-600 border-red-200 hover:bg-red-50'
+                  : 'bg-bocce-green text-white border-bocce-green hover:bg-bocce-green-light'}`}>
+                {koMatches.some(m => m.stage === 'third_place') ? 'Odstrani tekmo za 3. mesto' : 'Dodaj tekmo za 3. mesto'}
+              </button>
+            </div>
+          )}
 
           {/* Ponovni žreb kasnejših krogov (četrtfinale, polfinale …) */}
           {redrawableRounds().length > 0 && (

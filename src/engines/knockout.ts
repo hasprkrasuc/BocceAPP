@@ -52,7 +52,11 @@ export interface PlannedMatch {
  * Vsak par = [ekipa A, ekipa B]; ena stran NULL pomeni prosto (bye).
  * Število parov mora dati mrežo velikosti potence 2 (2..128).
  */
-export function buildBracketFromFirstRound(pairs: Array<[string | null, string | null]>): PlannedMatch[] {
+export function buildBracketFromFirstRound(
+  pairs: Array<[string | null, string | null]>,
+  opts: { thirdPlace?: boolean } = {},
+): PlannedMatch[] {
+  const thirdPlace = opts.thirdPlace ?? true
   const half = pairs.length
   if (half < 1) throw new Error('Prazna izločilna mreža')
   const b = half * 2
@@ -79,8 +83,8 @@ export function buildBracketFromFirstRound(pairs: Array<[string | null, string |
     }
   }
 
-  // Tekma za 3. mesto (če obstaja polfinale)
-  if (b >= 4) {
+  // Tekma za 3. mesto (če obstaja polfinale in ni izklopljena)
+  if (b >= 4 && thirdPlace) {
     matches.push({ stage: 'third_place', matchNumber: 1, teamA: null, teamB: null, isBye: false, winner: null })
   }
 
@@ -98,8 +102,11 @@ export function pairsFromSeededTeams(seededTeamIds: string[]): Array<[string | n
 }
 
 /** Zgradi celotno izločilno mrežo iz nosilno urejenih ekip (indeks 0 = nosilec 1). */
-export function buildKnockoutBracket(seededTeamIds: string[]): PlannedMatch[] {
-  return buildBracketFromFirstRound(pairsFromSeededTeams(seededTeamIds))
+export function buildKnockoutBracket(
+  seededTeamIds: string[],
+  opts: { thirdPlace?: boolean } = {},
+): PlannedMatch[] {
+  return buildBracketFromFirstRound(pairsFromSeededTeams(seededTeamIds), opts)
 }
 
 export interface KoMatchRow {

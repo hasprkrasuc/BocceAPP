@@ -61,6 +61,17 @@ describe('tournamentPlayerPoints', () => {
     expect(byPlayer['p4'].bucket).toBe(4); expect(byPlayer['p4'].points).toBe(7)
   })
 
+  test('brez tekme za 3. mesto → oba poraženca polfinala dobita 8 točk (deljeno 3.)', () => {
+    // isti nabor tekem, a BREZ third_place: gt2 in gt4 sta polfinalna poraženca
+    const km = knockoutMatches.filter(m => m.stage !== 'third_place')
+    const pts = tournamentPlayerPoints({ registrations, groupTeams, knockoutMatches: km })
+    const byPlayer = Object.fromEntries(pts.map(p => [p.player_id, p]))
+    expect(byPlayer['p1'].points).toBe(16) // zmagovalec
+    expect(byPlayer['p3'].points).toBe(10) // finalist
+    expect(byPlayer['p2'].bucket).toBe(3); expect(byPlayer['p2'].points).toBe(8) // polf. poraženec
+    expect(byPlayer['p4'].bucket).toBe(3); expect(byPlayer['p4'].points).toBe(8) // polf. poraženec
+  })
+
   test('poraženci četrtfinala dobijo 5–8 (3 točke)', () => {
     const pts = tournamentPlayerPoints({ registrations, groupTeams, knockoutMatches })
     for (const p of ['p5', 'p6', 'p7', 'p8']) {

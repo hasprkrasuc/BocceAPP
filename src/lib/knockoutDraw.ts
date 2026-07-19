@@ -32,8 +32,9 @@ export async function propagateKnockout(tournamentId: string): Promise<void> {
 export async function insertKnockoutBracket(
   tournamentId: string,
   pairs: Array<[string | null, string | null]>,
+  opts: { thirdPlace?: boolean } = {},
 ): Promise<void> {
-  const planned = buildBracketFromFirstRound(pairs)
+  const planned = buildBracketFromFirstRound(pairs, opts)
   await supabase.from('matches').delete().eq('tournament_id', tournamentId).neq('stage', 'group')
   const rows = planned.map(p => ({
     tournament_id: tournamentId,
@@ -59,6 +60,7 @@ export async function drawKnockout(
   tournamentId: string,
   confirmedRegs: SeedableReg[],
   rangPoints: Record<string, number>,
+  opts: { thirdPlace?: boolean } = {},
 ): Promise<{ bracket: number; teams: number }> {
   const n = confirmedRegs.length
   const b = bracketSize(n) // vrže napako pri <2 ali >128
@@ -89,7 +91,7 @@ export async function drawKnockout(
   const seededTeamIds = orderedRegIds.map((_, i) => gtBySeed.get(i + 1)!)
 
   // 4. Zgradi mrežo → vpiši tekme
-  const planned = buildKnockoutBracket(seededTeamIds)
+  const planned = buildKnockoutBracket(seededTeamIds, opts)
   const rows = planned.map(p => ({
     tournament_id: tournamentId,
     group_id: null,
