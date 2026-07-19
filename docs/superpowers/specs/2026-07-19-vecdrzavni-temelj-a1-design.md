@@ -60,9 +60,26 @@ Tehnične pasti za B/C/D:
 | Odločitev | Izbrano | Zakaj |
 |---|---|---|
 | Ločitev držav | `country_id` v eni bazi | Najmanj podvajanja; mednarodni turnirji delujejo naravno |
-| Izbira države | Pot v URL (`/si`, `/hr`) | Povezave deljive in enolične; stanje vidno |
+| Izbira države | Pot v URL (`/si`, `/hr`) + domena | Povezave deljive; lastna domena brez forka kode |
 | PII obseg (za B) | Minimum za šport | Brez OIB, osebnih kontaktov in zdravniških pregledov |
-| Uveljavljanje države | Aplikacija, ne RLS | Država je meja prikaza, ne varnostna meja |
+| Branje javnih podatkov | Filter v aplikaciji | Meja prikaza, ne varnostna meja |
+| Pisanje in branje PII | RLS, vezan na državo | **Je** varnostna meja — admin iz HBS ne sme do SI osebnih podatkov |
+
+### Zakaj ne ločena baza na državo
+
+Obravnavano in zavrnjeno. Ločen repo in instanca na državo (npr. bocanje.top s
+svojo bazo) bi bila kratkoročno hitrejša, a:
+
+- **Petkratno vzdrževanje iste kode.** Kopije se razidejo; ena obleži.
+- **Razbita identiteta igralcev.** Igralec iz Klane ima uuid v HR bazi. Ob
+  nastopu na Turnirju petih držav v SI bazi ga ni — ustvari se znova, z drugim
+  uuid-om, brez povezave. Statistika se razdeli na dva kupa. Nadnacionalni
+  register, ki to reši, je natanko enotna baza — samo zgrajena dvakrat.
+- Zahteva po skupni statistiki in skupnih igralcih za mednarodne turnirje
+  (Klana Open, Turnir petih držav) je torej argument **proti** ločitvi.
+
+Organizacijska meja (admin iz HBS ureja le Hrvaško) je resnična, a se rešuje s
+pravicami po državi, ne z ločeno bazo — glej razdelek o admin pravicah.
 
 ### PII — opomba za podprojekt B
 
@@ -181,21 +198,51 @@ ciljni državi; sicer pelje na njeno domačo stran. ID-ji so uuid-i, zato
 `/si/liga/<si-uuid>` v `/hr` ne obstaja — preslikava se ne poskuša, pristane se
 na `/hr/liga`.
 
-**Brez predpone ostanejo** `/prijava`, `/registracija`, `/profil` in `/admin/*`.
-Račun je oseba, ne država, in admin lahko dela čez več držav; sicer bi bilo
-treba vsak admin zaslon podvojiti.
+**Brez predpone ostanejo** `/prijava`, `/registracija` in `/profil`. Račun je
+oseba, ne država.
+
+**Admin poti** (`/admin/*`) ostanejo brez predpone v poti, a **niso brez
+konteksta države** — admin zaslon mora vedeti, čigave podatke ureja. Državo
+dobijo iz `admin_country_id` prijavljenega uporabnika (glej razdelek o admin
+pravicah). Za `super_admin`, ki ima dostop do vseh, je v admin glavi preklopnik
+države; njegova izbira gre v isti `CountryProvider` kot javni del.
+
+### Domenska preslikava
+
+Domena in baza nista ista odločitev. `bocanje.top` lahko kaže na **isto
+namestitev in isto bazo**, pri čemer domena določi državo: obiskovalec pride na
+`bocanje.top/liga` in je v hrvaškem prostoru, z lastnim imenom in logotipom, ne
+da bi videl slovensko vsebino.
+
+`CountryProvider` zato razreši državo iz dveh virov, po prednosti:
+
+1. **Domena**, če je preslikana (`bocanje.top` → `hr`). Predpona poti se v tem
+   primeru ne uporablja — `bocanje.top/liga`, ne `bocanje.top/hr/liga`.
+2. **Prvi segment poti** na privzeti domeni (`balinar.app/hr/liga`).
+
+Preslikava domena → koda države je konfiguracija, ne trdo kodirano. Vsaka država
+ima lahko svojo domeno ali pa nobene.
+
+To da hrvaški zvezi lastno stran brez cene, ki jo prinese fork kode.
 
 ## Filtriranje poizvedb
 
-Država je **meja prikaza, ne varnostna meja**. Vsi ti podatki so javni —
-lestvice, rosterji, rezultati. Pomešanje SI in HR je napaka v pravilnosti, ne
-vdor.
+Ločiti je treba tri primere. Prvotna različica tega speca je trdila, da država
+sploh ni varnostna meja; to drži le za branje javnih podatkov.
 
-Zato se država **ne** uveljavlja prek RLS. RLS bi moral vedeti, katero državo
-uporabnik trenutno gleda, kar pomeni tihotapljenje stanja UI v JWT ali glave
-zahtevka — precej mehanike, ki ne varuje ničesar, in ki bi se ob prvem
+| Primer | Varnostna meja? | Uveljavljanje |
+|---|---|---|
+| Branje javnih podatkov (lestvice, rezultati, rosterji) | ne | filter v aplikaciji |
+| Branje osebnih podatkov (EMŠO, naslovi, kontakti) | **da** | RLS po državi |
+| Pisanje (sezone, zapisniki, uvoz) | **da** | RLS po državi |
+
+### Branje javnih podatkov
+
+Lestvice, rosterji in rezultati so javni. Pomešanje SI in HR je napaka v
+pravilnosti, ne vdor. Zato se **ne** uveljavlja prek RLS: RLS bi moral vedeti,
+katero državo uporabnik trenutno gleda, kar pomeni tihotapljenje stanja UI v JWT
+ali glave zahtevka — mehanika, ki ne varuje ničesar in bi se ob prvem
 mednarodnem turnirju (ki mora videti obe državi hkrati) obrnila proti nam.
-Obstoječe RLS politike ostanejo nedotaknjene.
 
 Namesto tega filtriranje v aplikaciji, s tremi zaščitami:
 
@@ -213,6 +260,53 @@ Namesto tega filtriranje v aplikaciji, s tremi zaščitami:
 morajo državo dobiti kot **izrecen argument, brez privzetka**. Skripta, ki
 privzame Slovenijo, je natanko tista, ki bo hrvaške igralce nekoč vpisala v
 slovenski register.
+
+## Admin pravice, vezane na državo
+
+Hrvaško bo predvidoma vodil nekdo iz HBS. To ustvari resnično organizacijsko
+mejo, ki je danes ni.
+
+**Stanje danes:** `20260628_restrict_users_pii_from_anon.sql` odvzame `anon`
+dostop do občutljivih stolpcev `users` (emso, email, phone, naslov, kraj in
+država rojstva, državljanstvo). Toda **vsak admin vidi vse osebne podatke vseh
+uporabnikov.** Ko dobi oseba iz HBS admin vlogo, bere EMŠO, naslove in telefone
+slovenskih igralcev.
+
+To ni le neurejeno. Slovenski igralec je te podatke dal Balinarski zvezi
+Slovenije; njihov dostop hrvaškemu administratorju je obdelava brez pravne
+podlage.
+
+### Model
+
+`users.role` ne zadošča več — `admin` mora postati admin *določene države*.
+
+- `users.admin_country_id uuid references countries(id)` — smiseln le pri
+  `role = 'admin'`; pri `player` in `super_admin` je `null`.
+- `super_admin` ostane brez omejitve (skrbnik platforme).
+- Če se kdaj pojavi admin za dve državi, se stolpec zamenja z vezno tabelo. Za
+  zdaj to ni potrebno in vezna tabela bi bila predčasna.
+
+### RLS politike
+
+Obstoječe politike oblike `role = any(array['admin','super_admin'])` se
+razširijo tako, da `admin` velja le, kadar se `admin_country_id` ujema s
+`country_id` vrstice:
+
+- **Pisanje** na šestih korenskih tabelah — neposredna primerjava.
+- **Pisanje** na otrocih — primerjava prek starša (`league_teams` prek
+  `league_seasons` itd.).
+- **Branje PII stolpcev `users`** — admin dostopa do občutljivih stolpcev le za
+  svojo državo. Uporabnik še naprej vidi lasten profil v celoti.
+
+Ta razširitev se piše skupaj z migracijo, ne kasneje: politika, ki jo je treba
+"še zaostriti", ostane ohlapna.
+
+### Kaj A1 tu ne vsebuje
+
+Poln admin UI za več držav — izbirnik države v admin glavi za `super_admin`,
+zaslon za dodeljevanje admin vlog po državah, prikaz trenutno urejane države.
+A1 postavi shemo in politike, da meja obstaja od prvega dne, ko so v bazi
+hrvaški podatki. UI pride, preden kdorkoli iz HBS dejansko dobi dostop.
 
 ## Migracija
 
@@ -267,6 +361,23 @@ prazno stanje — ne vrtečega kolesca, ne strte strani, ne slovenskih podatkov.
 To je najpomembnejši test A1, ker je to stanje, v katerem bo Hrvaška živela ves
 čas podprojekta B. Po preverjanju vklop nazaj na `false`.
 
+**Admin meja dejansko drži.** Testni račun z `role = 'admin'` in
+`admin_country_id = HR` mora:
+
+- videti hrvaške javne podatke — da
+- brati EMŠO ali naslov slovenskega igralca — **ne**, zavrnjeno na ravni baze
+- spremeniti slovensko sezono, zapisnik ali klub — **ne**, zavrnjeno na ravni baze
+- narediti oboje za Hrvaško — da
+
+To se preveri **neposredno proti bazi**, ne skozi UI. Politika, ki jo obide
+skripta ali surov PostgREST klic, ni politika. `super_admin` mora ohraniti
+dostop do obojega.
+
+**Domenska preslikava.** Če je `bocanje.top` že nastavljen: obisk pokaže hrvaški
+prostor brez predpone v poti, `balinar.app/hr` pa isto vsebino. Če domena še ni
+kupljena, se preslikava preveri lokalno prek vnosa v `hosts` ali nastavitve
+okolja.
+
 **CI:** test iz razdelka o filtriranju, ki lovi nefiltrirane `.from()` na
 koreninah.
 
@@ -274,6 +385,10 @@ koreninah.
 
 - Kakršni koli hrvaški podatki ali scraper (B, C, D)
 - Ločitev `players` od `auth.users` (A2)
+- Poln admin UI za več držav (shema in politike so v A1, UI ne)
+- Hrvaška vizualna podoba za `bocanje.top` — logotip, barve, ime. A1 postavi
+  preslikavo domene, ne pa oblikovanja
+- Nakup in DNS nastavitev domene `bocanje.top`
 - Prevod vmesnika v hrvaščino — jezik je ločen od države; vmesnik ostane
   slovenski tudi na `/hr`
 - Geolokacijsko zaznavanje države
