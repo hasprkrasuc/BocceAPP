@@ -333,25 +333,45 @@ export function nextKnockoutStage(
 // HELPERS
 // ────────────────────────────────────────────────────────────────
 /**
- * Prikazno ime ekipe. Privzeto le priimek(i) (kompaktno). Če je `full` true,
- * se izpiše celotno ime in priimek (npr. za tabele skupin in izločilnih bojev).
+ * Skrajšano ime igralca "Priimek I." (priimek + začetnica imena).
+ * Pri tujih igralcih (`foreign`) se za priimek štejeta ZADNJI DVE besedi
+ * (npr. dvojni/priobalni priimki); pri dvobesednem imenu se izpiše kar oboje.
+ */
+function shortPlayerName(name: string | null | undefined, foreign: boolean): string {
+  const words = (name ?? '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (words.length === 1) return words[0]
+  const surnameWords = foreign ? 2 : 1
+  if (words.length <= surnameWords) return words.join(' ')
+  const surname = words.slice(words.length - surnameWords).join(' ')
+  const firstInitial = words[0][0] ? `${words[0][0]}.` : ''
+  return firstInitial ? `${surname} ${firstInitial}` : surname
+}
+
+/**
+ * Prikazno ime ekipe. Privzeto le priimek(i) (najbolj kompaktno). Če je
+ * `expanded` true, se izpiše "Priimek I." (priimek + začetnica imena) —
+ * za tabele skupin in izločilnih bojev. Tuji igralci: zadnji dve besedi = priimek.
  */
 export function teamDisplayName(
   registration: TournamentRegistration | null | undefined,
-  full = false,
+  expanded = false,
 ): string {
   if (!registration) return '???'
-  const fmt = (name: string | null | undefined) =>
-    full ? (name?.trim() || '?') : (name?.split(' ').at(-1) ?? '?')
   // Ime igralca: registriran uporabnik → gost-igralec (guest_players) → prosto ime.
+  // "Tuji" = ni registriran uporabnik (gost ali prosto vpisano ime).
+  const fmt = (name: string | null | undefined, foreign: boolean) =>
+    expanded ? shortPlayerName(name, foreign) : (name?.split(' ').at(-1) ?? '?')
   const name1 = registration.player1?.full_name ?? registration.guest1?.full_name ?? registration.player1_name
-  const p1 = fmt(name1)
+  const foreign1 = !registration.player1?.full_name
+  const p1 = fmt(name1, foreign1)
   // Posamezna disciplina: prijava nima drugega igralca → prikaži samo eno ime
   const hasP2 = registration.player2_id || registration.player2 ||
     registration.player2_guest_id || registration.guest2 || registration.player2_name
   if (!hasP2) return p1
   const name2 = registration.player2?.full_name ?? registration.guest2?.full_name ?? registration.player2_name
-  return `${p1} / ${fmt(name2)}`
+  const foreign2 = !registration.player2?.full_name
+  return `${p1} / ${fmt(name2, foreign2)}`
 }
 
 export function matchTypeLabel(type: MatchType): string {

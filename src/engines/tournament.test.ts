@@ -202,12 +202,28 @@ describe('teamDisplayName', () => {
     expect(teamDisplayName(reg)).toBe('Novak / Kovač')
   })
 
-  it('returns full names of both players when full=true', () => {
+  it('expanded: registrirana igralca → "Priimek I."', () => {
     const reg = {
       player1: { full_name: 'Janez Novak' },
       player2: { full_name: 'Ana Kovač' },
     } as unknown as TournamentRegistration
-    expect(teamDisplayName(reg, true)).toBe('Janez Novak / Ana Kovač')
+    expect(teamDisplayName(reg, true)).toBe('Novak J. / Kovač A.')
+  })
+
+  it('expanded: tuji igralec z dvema besedama → izpiše oboje (zadnji dve = priimek)', () => {
+    const reg = {
+      guest1: { full_name: 'Niko Buterin' },
+      player2_guest_id: 'x',
+      guest2: { full_name: 'Fernando Mrak' },
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg, true)).toBe('Niko Buterin / Fernando Mrak')
+  })
+
+  it('expanded: tuji igralec s tremi besedami → zadnji dve = priimek + začetnica', () => {
+    const reg = {
+      guest1: { full_name: 'Ivano Rajačić Muža' },
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg, true)).toBe('Rajačić Muža I.')
   })
 
   it('returns ??? for null', () => {
