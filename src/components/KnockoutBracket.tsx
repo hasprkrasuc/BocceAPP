@@ -28,7 +28,7 @@ function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: 
         <span className="text-[10px] text-gray-500 font-medium">T{match.match_number}</span>
       </div>
       <div className={`flex items-center justify-between px-2 py-1 border-b border-gray-100 ${winnerIsA ? 'bg-green-50' : ''}`}>
-        <span className={`flex-1 truncate ${winnerIsA ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamA ? 'text-gray-300 italic' : ''}`}>
+        <span className={`flex-1 break-words leading-tight ${winnerIsA ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamA ? 'text-gray-300 italic' : ''}`}>
           {match.teamA ? nameA : 'Čaka...'}
         </span>
         {match.score_a !== null && (
@@ -38,7 +38,7 @@ function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: 
         )}
       </div>
       <div className={`flex items-center justify-between px-2 py-1 ${winnerIsB ? 'bg-green-50' : ''}`}>
-        <span className={`flex-1 truncate ${winnerIsB ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamB ? 'text-gray-300 italic' : ''}`}>
+        <span className={`flex-1 break-words leading-tight ${winnerIsB ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamB ? 'text-gray-300 italic' : ''}`}>
           {match.teamB ? nameB : (match.is_bye ? 'prosto (bye)' : 'Čaka...')}
         </span>
         {match.score_b !== null && (
@@ -76,8 +76,8 @@ function BracketSide({ stages, byStage, side, isAdmin, onEnterScore }: {
         const matches = side === 'left' ? all.slice(0, half) : all.slice(half)
         if (matches.length === 0) return null
         return (
-          <div key={`${side}-${stage}`} className="flex flex-col justify-around gap-3 min-w-[130px]"
-               style={{ width: 140 }}>
+          <div key={`${side}-${stage}`} className="flex flex-col justify-around gap-3 min-w-[200px]"
+               style={{ width: 210 }}>
             <h4 className="text-[11px] font-semibold text-gray-500 text-center border-b pb-1 mb-1">
               {stageLabel(stage)}
             </h4>
@@ -138,7 +138,7 @@ export default function KnockoutBracket({ matches, registrations, isAdmin, onEnt
         )}
 
         {/* Sredina: finale (+ 3. mesto) */}
-        <div className="flex flex-col justify-center items-center min-w-[180px]" style={{ width: 190 }}>
+        <div className="flex flex-col justify-center items-center min-w-[220px]" style={{ width: 240 }}>
           {finalMatches.length > 0 && (
             <div className="w-full bg-gradient-to-b from-bocce-gold/10 to-bocce-gold/5 border border-bocce-gold/30 rounded-xl p-3">
               <h3 className="text-bocce-gold font-bold text-sm mb-2 text-center">🏆 Finale</h3>
