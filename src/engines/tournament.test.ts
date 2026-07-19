@@ -202,6 +202,14 @@ describe('teamDisplayName', () => {
     expect(teamDisplayName(reg)).toBe('Novak / Kovač')
   })
 
+  it('returns full names of both players when full=true', () => {
+    const reg = {
+      player1: { full_name: 'Janez Novak' },
+      player2: { full_name: 'Ana Kovač' },
+    } as unknown as TournamentRegistration
+    expect(teamDisplayName(reg, true)).toBe('Janez Novak / Ana Kovač')
+  })
+
   it('returns ??? for null', () => {
     expect(teamDisplayName(null)).toBe('???')
   })

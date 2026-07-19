@@ -332,18 +332,26 @@ export function nextKnockoutStage(
 // ────────────────────────────────────────────────────────────────
 // HELPERS
 // ────────────────────────────────────────────────────────────────
-export function teamDisplayName(registration: TournamentRegistration | null | undefined): string {
+/**
+ * Prikazno ime ekipe. Privzeto le priimek(i) (kompaktno). Če je `full` true,
+ * se izpiše celotno ime in priimek (npr. za tabele skupin in izločilnih bojev).
+ */
+export function teamDisplayName(
+  registration: TournamentRegistration | null | undefined,
+  full = false,
+): string {
   if (!registration) return '???'
-  const lastName = (full: string | null | undefined) => full?.split(' ').at(-1) ?? '?'
+  const fmt = (name: string | null | undefined) =>
+    full ? (name?.trim() || '?') : (name?.split(' ').at(-1) ?? '?')
   // Ime igralca: registriran uporabnik → gost-igralec (guest_players) → prosto ime.
   const name1 = registration.player1?.full_name ?? registration.guest1?.full_name ?? registration.player1_name
-  const p1 = lastName(name1)
+  const p1 = fmt(name1)
   // Posamezna disciplina: prijava nima drugega igralca → prikaži samo eno ime
   const hasP2 = registration.player2_id || registration.player2 ||
     registration.player2_guest_id || registration.guest2 || registration.player2_name
   if (!hasP2) return p1
   const name2 = registration.player2?.full_name ?? registration.guest2?.full_name ?? registration.player2_name
-  return `${p1} / ${lastName(name2)}`
+  return `${p1} / ${fmt(name2)}`
 }
 
 export function matchTypeLabel(type: MatchType): string {

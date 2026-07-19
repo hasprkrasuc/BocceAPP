@@ -44,8 +44,8 @@ interface MatchRowProps {
 }
 
 function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
-  const nameA = match.teamA ? teamDisplayName(match.teamA.registration) : (match.is_bye ? '—' : '???')
-  const nameB = match.is_bye ? 'Prosta' : (match.teamB ? teamDisplayName(match.teamB.registration) : '???')
+  const nameA = match.teamA ? teamDisplayName(match.teamA.registration, true) : (match.is_bye ? '—' : '???')
+  const nameB = match.is_bye ? 'Prosta' : (match.teamB ? teamDisplayName(match.teamB.registration, true) : '???')
   const winnerIsA = match.winner && match.winner.id === match.team_a_id
   const winnerIsB = match.winner && match.winner.id === match.team_b_id
   const colors = TYPE_COLORS[match.match_type] ?? TYPE_COLORS.zm
@@ -148,13 +148,13 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
             {qualifiers[1] && (
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-bocce-gold text-white text-xs font-bold flex items-center justify-center">1</span>
-                <span className="text-sm font-medium">{teamDisplayName(qualifiers[1].registration)}</span>
+                <span className="text-sm font-medium">{teamDisplayName(qualifiers[1].registration, true)}</span>
               </div>
             )}
             {qualifiers[2] && (
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center">2</span>
-                <span className="text-sm font-medium">{teamDisplayName(qualifiers[2].registration)}</span>
+                <span className="text-sm font-medium">{teamDisplayName(qualifiers[2].registration, true)}</span>
               </div>
             )}
           </div>

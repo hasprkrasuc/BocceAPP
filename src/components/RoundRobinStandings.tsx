@@ -19,7 +19,7 @@ export default function RoundRobinStandings({ matches, registrations, isAdmin, o
     if (m.team_a) teamReg[m.team_a.id] = regMap[m.team_a.registration_id]
     if (m.team_b) teamReg[m.team_b.id] = regMap[m.team_b.registration_id]
   }
-  const nameOf = (teamId: string | null) => teamId ? teamDisplayName(teamReg[teamId]) : '—'
+  const nameOf = (teamId: string | null) => teamId ? teamDisplayName(teamReg[teamId], true) : '—'
 
   const standings = roundRobinStandings(matches)
   const played = [...matches].sort((a, b) => a.match_number - b.match_number)
