@@ -4,7 +4,7 @@ import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { loadTournamentPlayers } from '../lib/tournamentPlayers'
 import { useAuth } from '../contexts/AuthContext'
-import GroupBracket from '../components/GroupBracket'
+import GroupBracket, { type JudgeOption } from '../components/GroupBracket'
 import KnockoutBracket from '../components/KnockoutBracket'
 import RoundRobinStandings from '../components/RoundRobinStandings'
 import ScoreModal from '../components/ScoreModal'
@@ -171,10 +171,18 @@ export function TournamentDetail() {
   const [loadError, setLoadError] = useState('')
   const [regForm, setRegForm] = useState({ partner: '' })
   const [players, setPlayers] = useState<PlayerOption[]>([])
+  const [judges, setJudges] = useState<JudgeOption[]>([])
   const [regLoading, setRegLoading] = useState(false)
   const [regError, setRegError] = useState('')
 
   useEffect(() => { load() }, [id])
+
+  // Sodniki (za izbiro pri skupinah) — role sodnik/admin.
+  useEffect(() => {
+    supabase.from('users').select('id, full_name')
+      .in('role', ['judge', 'admin', 'super_admin']).order('full_name')
+      .then(({ data }) => setJudges((data ?? []) as JudgeOption[]))
+  }, [])
 
   useEffect(() => {
     if (tournament?.format === 'knockout') setTab('knockout')
@@ -419,6 +427,7 @@ export function TournamentDetail() {
                 registrations={registrations}
                 isAdmin={isAdmin}
                 onEnterScore={setScoreMatch}
+                judges={judges}
               />
             ))
           )}
