@@ -55,6 +55,8 @@ export interface UserProfile {
   address_house?: string | null
   address_postal?: string | null
   address_country?: string | null
+  /** Ob prvi prijavi z začetnim geslom mora uporabnik nastaviti novo geslo. */
+  must_change_password?: boolean
 }
 
 export type TournamentSeriesStatus = 'draft' | 'active' | 'completed'
