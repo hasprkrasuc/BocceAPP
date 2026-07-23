@@ -158,7 +158,7 @@ export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind 
 // ──────────────────────────────────────────────────────────────
 export function TournamentDetail() {
   const { id } = useParams<{ id: string }>()
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, profile } = useAuth()
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [groups, setGroups] = useState<TournamentGroup[]>([])
@@ -426,6 +426,7 @@ export function TournamentDetail() {
                 matches={groupMatches.filter(m => m.group_id === g.id)}
                 registrations={registrations}
                 isAdmin={isAdmin}
+                canScore={isAdmin || (profile?.role === 'judge' && g.judge_id === user?.id)}
                 onEnterScore={setScoreMatch}
                 judges={judges}
               />
