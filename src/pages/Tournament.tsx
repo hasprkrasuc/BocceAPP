@@ -449,6 +449,8 @@ export function TournamentDetail() {
           registrations={registrations}
           isAdmin={isAdmin}
           onEnterScore={setScoreMatch}
+          groups={groups}
+          judges={judges}
         />
       )}
 
