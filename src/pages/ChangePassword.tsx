@@ -4,41 +4,27 @@ import { supabase } from '../supabase'
 
 /**
  * Zaslon za prisilno spremembo gesla ob prvi prijavi (must_change_password).
- * Novo geslo je obvezno; e-pošto lahko uporabnik spremeni po želji. Po uspehu
- * počisti zastavico must_change_password, kar sprosti dostop do aplikacije.
+ * Zaenkrat samo geslo (sprememba e-pošte pride kasneje — strežniško, brez
+ * potrjevanja). Po uspehu počisti zastavico must_change_password, kar sprosti
+ * dostop do aplikacije.
  */
 export default function ChangePassword() {
   const { profile, signOut, refreshProfile } = useAuth()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [email, setEmail] = useState('')
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
-
-  const synthetic = profile?.email?.endsWith('@balinar.app') ?? false
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
-    setMessage('')
     if (password.length < 8) { setError('Novo geslo mora imeti vsaj 8 znakov'); return }
     if (password !== confirm) { setError('Gesli se ne ujemata'); return }
     setLoading(true)
     try {
       const { error: pErr } = await supabase.auth.updateUser({ password })
       if (pErr) throw pErr
-
-      const trimmed = email.trim()
-      let emailNote = ''
-      if (trimmed) {
-        const { error: eErr } = await supabase.auth.updateUser({ email: trimmed })
-        if (eErr) throw eErr
-        emailNote = ' Na novo e-pošto smo poslali potrditveno povezavo — klikni jo, da se e-pošta dokončno spremeni.'
-      }
-
       await supabase.from('users').update({ must_change_password: false }).eq('id', profile!.id)
-      setMessage('Geslo je shranjeno.' + emailNote)
       await refreshProfile() // must_change_password = false → dostop se sprosti
     } catch (err) {
       setError((err as Error).message ?? 'Napaka pri shranjevanju')
@@ -70,20 +56,8 @@ export default function ChangePassword() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
               placeholder="Ponovi geslo" autoComplete="new-password" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              E-pošta {synthetic ? '(priporočeno — vpiši svojo pravo)' : '(neobvezno)'}
-            </label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
-              placeholder={profile?.email ?? 'ime@email.com'} autoComplete="email" />
-            <p className="text-[11px] text-gray-400 mt-1">
-              Trenutna: {profile?.email ?? '—'}{synthetic ? ' (sistemska)' : ''}
-            </p>
-          </div>
 
           {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{error}</div>}
-          {message && <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-3 py-2 rounded-lg">{message}</div>}
 
           <button type="submit" disabled={loading}
             className="w-full bg-bocce-green text-white py-2.5 rounded-lg font-semibold hover:bg-bocce-green-light transition-colors disabled:opacity-50">
@@ -91,7 +65,8 @@ export default function ChangePassword() {
           </button>
         </form>
 
-        <button onClick={() => signOut()} className="w-full text-center text-sm text-gray-500 mt-4 hover:text-gray-700">
+        <p className="text-center text-[11px] text-gray-400 mt-3">Sprememba e-pošte bo na voljo kasneje.</p>
+        <button onClick={() => signOut()} className="w-full text-center text-sm text-gray-500 mt-3 hover:text-gray-700">
           Odjava
         </button>
       </div>
