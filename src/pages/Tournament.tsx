@@ -441,6 +441,9 @@ export function TournamentDetail() {
           registrations={registrations}
           isAdmin={isAdmin}
           onEnterScore={setScoreMatch}
+          judges={judges}
+          userId={user?.id}
+          userIsJudge={profile?.role === 'judge'}
         />
       )}
 

@@ -164,6 +164,7 @@ export interface Match {
   status: MatchStatus
   played_at: string | null
   lane_number: string | null
+  judge_id: string | null
   team_a?: GroupTeam
   team_b?: GroupTeam
 }

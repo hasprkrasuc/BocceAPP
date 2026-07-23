@@ -1,4 +1,6 @@
 import LaneInput from './LaneInput'
+import MatchJudgeSelect from './MatchJudgeSelect'
+import type { JudgeOption } from './GroupBracket'
 import { stageLabel, teamDisplayName } from '../engines/tournament'
 import type { Match, TournamentRegistration, GroupTeam, MatchStage } from '../types'
 
@@ -9,18 +11,26 @@ interface EnrichedMatch extends Match {
   teamB: (GroupTeam & { registration?: TournamentRegistration }) | null
 }
 
-interface CardProps {
+interface JudgeCtx {
+  judges: JudgeOption[]
+  userId?: string | null
+  userIsJudge?: boolean
+}
+
+interface CardProps extends JudgeCtx {
   match: EnrichedMatch
   isAdmin: boolean
   onEnterScore: (match: Match) => void
   highlight?: boolean
 }
 
-function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: CardProps) {
+function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false, judges, userId, userIsJudge }: CardProps) {
   const nameA = match.teamA ? teamDisplayName(match.teamA.registration, true) : '???'
   const nameB = match.teamB ? teamDisplayName(match.teamB.registration, true) : '???'
   const winnerIsA = match.winner_id && match.winner_id === match.team_a_id
   const winnerIsB = match.winner_id && match.winner_id === match.team_b_id
+  const canScore = isAdmin || (!!userIsJudge && !!match.judge_id && match.judge_id === userId)
+  const judgeName = judges.find(j => j.id === match.judge_id)?.full_name ?? null
 
   return (
     <div className={`bg-white border rounded-lg overflow-hidden shadow-sm text-xs
@@ -50,19 +60,30 @@ function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: 
       </div>
       {!match.is_bye && (
         isAdmin ? (
-          <div className="flex items-center gap-1 px-2 py-1 border-t border-gray-100 text-[10px] text-gray-500">
-            <span>Steza:</span>
-            <LaneInput matchId={match.id} initial={match.lane_number ?? ''} />
+          <div className="border-t border-gray-100 px-2 py-1 space-y-1 text-[10px] text-gray-500">
+            <div className="flex items-center gap-1">
+              <span>Steza:</span>
+              <LaneInput matchId={match.id} initial={match.lane_number ?? ''} />
+            </div>
+            <div className="flex items-center gap-1">
+              <span>Sodnik:</span>
+              <MatchJudgeSelect matchId={match.id} initial={match.judge_id ?? ''} judges={judges} />
+            </div>
           </div>
-        ) : match.lane_number ? (
-          <div className="px-2 py-0.5 text-[10px] text-gray-500 border-t border-gray-100">Steza {match.lane_number}</div>
+        ) : (match.lane_number || judgeName) ? (
+          <div className="px-2 py-0.5 text-[10px] text-gray-500 border-t border-gray-100">
+            {match.lane_number && <span>Steza {match.lane_number}</span>}
+            {match.lane_number && judgeName && <span> · </span>}
+            {judgeName && <span>Sodnik: {judgeName}</span>}
+          </div>
         ) : null
       )}
 
-      {isAdmin && match.team_a_id && match.team_b_id && !match.winner_id && (
+      {canScore && match.team_a_id && match.team_b_id && !match.is_bye && (
         <button onClick={() => onEnterScore(match)}
-          className="w-full text-[11px] bg-bocce-green text-white py-0.5 hover:bg-bocce-green-light transition-colors">
-          Vnesi rezultat
+          className={`w-full text-[11px] py-0.5 transition-colors
+            ${match.winner_id ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-bocce-green text-white hover:bg-bocce-green-light'}`}>
+          {match.winner_id ? '✎ Popravi' : 'Vnesi rezultat'}
         </button>
       )}
     </div>
@@ -70,12 +91,13 @@ function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: 
 }
 
 /** Ena stran (leva ali desna) mreže: stolpci krogov, tekme enakomerno razporejene. */
-function BracketSide({ stages, byStage, side, isAdmin, onEnterScore }: {
+function BracketSide({ stages, byStage, side, isAdmin, onEnterScore, judgeCtx }: {
   stages: MatchStage[]
   byStage: Record<string, EnrichedMatch[]>
   side: 'left' | 'right'
   isAdmin: boolean
   onEnterScore: (match: Match) => void
+  judgeCtx: JudgeCtx
 }) {
   // Desna stran: krogi v obratnem vrstnem redu (finale je na sredini).
   const cols = side === 'left' ? stages : [...stages].reverse()
@@ -95,7 +117,7 @@ function BracketSide({ stages, byStage, side, isAdmin, onEnterScore }: {
             </h4>
             <div className="flex-1 flex flex-col justify-around gap-3">
               {matches.map(m => (
-                <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} />
+                <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} {...judgeCtx} />
               ))}
             </div>
           </div>
@@ -110,9 +132,13 @@ interface Props {
   registrations: TournamentRegistration[]
   isAdmin: boolean
   onEnterScore: (match: Match) => void
+  judges?: JudgeOption[]
+  userId?: string | null
+  userIsJudge?: boolean
 }
 
-export default function KnockoutBracket({ matches, registrations, isAdmin, onEnterScore }: Props) {
+export default function KnockoutBracket({ matches, registrations, isAdmin, onEnterScore, judges = [], userId, userIsJudge }: Props) {
+  const judgeCtx: JudgeCtx = { judges, userId, userIsJudge }
   const regMap: Record<string, TournamentRegistration> = {}
   for (const reg of registrations) regMap[reg.id] = reg
 
@@ -146,7 +172,7 @@ export default function KnockoutBracket({ matches, registrations, isAdmin, onEnt
         {/* Leva veja */}
         {twoSided && (
           <BracketSide stages={stagesBeforeFinal} byStage={byStage} side="left"
-            isAdmin={isAdmin} onEnterScore={onEnterScore} />
+            isAdmin={isAdmin} onEnterScore={onEnterScore} judgeCtx={judgeCtx} />
         )}
 
         {/* Sredina: finale (+ 3. mesto) */}
@@ -155,13 +181,13 @@ export default function KnockoutBracket({ matches, registrations, isAdmin, onEnt
             <div className="w-full bg-gradient-to-b from-bocce-gold/10 to-bocce-gold/5 border border-bocce-gold/30 rounded-xl p-3">
               <h3 className="text-bocce-gold font-bold text-sm mb-2 text-center">🏆 Finale</h3>
               {finalMatches.map(m => (
-                <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} highlight />
+                <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} highlight {...judgeCtx} />
               ))}
               {thirdPlace.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-bocce-gold/20">
                   <h4 className="text-gray-500 font-medium text-[11px] mb-1 text-center">Za 3. mesto</h4>
                   {thirdPlace.map(m => (
-                    <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} />
+                    <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} {...judgeCtx} />
                   ))}
                 </div>
               )}
@@ -172,7 +198,7 @@ export default function KnockoutBracket({ matches, registrations, isAdmin, onEnt
         {/* Desna veja (zrcaljena) */}
         {twoSided && (
           <BracketSide stages={stagesBeforeFinal} byStage={byStage} side="right"
-            isAdmin={isAdmin} onEnterScore={onEnterScore} />
+            isAdmin={isAdmin} onEnterScore={onEnterScore} judgeCtx={judgeCtx} />
         )}
       </div>
     </div>
