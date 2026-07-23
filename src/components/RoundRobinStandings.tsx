@@ -1,4 +1,4 @@
-import { supabase } from '../supabase'
+import LaneInput from './LaneInput'
 import { teamDisplayName } from '../engines/tournament'
 import { roundRobinStandings } from '../engines/roundRobin'
 import type { Match, TournamentRegistration, TournamentGroup } from '../types'
@@ -23,8 +23,6 @@ export default function RoundRobinStandings({ matches, registrations, isAdmin, o
     const nm = judges.find(j => j.id === g.judge_id)?.full_name
     if (g.judge_id && nm) judgeByGroup[g.id] = nm
   }
-  const saveLane = (id: string, v: string) =>
-    supabase.from('matches').update({ lane_number: v.trim() || null }).eq('id', id)
 
   // group_team id -> registracija (iz vpetih team_a/team_b)
   const teamReg: Record<string, TournamentRegistration | undefined> = {}
@@ -105,9 +103,7 @@ export default function RoundRobinStandings({ matches, registrations, isAdmin, o
                     {isAdmin ? (
                       <span className="flex items-center gap-1.5">
                         Steza:
-                        <input defaultValue={m.lane_number ?? ''} onBlur={e => saveLane(m.id, e.target.value)}
-                          placeholder="npr. 3"
-                          className="w-16 border border-gray-300 rounded px-2 py-0.5 bg-white" />
+                        <LaneInput matchId={m.id} initial={m.lane_number ?? ''} />
                       </span>
                     ) : m.lane_number ? (
                       <span>Steza {m.lane_number}</span>
