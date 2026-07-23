@@ -1,9 +1,10 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AuthProvider } from './contexts/AuthContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ProtectedRoute, AdminRoute } from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
+import ChangePassword from './pages/ChangePassword'
 
 import Home from './pages/Home'
 import { Login, Signup } from './pages/Auth'
@@ -38,6 +39,16 @@ function OldScoresheetRedirect() {
   return <Navigate to={`/liga/tekma/${fixtureId}`} replace />
 }
 
+/**
+ * Prisilna sprememba gesla: če je prijavljeni uporabnik označen z
+ * must_change_password, mu do spremembe gesla ne prikažemo aplikacije.
+ */
+function RequirePasswordChange({ children }: { children: React.ReactNode }) {
+  const { user, profile } = useAuth()
+  if (user && profile?.must_change_password) return <ChangePassword />
+  return <>{children}</>
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50">
@@ -55,6 +66,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
+          <RequirePasswordChange>
           <Layout>
             <Routes>
               {/* Public */}
@@ -107,6 +119,7 @@ export default function App() {
               } />
             </Routes>
           </Layout>
+          </RequirePasswordChange>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
