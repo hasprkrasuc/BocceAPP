@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../supabase'
+import LaneInput from './LaneInput'
 import { matchTypeLabel, teamDisplayName } from '../engines/tournament'
 import type { TournamentGroup, Match, TournamentRegistration, GroupTeam, MatchType } from '../types'
 
@@ -54,8 +55,6 @@ function MatchRow({ match, onEnterScore, isAdmin, judgeName }: MatchRowProps) {
   const winnerIsA = match.winner && match.winner.id === match.team_a_id
   const winnerIsB = match.winner && match.winner.id === match.team_b_id
   const colors = TYPE_COLORS[match.match_type] ?? TYPE_COLORS.zm
-  const [lane, setLane] = useState(match.lane_number ?? '')
-  const saveLane = (v: string) => supabase.from('matches').update({ lane_number: v.trim() || null }).eq('id', match.id)
 
   return (
     <div className={`border rounded-lg p-3 mb-2 ${colors} ${match.is_bye ? 'opacity-60' : ''}`}>
@@ -82,9 +81,7 @@ function MatchRow({ match, onEnterScore, isAdmin, judgeName }: MatchRowProps) {
           {isAdmin ? (
             <span className="flex items-center gap-1.5">
               Steza:
-              <input value={lane} onChange={e => setLane(e.target.value)} onBlur={e => saveLane(e.target.value)}
-                placeholder="npr. 3"
-                className="w-16 border border-gray-300 rounded px-2 py-0.5 bg-white" />
+              <LaneInput matchId={match.id} initial={match.lane_number ?? ''} />
             </span>
           ) : match.lane_number ? (
             <span>Steza {match.lane_number}</span>
@@ -118,10 +115,16 @@ interface Props {
 export default function GroupBracket({ group, matches, registrations, isAdmin, onEnterScore, judges = [] }: Props) {
   const [venue, setVenue] = useState(group.venue_name ?? '')
   const [judgeId, setJudgeId] = useState(group.judge_id ?? '')
-  const saveVenue = (v: string) => supabase.from('tournament_groups').update({ venue_name: v.trim() || null }).eq('id', group.id)
-  const saveJudge = (v: string) => {
+  const [venueSaved, setVenueSaved] = useState(false)
+  const [judgeSaved, setJudgeSaved] = useState(false)
+  const saveVenue = async () => {
+    const { error } = await supabase.from('tournament_groups').update({ venue_name: venue.trim() || null }).eq('id', group.id)
+    if (!error) { setVenueSaved(true); setTimeout(() => setVenueSaved(false), 1500) }
+  }
+  const saveJudge = async (v: string) => {
     setJudgeId(v)
-    return supabase.from('tournament_groups').update({ judge_id: v || null }).eq('id', group.id)
+    const { error } = await supabase.from('tournament_groups').update({ judge_id: v || null }).eq('id', group.id)
+    if (!error) { setJudgeSaved(true); setTimeout(() => setJudgeSaved(false), 1500) }
   }
   const judgeName = judges.find(j => j.id === group.judge_id)?.full_name ?? null
 
@@ -167,14 +170,21 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
       {/* Lokacija + sodnik skupine */}
       {isAdmin ? (
         <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex flex-wrap items-center gap-2">
-          <input value={venue} onChange={e => setVenue(e.target.value)} onBlur={e => saveVenue(e.target.value)}
-            placeholder="Lokacija (prostoročno)"
-            className="flex-1 min-w-[130px] border border-gray-300 rounded px-2 py-1 text-xs bg-white" />
-          <select value={judgeId} onChange={e => saveJudge(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-xs bg-white max-w-[45%]">
-            <option value="">— Sodnik —</option>
-            {judges.map(j => <option key={j.id} value={j.id}>{j.full_name}</option>)}
-          </select>
+          <span className="flex-1 min-w-[130px] flex items-center gap-1">
+            <input value={venue} onChange={e => setVenue(e.target.value)} onBlur={saveVenue}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              placeholder="Lokacija (prostoročno)"
+              className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white" />
+            {venueSaved && <span className="text-green-600 text-[11px] font-medium">✓</span>}
+          </span>
+          <span className="flex items-center gap-1 max-w-[45%]">
+            <select value={judgeId} onChange={e => saveJudge(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white min-w-0">
+              <option value="">— Sodnik —</option>
+              {judges.map(j => <option key={j.id} value={j.id}>{j.full_name}</option>)}
+            </select>
+            {judgeSaved && <span className="text-green-600 text-[11px] font-medium">✓</span>}
+          </span>
         </div>
       ) : judgeName ? (
         <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
