@@ -24,8 +24,18 @@ export default function UserAdmin() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data } = await supabase.from('users').select('*').order('full_name')
-    setUsers((data ?? []) as UserProfile[])
+    // PostgREST vrne največ 1000 vrstic na poizvedbo — beremo po straneh, da
+    // dobimo VSE uporabnike (sicer se seznam odreže ~pri črki S).
+    const pageSize = 1000
+    const all: UserProfile[] = []
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase.from('users').select('*')
+        .order('full_name').range(from, from + pageSize - 1)
+      if (error) break
+      all.push(...((data ?? []) as UserProfile[]))
+      if (!data || data.length < pageSize) break
+    }
+    setUsers(all)
     setLoading(false)
   }
 
