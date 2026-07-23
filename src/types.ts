@@ -121,6 +121,7 @@ export interface TournamentGroup {
   status: GroupStatus
   venue_name: string | null
   group_size: number | null
+  judge_id: string | null
 }
 
 export interface GroupDistribution {
@@ -160,6 +161,7 @@ export interface Match {
   is_bye: boolean
   status: MatchStatus
   played_at: string | null
+  lane_number: string | null
   team_a?: GroupTeam
   team_b?: GroupTeam
 }

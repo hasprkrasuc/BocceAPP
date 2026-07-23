@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { supabase } from '../supabase'
 import { stageLabel, teamDisplayName } from '../engines/tournament'
 import type { Match, TournamentRegistration, GroupTeam, MatchStage } from '../types'
 
@@ -20,6 +22,8 @@ function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: 
   const nameB = match.teamB ? teamDisplayName(match.teamB.registration, true) : '???'
   const winnerIsA = match.winner_id && match.winner_id === match.team_a_id
   const winnerIsB = match.winner_id && match.winner_id === match.team_b_id
+  const [lane, setLane] = useState(match.lane_number ?? '')
+  const saveLane = (v: string) => supabase.from('matches').update({ lane_number: v.trim() || null }).eq('id', match.id)
 
   return (
     <div className={`bg-white border rounded-lg overflow-hidden shadow-sm text-xs
@@ -47,6 +51,19 @@ function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false }: 
           </span>
         )}
       </div>
+      {!match.is_bye && (
+        isAdmin ? (
+          <div className="flex items-center gap-1 px-2 py-1 border-t border-gray-100">
+            <span className="text-[10px] text-gray-500">Steza:</span>
+            <input value={lane} onChange={e => setLane(e.target.value)} onBlur={e => saveLane(e.target.value)}
+              placeholder="—"
+              className="w-12 border border-gray-200 rounded px-1 py-0.5 text-[11px] bg-white" />
+          </div>
+        ) : match.lane_number ? (
+          <div className="px-2 py-0.5 text-[10px] text-gray-500 border-t border-gray-100">Steza {match.lane_number}</div>
+        ) : null
+      )}
+
       {isAdmin && match.team_a_id && match.team_b_id && !match.winner_id && (
         <button onClick={() => onEnterScore(match)}
           className="w-full text-[11px] bg-bocce-green text-white py-0.5 hover:bg-bocce-green-light transition-colors">

@@ -1,5 +1,9 @@
+import { useState } from 'react'
+import { supabase } from '../supabase'
 import { matchTypeLabel, teamDisplayName } from '../engines/tournament'
 import type { TournamentGroup, Match, TournamentRegistration, GroupTeam, MatchType } from '../types'
+
+export interface JudgeOption { id: string; full_name: string | null }
 
 const TYPE_COLORS: Record<MatchType, string> = {
   zm:      'bg-green-50 border-green-300 text-green-800',
@@ -49,6 +53,8 @@ function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
   const winnerIsA = match.winner && match.winner.id === match.team_a_id
   const winnerIsB = match.winner && match.winner.id === match.team_b_id
   const colors = TYPE_COLORS[match.match_type] ?? TYPE_COLORS.zm
+  const [lane, setLane] = useState(match.lane_number ?? '')
+  const saveLane = (v: string) => supabase.from('matches').update({ lane_number: v.trim() || null }).eq('id', match.id)
 
   return (
     <div className={`border rounded-lg p-3 mb-2 ${colors} ${match.is_bye ? 'opacity-60' : ''}`}>
@@ -70,6 +76,19 @@ function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
         </div>
       </div>
 
+      {!match.is_bye && (
+        isAdmin ? (
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="text-xs text-gray-500">Steza:</span>
+            <input value={lane} onChange={e => setLane(e.target.value)} onBlur={e => saveLane(e.target.value)}
+              placeholder="npr. 3"
+              className="w-16 border border-gray-300 rounded px-2 py-0.5 text-xs bg-white" />
+          </div>
+        ) : match.lane_number ? (
+          <p className="text-xs text-gray-500 mt-1">Steza {match.lane_number}</p>
+        ) : null
+      )}
+
       {isAdmin && !match.is_bye && match.team_a_id && match.team_b_id && (
         <button onClick={() => onEnterScore(match)}
           className={`mt-2 w-full text-xs py-1 rounded transition-colors
@@ -89,9 +108,19 @@ interface Props {
   registrations: TournamentRegistration[]
   isAdmin: boolean
   onEnterScore: (match: Match) => void
+  judges?: JudgeOption[]
 }
 
-export default function GroupBracket({ group, matches, registrations, isAdmin, onEnterScore }: Props) {
+export default function GroupBracket({ group, matches, registrations, isAdmin, onEnterScore, judges = [] }: Props) {
+  const [venue, setVenue] = useState(group.venue_name ?? '')
+  const [judgeId, setJudgeId] = useState(group.judge_id ?? '')
+  const saveVenue = (v: string) => supabase.from('tournament_groups').update({ venue_name: v.trim() || null }).eq('id', group.id)
+  const saveJudge = (v: string) => {
+    setJudgeId(v)
+    return supabase.from('tournament_groups').update({ judge_id: v || null }).eq('id', group.id)
+  }
+  const judgeName = judges.find(j => j.id === group.judge_id)?.full_name ?? null
+
   const regMap: Record<string, TournamentRegistration> = {}
   for (const reg of registrations) regMap[reg.id] = reg
 
@@ -123,13 +152,31 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
       <div className="bg-bocce-green px-4 py-3 flex items-center justify-between">
         <h3 className="text-white font-semibold">
           Skupina {group.group_number}
-          {group.venue_name && <span className="text-green-200 text-sm ml-2">— {group.venue_name}</span>}
+          {venue && <span className="text-green-200 text-sm ml-2">— {venue}</span>}
         </h3>
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium
           ${group.status === 'completed' ? 'bg-bocce-gold text-white' : 'bg-green-700 text-green-100'}`}>
           {group.status === 'completed' ? 'Zaključena' : 'V teku'}
         </span>
       </div>
+
+      {/* Lokacija + sodnik skupine */}
+      {isAdmin ? (
+        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex flex-wrap items-center gap-2">
+          <input value={venue} onChange={e => setVenue(e.target.value)} onBlur={e => saveVenue(e.target.value)}
+            placeholder="Lokacija (prostoročno)"
+            className="flex-1 min-w-[130px] border border-gray-300 rounded px-2 py-1 text-xs bg-white" />
+          <select value={judgeId} onChange={e => saveJudge(e.target.value)}
+            className="border border-gray-300 rounded px-2 py-1 text-xs bg-white max-w-[45%]">
+            <option value="">— Sodnik —</option>
+            {judges.map(j => <option key={j.id} value={j.id}>{j.full_name}</option>)}
+          </select>
+        </div>
+      ) : judgeName ? (
+        <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
+          Sodnik: {judgeName}
+        </div>
+      ) : null}
 
       <div className="p-4">
         {groupMatches.length === 0 ? (
