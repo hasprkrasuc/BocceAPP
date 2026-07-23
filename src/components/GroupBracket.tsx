@@ -45,9 +45,10 @@ interface MatchRowProps {
   match: EnrichedMatch
   onEnterScore: (match: Match) => void
   isAdmin: boolean
+  judgeName?: string | null
 }
 
-function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
+function MatchRow({ match, onEnterScore, isAdmin, judgeName }: MatchRowProps) {
   const nameA = match.teamA ? teamDisplayName(match.teamA.registration, true) : (match.is_bye ? '—' : '???')
   const nameB = match.is_bye ? 'Prosta' : (match.teamB ? teamDisplayName(match.teamB.registration, true) : '???')
   const winnerIsA = match.winner && match.winner.id === match.team_a_id
@@ -76,17 +77,20 @@ function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
         </div>
       </div>
 
-      {!match.is_bye && (
-        isAdmin ? (
-          <div className="flex items-center gap-1.5 mt-2">
-            <span className="text-xs text-gray-500">Steza:</span>
-            <input value={lane} onChange={e => setLane(e.target.value)} onBlur={e => saveLane(e.target.value)}
-              placeholder="npr. 3"
-              className="w-16 border border-gray-300 rounded px-2 py-0.5 text-xs bg-white" />
-          </div>
-        ) : match.lane_number ? (
-          <p className="text-xs text-gray-500 mt-1">Steza {match.lane_number}</p>
-        ) : null
+      {!match.is_bye && (isAdmin || match.lane_number || judgeName) && (
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-2 text-xs text-gray-500">
+          {isAdmin ? (
+            <span className="flex items-center gap-1.5">
+              Steza:
+              <input value={lane} onChange={e => setLane(e.target.value)} onBlur={e => saveLane(e.target.value)}
+                placeholder="npr. 3"
+                className="w-16 border border-gray-300 rounded px-2 py-0.5 bg-white" />
+            </span>
+          ) : match.lane_number ? (
+            <span>Steza {match.lane_number}</span>
+          ) : null}
+          {judgeName && <span>{(isAdmin || match.lane_number) ? '· ' : ''}Sodnik: {judgeName}</span>}
+        </div>
       )}
 
       {isAdmin && !match.is_bye && match.team_a_id && match.team_b_id && (
@@ -183,7 +187,7 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
           <p className="text-gray-400 text-sm italic text-center py-4">Žreb še ni opravljen</p>
         ) : (
           groupMatches.map(m => (
-            <MatchRow key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} />
+            <MatchRow key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} judgeName={judgeName} />
           ))
         )}
       </div>
