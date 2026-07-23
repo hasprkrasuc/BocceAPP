@@ -46,10 +46,11 @@ interface MatchRowProps {
   match: EnrichedMatch
   onEnterScore: (match: Match) => void
   isAdmin: boolean
+  canScore: boolean
   judgeName?: string | null
 }
 
-function MatchRow({ match, onEnterScore, isAdmin, judgeName }: MatchRowProps) {
+function MatchRow({ match, onEnterScore, isAdmin, canScore, judgeName }: MatchRowProps) {
   const nameA = match.teamA ? teamDisplayName(match.teamA.registration, true) : (match.is_bye ? '—' : '???')
   const nameB = match.is_bye ? 'Prosta' : (match.teamB ? teamDisplayName(match.teamB.registration, true) : '???')
   const winnerIsA = match.winner && match.winner.id === match.team_a_id
@@ -90,7 +91,7 @@ function MatchRow({ match, onEnterScore, isAdmin, judgeName }: MatchRowProps) {
         </div>
       )}
 
-      {isAdmin && !match.is_bye && match.team_a_id && match.team_b_id && (
+      {canScore && !match.is_bye && match.team_a_id && match.team_b_id && (
         <button onClick={() => onEnterScore(match)}
           className={`mt-2 w-full text-xs py-1 rounded transition-colors
             ${match.winner_id
@@ -108,11 +109,14 @@ interface Props {
   matches: Match[]
   registrations: TournamentRegistration[]
   isAdmin: boolean
+  /** Ali sme trenutni uporabnik vnašati rezultate te skupine (admin ali sodnik skupine). */
+  canScore?: boolean
   onEnterScore: (match: Match) => void
   judges?: JudgeOption[]
 }
 
-export default function GroupBracket({ group, matches, registrations, isAdmin, onEnterScore, judges = [] }: Props) {
+export default function GroupBracket({ group, matches, registrations, isAdmin, canScore, onEnterScore, judges = [] }: Props) {
+  const mayScore = canScore ?? isAdmin
   const [venue, setVenue] = useState(group.venue_name ?? '')
   const [judgeId, setJudgeId] = useState(group.judge_id ?? '')
   const [venueSaved, setVenueSaved] = useState(false)
@@ -197,7 +201,7 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
           <p className="text-gray-400 text-sm italic text-center py-4">Žreb še ni opravljen</p>
         ) : (
           groupMatches.map(m => (
-            <MatchRow key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} judgeName={judgeName} />
+            <MatchRow key={m.id} match={m} isAdmin={isAdmin} canScore={mayScore} onEnterScore={onEnterScore} judgeName={judgeName} />
           ))
         )}
       </div>
