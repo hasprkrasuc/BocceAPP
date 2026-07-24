@@ -276,7 +276,7 @@ export function TournamentDetail() {
   async function propagateGroup(groupId: string) {
     const { data: fresh } = await supabase
       .from('matches')
-      .select('id, match_number, status, is_bye, team_a_id, team_b_id, winner_id')
+      .select('id, match_number, status, is_bye, team_a_id, team_b_id, winner_id, score_a, score_b')
       .eq('group_id', groupId)
     if (!fresh) return
 
