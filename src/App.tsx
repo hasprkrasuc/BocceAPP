@@ -29,6 +29,7 @@ import Series from './pages/Series'
 import SeriesAdmin from './pages/admin/SeriesAdmin'
 import SeriesEdit from './pages/admin/SeriesEdit'
 import PlayerImport from './pages/admin/PlayerImport'
+import GuestAdmin from './pages/admin/GuestAdmin'
 
 const queryClient = new QueryClient()
 
@@ -105,6 +106,7 @@ export default function App() {
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />
               <Route path="/admin/klubi" element={<AdminRoute><ClubAdmin /></AdminRoute>} />
               <Route path="/admin/uporabniki" element={<AdminRoute><UserAdmin /></AdminRoute>} />
+              <Route path="/admin/gosti" element={<AdminRoute><GuestAdmin /></AdminRoute>} />
               <Route path="/admin/dvojna-registracija" element={<AdminRoute><DoubleRegAdmin /></AdminRoute>} />
               <Route path="/admin/serije" element={<AdminRoute><SeriesAdmin /></AdminRoute>} />
               <Route path="/admin/serija/:id" element={<AdminRoute><SeriesEdit /></AdminRoute>} />
