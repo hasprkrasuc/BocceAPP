@@ -191,6 +191,66 @@ describe('computePropagation', () => {
     const result = computePropagation(rows, GROUP_TEMPLATES[4])
     expect(result).toEqual([])
   })
+
+  // ── Popravek rezultata mora "prebrati" naprej (bug: Klančišar/Kobal je bil
+  //    hkrati med zmagovalci in poraženci). Ko se popravi T1/T2, mora že
+  //    odigrana T3 dobiti PRAVE ekipe in počistiti neveljaven rezultat. ──
+  it('re-reads a COMPLETED winners match after upstream results were corrected, clearing its stale result', () => {
+    // 4-team group. T1 winner=A, T2 winner=B (že popravljeno). T3 pa še vedno
+    // drži POražence (D, C) — kot v napaki na Postojna Open.
+    const rows: PropagationRow[] = [
+      { match_number: 1, status: 'completed', is_bye: false, team_a_id: 'A', team_b_id: 'D', winner_id: 'A' },
+      { match_number: 2, status: 'completed', is_bye: false, team_a_id: 'B', team_b_id: 'C', winner_id: 'B' },
+      { match_number: 3, status: 'completed', is_bye: false, team_a_id: 'D', team_b_id: 'C', winner_id: 'D', score_a: 1, score_b: 0 },
+      { match_number: 4, status: 'pending',   is_bye: false, team_a_id: 'D', team_b_id: 'C', winner_id: null },
+      { match_number: 5, status: 'pending',   is_bye: false, team_a_id: null, team_b_id: null, winner_id: null },
+    ]
+
+    const result = computePropagation(rows, GROUP_TEMPLATES[4])
+    const m3 = result.find(u => u.match_number === 3)
+    expect(m3?.updates).toEqual({
+      team_a_id: 'A', team_b_id: 'B',
+      winner_id: null, status: 'pending', score_a: null, score_b: null,
+    })
+    // T4 (poraženci) mora dobiti prava poraženca L(T1)=D, L(T2)=C — brez sprememb tu.
+    const m4 = result.find(u => u.match_number === 4)
+    expect(m4).toBeUndefined()
+  })
+
+  it('converges: after applying the correction, a second pass yields no further change for that match', () => {
+    const rows: PropagationRow[] = [
+      { match_number: 1, status: 'completed', is_bye: false, team_a_id: 'A', team_b_id: 'D', winner_id: 'A' },
+      { match_number: 2, status: 'completed', is_bye: false, team_a_id: 'B', team_b_id: 'C', winner_id: 'B' },
+      { match_number: 3, status: 'completed', is_bye: false, team_a_id: 'D', team_b_id: 'C', winner_id: 'D', score_a: 1, score_b: 0 },
+      { match_number: 4, status: 'pending',   is_bye: false, team_a_id: 'D', team_b_id: 'C', winner_id: null },
+      { match_number: 5, status: 'pending',   is_bye: false, team_a_id: null, team_b_id: null, winner_id: null },
+    ]
+    const first = computePropagation(rows, GROUP_TEMPLATES[4])
+    for (const u of first) Object.assign(rows.find(r => r.match_number === u.match_number)!, u.updates)
+    const second = computePropagation(rows, GROUP_TEMPLATES[4])
+    expect(second.find(u => u.match_number === 3)).toBeUndefined()
+  })
+
+  it('cascades a cleared upstream result: a completed downstream match that now has an undetermined slot is reset', () => {
+    // T3 rezultat je bil počiščen (winner_id null) → T5, ki je odvisen od
+    // loser(T3), mora izgubiti staro ekipo in svoj rezultat.
+    const rows: PropagationRow[] = [
+      { match_number: 1, status: 'completed', is_bye: false, team_a_id: 'A', team_b_id: 'D', winner_id: 'A' },
+      { match_number: 2, status: 'completed', is_bye: false, team_a_id: 'B', team_b_id: 'C', winner_id: 'B' },
+      { match_number: 3, status: 'pending',   is_bye: false, team_a_id: 'A', team_b_id: 'B', winner_id: null },
+      { match_number: 4, status: 'completed', is_bye: false, team_a_id: 'D', team_b_id: 'C', winner_id: 'D' },
+      { match_number: 5, status: 'completed', is_bye: false, team_a_id: 'X', team_b_id: 'D', winner_id: 'X', score_a: 6, score_b: 3 },
+    ]
+    // T5 = r losesMatch3 vs winsMatch4. loser(T3) je nedoločen (T3 pending) →
+    // team_a_id mora postati null; winsMatch4=D ostane; rezultat počiščen.
+    const result = computePropagation(rows, GROUP_TEMPLATES[4])
+    const m5 = result.find(u => u.match_number === 5)
+    expect(m5?.updates.team_a_id).toBe(null)
+    expect(m5?.updates.winner_id).toBe(null)
+    expect(m5?.updates.status).toBe('pending')
+    expect(m5?.updates.score_a).toBe(null)
+    expect(m5?.updates.score_b).toBe(null)
+  })
 })
 
 describe('teamDisplayName', () => {
