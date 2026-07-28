@@ -49,9 +49,11 @@ Tehnične pasti za B/C/D:
 
 - Stran servira **Windows-1250**, ne UTF-8. Brez eksplicitnega charseta so
   šumniki razbiti.
-- **Ni stabilnih ID-jev** — samo slugi, izpeljani iz imen. Že opažen razhod
-  (`/igraci/renata-tomic/` z imenom "Renata Abram") in nekaj številčnih klubskih
-  slugov. Preimenovanja in dvojniki so realno tveganje pri ponovnih uvozih.
+- **Ni stabilnih ID-jev** — samo slugi, izpeljani iz imen. Že opažen razhod:
+  profil igralke, katere slug nosi drug priimek kot trenutno prikazano ime
+  (menjava priimka; konkretni primer namenoma ni naveden — repo je javen), in
+  nekaj številčnih klubskih slugov. Preimenovanja in dvojniki so realno
+  tveganje pri ponovnih uvozih.
 - Imena PDF datotek so ugibljiva, a nedosledna — povezave je treba pobrati z
   ligaških strani, ne sestavljati.
 
@@ -113,18 +115,23 @@ create table public.countries (
 podatkov — tako lahko podprojekt B uvaža v produkcijo, ne da bi bilo javno
 vidno.
 
-`country_id uuid not null references countries(id)` gre na **šest korenskih
+`country_id uuid not null references countries(id)` gre na **sedem korenskih
 tabel**:
 
 `clubs` · `users` · `league_seasons` · `tournaments` · `tournament_series` ·
-`calendar_events`
+`calendar_events` · `guest_players`
+
+`guest_players` je korenska tabela, čeprav je majhna: je samostojen register
+brez tujega ključa na starša (`2026-07-16_guest_players_reusable.sql` — nanjo
+kaže `tournament_registrations`, ne obratno, in vrstice legitimno obstajajo
+nereferencirane). Države torej ni mogoče izpeljati — dobi svoj `country_id`,
+indeks in admin politiko po državi.
 
 Vse ostale tabele države **ne dobijo** — podedujejo jo prek tujega ključa na
 starša: `league_teams`, `league_team_players`, `league_fixtures`,
 `league_match_results`, `league_match_discipline_results`,
 `league_season_disciplines`, `tournament_registrations`, `tournament_groups`,
-`group_teams`, `matches`, `player_statistics`, `guest_players`,
-`double_registrations`.
+`group_teams`, `matches`, `player_statistics`, `double_registrations`.
 
 To je namerno. Podvojen `country_id` na otroku je novo mesto, kjer se lahko
 razideta s staršem, in ne prinese ničesar.
@@ -159,9 +166,16 @@ legitimno ni. `country_id` na `matches` ni potreben.
 
 Ključi, ki se nanašajo na nacionalni register, dobijo `country_id`:
 
-- `users_emso_unique` → `unique (country_id, emso)`
-- vsaka omejitev iz `2026-07-09_import_unique_constraints.sql`, ki se nanaša na
-  nacionalni register — vsako je treba preveriti posamično
+- `users_emso_uniq` — pozor: to je **delni unique indeks**, ne constraint
+  (`create unique index users_emso_uniq ... where emso is not null` iz
+  `2026-07-09_users_emso_unique.sql`); odstrani se z `drop index`, ne z
+  `drop constraint` → nadomesti ga delni indeks `unique (country_id, emso)`
+- `clubs_name_lower_uniq` iz `2026-07-09_import_unique_constraints.sql` je
+  globalen unique indeks na `lower(trim(name))` → postane
+  `(country_id, lower(trim(name)))`, sicer prvi hrvaški klub z imenom
+  slovenskega pade ob uvozu (podprojekt B)
+- `league_teams_season_club_lower_uniq` iz iste datoteke je vezan na sezono in
+  državo podeduje prek nje — ostane nespremenjen
 
 EMŠO je slovenski konstrukt. Hrvaška uporablja številko iskaznice v obliki
 `F922/98`. Zato `users` dobi splošen stolpec `registration_number text` za
@@ -271,13 +285,13 @@ mednarodnem turnirju (ki mora videti obe državi hkrati) obrnila proti nam.
 
 Namesto tega filtriranje v aplikaciji, s tremi zaščitami:
 
-1. **Filtriranje samo na koreninah.** Poizvedbe na šest korenskih tabel dobijo
+1. **Filtriranje samo na koreninah.** Poizvedbe na sedem korenskih tabel dobijo
    `.eq('country_id', countryId)`. Otroci ga ne rabijo — dostopni so prek
    filtriranega starša. Od ~180 klicnih mest se jih spremeni približno 55.
 2. **Ozek pomožni sloj.** `fromCountry(table, countryId)`, ki filter doda sam.
-   Ni abstrakcija čez Supabase — samo ta en zavoj, samo za teh šest tabel.
+   Ni abstrakcija čez Supabase — samo ta en zavoj, samo za teh sedem tabel.
 3. **Test, ki lovi pozabljene.** Preišče `src/` in `api/` za surovimi
-   `.from('clubs')` in ostalimi petimi ter pade, če niso šli skozi pomožno
+   `.from('clubs')` in ostalimi šestimi ter pade, če niso šli skozi pomožno
    funkcijo. Teče v CI. To drži disciplino čez čas — ob dodajanju Srbije se
    nihče ne bo spomnil tega dokumenta.
 
@@ -310,18 +324,44 @@ podlage.
 - `super_admin` ostane brez omejitve (skrbnik platforme).
 - Če se kdaj pojavi admin za dve državi, se stolpec zamenja z vezno tabelo. Za
   zdaj to ni potrebno in vezna tabela bi bila predčasna.
+- **Zapolnitev ob uvedbi:** ista migracija, ki doda stolpec, nastavi
+  `admin_country_id = SI` vsem obstoječim računom z `role = 'admin'` — vsi
+  današnji admini so slovenski. Brez te zapolnitve bi nova politika (za
+  `role = 'admin'` zahteva `admin_country_id = country_id` vrstice) vsem
+  obstoječim adminom takoj zavrnila vsako pisanje: primerjava z `null` nikoli
+  ne uspe.
 
 ### RLS politike
 
-Obstoječe politike oblike `role = any(array['admin','super_admin'])` se
-razširijo tako, da `admin` velja le, kadar se `admin_country_id` ujema s
-`country_id` vrstice:
+Obstoječe admin politike **niso enotne oblike in ne enotnih imen** — `clubs`
+ima `"Admin urejanje"` z `role = any(array['admin','super_admin'])`
+(`01_out_of_band_schema.sql`), `tournaments` in `league_seasons` imata
+`"Admin pisanje turnirji"` / `"Admin pisanje liga"` z `auth.uid() in
+(select ...)` (`00_schema.sql`), `tournament_series` ima `"Admin pisanje
+serije"`, `guest_players` ima `"Admin ureja goste"`; `calendar_events` in
+`users` v repu admin politike za pisanje sploh nimata (morebitna obstaja mimo
+repa — isti zdrs shema/baza kot pri Koraku 0). Migracija zato politik **ne
+odstranjuje po predpostavljenem imenu**, temveč po dejanskih imenih iz
+`pg_policies`, in jih nadomesti tako, da `admin` velja le, kadar se
+`admin_country_id` ujema s `country_id` vrstice:
 
-- **Pisanje** na šestih korenskih tabelah — neposredna primerjava.
+- **Pisanje** na sedmih korenskih tabelah — neposredna primerjava.
 - **Pisanje** na otrocih — primerjava prek starša (`league_teams` prek
-  `league_seasons` itd.).
+  `league_seasons` itd.). Otroci imajo danes svoje, državno slepe admin
+  politike (`"Admin pisanje matches"`, `"Admin write"` na
+  `league_match_results` ipd.) — tudi te se zamenjajo v isti migraciji, sicer
+  meja na koreninah ne pomeni nič: surov PostgREST klic piše naravnost po
+  otroku.
 - **Branje PII stolpcev `users`** — admin dostopa do občutljivih stolpcev le za
-  svojo državo. Uporabnik še naprej vidi lasten profil v celoti.
+  svojo državo. Uporabnik še naprej vidi lasten profil v celoti. Pogled
+  (`users_sensitive`) sam po sebi te meje **ne** vzpostavi: vloga
+  `authenticated` ima danes polne stolpčne pravice na `public.users` in
+  permisivno `select using (true)` politiko, torej vsak prijavljeni bere EMŠO
+  neposredno iz tabele mimo pogleda. Migracija mora občutljive stolpce
+  odvzeti tudi `authenticated` (revoke + ponovni grant samo javnih stolpcev,
+  po vzoru `20260628_restrict_users_pii_from_anon.sql`); lastni in admin
+  dostop do občutljivih stolpcev teče izključno prek `users_sensitive`, kar
+  pomeni tudi prilagoditev `AuthContext.fetchProfile` (danes `select('*')`).
 
 Ta razširitev se piše skupaj z migracijo, ne kasneje: politika, ki jo je treba
 "še zaostriti", ostane ohlapna.
@@ -340,28 +380,36 @@ Shema v repu in shema v bazi sta se že razšli — štiri tabele in PII stolpci
 dokumentiral, polni `db reset` še ni bil testiran. Zato se ta migracija **piše
 po introspekciji produkcijske baze, ne po repu**.
 
-**Korak 0.** Izpis dejanskih stolpcev in omejitev na šestih korenskih tabelah,
+**Korak 0.** Izpis dejanskih stolpcev in omejitev na sedmih korenskih tabelah,
 primerjava s trditvami repa. Razhajanja se dokumentirajo, preden se karkoli
 spremeni. Varnostna kopija prizadetih tabel (ista praksa kot `_bak_zapisnik_*`
 pri prepisu liga zapisnika).
 
-Delno že opravljeno 2026-07-19 — glej ugotovitvi o `matches` in
-`license_number` zgoraj. Ostalo (unique omejitve iz
-`2026-07-09_import_unique_constraints.sql`, PII stolpci `users`) je še odprto.
+Delno že opravljeno 2026-07-19 — glej ugotovitve o `matches`, `license_number`
+in unique omejitvah zgoraj (razrešene: `users_emso_uniq`,
+`clubs_name_lower_uniq`, `league_teams_season_club_lower_uniq`). Odprt ostaja
+popis PII stolpcev `users`.
 
 **Korak 1.** `countries` + vsebina. Slovenija `is_active = true`; Hrvaška,
 Srbija, Črna gora, BiH vpisane a `is_active = false`. Ne spremeni ničesar
 obstoječega.
 
-**Korak 2.** `country_id` kot **nullable** na šestih tabelah + indeks na vsakem.
+**Korak 2.** `country_id` kot **nullable** na sedmih tabelah + indeks na vsakem.
 
 **Korak 3.** Zapolnitev: `update ... set country_id = <si> where country_id is
 null`. Vsi obstoječi podatki so slovenski — to ni ugibanje.
 
-**Korak 4.** `not null` + prehodni privzetek na SI za skripte, ki stolpca še ne
-pošiljajo. Privzetek pade takoj, ko so skripte prevezane — privzetek, ki
-ostane, je isti tihi tovornjak v napačno državo. V tem koraku tudi popravek
-unique omejitev.
+**Korak 4.** Najprej **ponovna zapolnitev** (isti `update ... where country_id
+is null` kot v koraku 3 — med korakoma aplikacija še vpisuje vrstice brez
+`country_id`, `set default` pa obstoječih vrstic ne popravi; brez tega `set
+not null` pade), šele nato `not null` + prehodni privzetek na SI za pisce, ki
+stolpca še ne pošiljajo. Privzetek pade takoj, ko so pisci prevezani —
+privzetek, ki ostane, je isti tihi tovornjak v napačno državo. Med pisce sodi
+tudi **DB prožilec `handle_new_user`** (vstavi vrstico `users` ob vsaki
+registraciji, brez `country_id` — `00_schema.sql` /
+`20260628_security_hardening.sql`): preden privzetek pade, mora prožilec
+državo nastavljati sam, sicer po odstranitvi privzetka **vsaka registracija
+pade** na `not null`. V tem koraku tudi popravek unique omejitev.
 
 Vsak korak je samostojno preklican.
 
@@ -371,7 +419,7 @@ ga še ni, ni.
 
 ## Preverjanje
 
-**Nič slovenskega ne izgine.** Števci po šestih korenskih tabelah in glavnih
+**Nič slovenskega ne izgine.** Števci po sedmih korenskih tabelah in glavnih
 otrocih pred in po migraciji morajo biti identični. `where country_id is null`
 mora vrniti nič vrstic.
 
@@ -394,8 +442,11 @@ To je najpomembnejši test A1, ker je to stanje, v katerem bo Hrvaška živela v
 `admin_country_id = HR` mora:
 
 - videti hrvaške javne podatke — da
-- brati EMŠO ali naslov slovenskega igralca — **ne**, zavrnjeno na ravni baze
+- brati EMŠO ali naslov slovenskega igralca — **ne**, zavrnjeno na ravni baze,
+  tudi z neposrednim `select` na `users`, ne le prek pogleda `users_sensitive`
 - spremeniti slovensko sezono, zapisnik ali klub — **ne**, zavrnjeno na ravni baze
+- pisati po slovenskih **otroških** tabelah (npr. `league_teams`,
+  `league_match_results`) prek surovega PostgREST — **ne**
 - narediti oboje za Hrvaško — da
 
 To se preveri **neposredno proti bazi**, ne skozi UI. Politika, ki jo obide

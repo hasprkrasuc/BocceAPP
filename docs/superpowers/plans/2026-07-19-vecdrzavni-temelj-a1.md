@@ -4,7 +4,7 @@
 
 **Goal:** balinar.app dobi dimenzijo države — `country_id` v shemi, poti `/si` in `/hr`, domensko preslikavo in admin pravice, vezane na državo — pri čemer se obstoječi slovenski podatki in vse obstoječe povezave obnašajo nespremenjeno.
 
-**Architecture:** Ena baza, `country_id` na šestih korenskih tabelah; otroci državo dedujejo prek tujega ključa. Branje javnih podatkov filtrira aplikacija prek `fromCountry()` ovojnice; branje osebnih podatkov in pisanje varuje RLS, vezan na `users.admin_country_id`. Državo razreši `CountryProvider` iz domene ali prvega segmenta poti.
+**Architecture:** Ena baza, `country_id` na sedmih korenskih tabelah; otroci državo dedujejo prek tujega ključa. Branje javnih podatkov filtrira aplikacija prek `fromCountry()` ovojnice; branje osebnih podatkov in pisanje varuje RLS, vezan na `users.admin_country_id`. Državo razreši `CountryProvider` iz domene ali prvega segmenta poti.
 
 **Tech Stack:** React 18 + react-router-dom v6, TanStack Query, Supabase (PostgREST + RLS), TypeScript, Vite, Vitest.
 
@@ -61,7 +61,7 @@ navedene točne poizvedbe in pričakovani izidi.
 **Spremenjene:** `src/App.tsx` (usmerjanje), `src/contexts/AuthContext.tsx`
 (`admin_country_id` v profilu), `src/types.ts`, `src/components/Navbar.tsx`,
 `api/import-players.ts` (izrecen argument države), ter ~25 datotek s
-poizvedbami (naloge 12–16).
+poizvedbami (naloge 16–18).
 
 ---
 
@@ -114,7 +114,7 @@ module.exports = { sb, count };
 if (require.main === module) {
   (async () => {
     const ROOTS = ['clubs', 'users', 'league_seasons', 'tournaments',
-                   'tournament_series', 'calendar_events'];
+                   'tournament_series', 'calendar_events', 'guest_players'];
     console.log('=== stevci korenskih tabel ===');
     for (const t of ROOTS) console.log(`${t.padEnd(20)} ${await count(t)}`);
   })().catch(e => { console.error('NAPAKA:', e.message); process.exit(1); });
@@ -125,7 +125,7 @@ if (require.main === module) {
 
 Run: `node scripts/db-query.cjs`
 
-Pričakovano: šest vrstic s števci. **Zapiši si jih** — v nalogi 22 morajo biti
+Pričakovano: sedem vrstic s števci. **Zapiši si jih** — v nalogi 22 morajo biti
 identični.
 
 - [ ] **Korak 3: Commit**
@@ -155,6 +155,7 @@ create table _bak_a1_league_seasons_20260719   as select * from public.league_se
 create table _bak_a1_tournaments_20260719      as select * from public.tournaments;
 create table _bak_a1_tournament_series_20260719 as select * from public.tournament_series;
 create table _bak_a1_calendar_events_20260719  as select * from public.calendar_events;
+create table _bak_a1_guest_players_20260719    as select * from public.guest_players;
 create table _bak_a1_matches_20260719          as select * from public.matches;
 ```
 
@@ -167,6 +168,7 @@ union all select 'league_seasons', count(*) from _bak_a1_league_seasons_20260719
 union all select 'tournaments', count(*) from _bak_a1_tournaments_20260719
 union all select 'tournament_series', count(*) from _bak_a1_tournament_series_20260719
 union all select 'calendar_events', count(*) from _bak_a1_calendar_events_20260719
+union all select 'guest_players', count(*) from _bak_a1_guest_players_20260719
 union all select 'matches', count(*) from _bak_a1_matches_20260719;
 ```
 
@@ -246,15 +248,18 @@ git commit -m "feat(db): tabela countries s petimi drzavami, aktivna le SI"
 - [ ] **Korak 1: Napiši migracijo**
 
 ```sql
--- A1: country_id na šestih korenskih tabelah. Nullable — zapolnitev je ločen korak.
+-- A1: country_id na sedmih korenskih tabelah. Nullable — zapolnitev je ločen korak.
 -- Otroci (league_teams, league_fixtures, tournament_groups, matches, ...) stolpca
 -- NE dobijo: državo dedujejo prek tujega ključa na starša.
+-- guest_players JE korenska tabela: nima tujega ključa na starša (nanjo kaže
+-- tournament_registrations, ne obratno), zato države ni mogoče izpeljati.
 alter table public.clubs             add column if not exists country_id uuid references public.countries(id);
 alter table public.users             add column if not exists country_id uuid references public.countries(id);
 alter table public.league_seasons    add column if not exists country_id uuid references public.countries(id);
 alter table public.tournaments       add column if not exists country_id uuid references public.countries(id);
 alter table public.tournament_series add column if not exists country_id uuid references public.countries(id);
 alter table public.calendar_events   add column if not exists country_id uuid references public.countries(id);
+alter table public.guest_players     add column if not exists country_id uuid references public.countries(id);
 
 create index if not exists clubs_country_id_idx             on public.clubs (country_id);
 create index if not exists users_country_id_idx             on public.users (country_id);
@@ -262,6 +267,7 @@ create index if not exists league_seasons_country_id_idx    on public.league_sea
 create index if not exists tournaments_country_id_idx       on public.tournaments (country_id);
 create index if not exists tournament_series_country_id_idx on public.tournament_series (country_id);
 create index if not exists calendar_events_country_id_idx   on public.calendar_events (country_id);
+create index if not exists guest_players_country_id_idx     on public.guest_players (country_id);
 ```
 
 - [ ] **Korak 2: Poženi in preveri, da stolpec obstaja povsod**
@@ -273,7 +279,7 @@ where column_name = 'country_id' and table_schema = 'public'
 order by table_name;
 ```
 
-Pričakovano: 6 vrstic, vse `is_nullable = YES`.
+Pričakovano: 7 vrstic, vse `is_nullable = YES`.
 
 - [ ] **Korak 3: Preveri, da aplikacija še dela**
 
@@ -284,7 +290,7 @@ Pričakovano: nespremenjeno. Nihče še ne bere tega stolpca.
 
 ```bash
 git add supabase/migrations/2026-07-19_country_id_nullable.sql
-git commit -m "feat(db): country_id (nullable) + indeksi na sestih korenskih tabelah"
+git commit -m "feat(db): country_id (nullable) + indeksi na sedmih korenskih tabelah"
 ```
 
 ---
@@ -310,6 +316,7 @@ begin
   update public.tournaments       set country_id = si_id where country_id is null;
   update public.tournament_series set country_id = si_id where country_id is null;
   update public.calendar_events   set country_id = si_id where country_id is null;
+  update public.guest_players     set country_id = si_id where country_id is null;
 end $$;
 ```
 
@@ -321,10 +328,11 @@ union all select 'users', count(*) from public.users where country_id is null
 union all select 'league_seasons', count(*) from public.league_seasons where country_id is null
 union all select 'tournaments', count(*) from public.tournaments where country_id is null
 union all select 'tournament_series', count(*) from public.tournament_series where country_id is null
-union all select 'calendar_events', count(*) from public.calendar_events where country_id is null;
+union all select 'calendar_events', count(*) from public.calendar_events where country_id is null
+union all select 'guest_players', count(*) from public.guest_players where country_id is null;
 ```
 
-Pričakovano: vseh šest vrstic ima `n = 0`.
+Pričakovano: vseh sedem vrstic ima `n = 0`.
 
 - [ ] **Korak 3: Preveri, da števci niso padli**
 
@@ -347,7 +355,7 @@ git commit -m "feat(db): zapolni country_id na SI za vse obstojece podatke"
 **Files:**
 - Create: `supabase/migrations/2026-07-19_country_id_notnull.sql`
 
-- [ ] **Korak 1: Popiši unique omejitve na vseh šestih koreninah**
+- [ ] **Korak 1: Popiši unique omejitve na vseh sedmih koreninah**
 
 Spec zahteva pregled vseh omejitev iz
 `2026-07-09_import_unique_constraints.sql`, ne le tistih na `users`.
@@ -360,7 +368,7 @@ from pg_constraint c
 where c.contype = 'u'
   and c.conrelid::regclass::text in
       ('clubs','users','league_seasons','tournaments',
-       'tournament_series','calendar_events')
+       'tournament_series','calendar_events','guest_players')
 order by tabela, c.conname;
 
 -- b) unique indeksi (ti se ne pojavijo zgoraj)
@@ -369,7 +377,7 @@ from pg_indexes
 where schemaname = 'public'
   and indexdef ilike '%unique%'
   and tablename in ('clubs','users','league_seasons','tournaments',
-                    'tournament_series','calendar_events')
+                    'tournament_series','calendar_events','guest_players')
 order by tablename, indexname;
 ```
 
@@ -377,21 +385,45 @@ Zapiši oba izpisa v opis PR. Pravilo presoje:
 
 - Omejitev na **nacionalnem registrskem podatku** (emso, registrska številka) →
   mora dobiti `country_id`. Migracija spodaj to naredi za `emso`.
-- Omejitev na **imenu** (npr. `clubs.name`) → verjetno prav tako, saj lahko
-  slovenski in hrvaški klub nosita isto ime. **Če jo najdeš, ustavi in vprašaj** —
-  spec je ni predvidel in ni odločeno, ali je enakost imen čez državo dopustna.
+- Omejitev na **imenu** → prav tako, saj lahko slovenski in hrvaški klub nosita
+  isto ime. Repo tako omejitev že vsebuje: `clubs_name_lower_uniq` na
+  `lower(trim(name))` iz `2026-07-09_import_unique_constraints.sql`. Migracija
+  spodaj jo prezida na `(country_id, lower(trim(name)))`.
+  `league_teams_season_club_lower_uniq` iz iste datoteke je vezan na sezono in
+  državo podeduje prek nje — ostane.
 - Omejitev na **surogatnem ključu** (id) → ostane.
 
-Spec predvideva le `users_emso_unique`. Karkoli drugega je razhod med repom in
-bazo — dokumentiraj ga, kot zahteva korak 0.
+Pozor pri imenih in vrstah objektov: `users_emso_uniq` in `clubs_name_lower_uniq`
+sta **unique indeksa**, ne constrainta — odstranita se z `drop index`, ne z
+`drop constraint` (napačen ukaz z `if exists` tiho ne naredi ničesar in stara
+globalna enoličnost preživi). Karkoli v izpisu, česar spec ne predvidi, je
+razhod med repom in bazo — dokumentiraj ga, kot zahteva korak 0.
 
 - [ ] **Korak 2: Napiši migracijo**
 
 ```sql
--- A1, zaključni korak. Predpostavlja, da je zapolnitev opravljena.
+-- A1, zaključni korak.
+
+-- 0. PONOVNA zapolnitev. Med nalogo 5 in to migracijo je aplikacija še
+--    vpisovala vrstice brez country_id (npr. registracija prek prožilca
+--    handle_new_user) — "set default" obstoječih vrstic ne popravi in
+--    "set not null" bi na njih padel.
+do $$
+declare si_id uuid;
+begin
+  select id into strict si_id from public.countries where code = 'si';
+  update public.clubs             set country_id = si_id where country_id is null;
+  update public.users             set country_id = si_id where country_id is null;
+  update public.league_seasons    set country_id = si_id where country_id is null;
+  update public.tournaments       set country_id = si_id where country_id is null;
+  update public.tournament_series set country_id = si_id where country_id is null;
+  update public.calendar_events   set country_id = si_id where country_id is null;
+  update public.guest_players     set country_id = si_id where country_id is null;
+end $$;
 
 -- 1. not null + prehodni privzetek na SI.
---    PRIVZETEK JE ZAČASEN — pade v nalogi 21, ko so skripte prevezane.
+--    PRIVZETEK JE ZAČASEN — pade v nalogi 21, ko so pisci (vključno s
+--    prožilcem handle_new_user) prevezani.
 --    Privzetek, ki ostane, je tihi tovornjak podatkov v napačno državo.
 do $$
 declare si_id uuid;
@@ -403,6 +435,7 @@ begin
   execute format('alter table public.tournaments       alter column country_id set default %L', si_id);
   execute format('alter table public.tournament_series alter column country_id set default %L', si_id);
   execute format('alter table public.calendar_events   alter column country_id set default %L', si_id);
+  execute format('alter table public.guest_players     alter column country_id set default %L', si_id);
 end $$;
 
 alter table public.clubs             alter column country_id set not null;
@@ -411,11 +444,23 @@ alter table public.league_seasons    alter column country_id set not null;
 alter table public.tournaments       alter column country_id set not null;
 alter table public.tournament_series alter column country_id set not null;
 alter table public.calendar_events   alter column country_id set not null;
+alter table public.guest_players     alter column country_id set not null;
 
 -- 2. EMŠO je slovenski konstrukt — enoličnost velja znotraj države.
-alter table public.users drop constraint if exists users_emso_unique;
+--    POZOR: obstoječi objekt je DELNI UNIQUE INDEKS users_emso_uniq
+--    (2026-07-09_users_emso_unique.sql), NE constraint z imenom
+--    users_emso_unique — "drop constraint" bi tiho ne naredil ničesar in
+--    globalna enoličnost bi preživela.
+drop index if exists public.users_emso_uniq;
 create unique index if not exists users_country_emso_unique
   on public.users (country_id, emso) where emso is not null;
+
+-- 2b. Ime kluba: clubs_name_lower_uniq je globalen unique indeks
+--     (2026-07-09_import_unique_constraints.sql) — postane per-country,
+--     sicer prvi HR klub z imenom SI kluba pade ob uvozu v podprojektu B.
+drop index if exists public.clubs_name_lower_uniq;
+create unique index if not exists clubs_country_name_lower_uniq
+  on public.clubs (country_id, lower(trim(name)));
 
 -- 3. Nacionalna registrska številka. HR uporablja obliko 'F922/98'.
 --    users.license_number se NE uporabi: 164/1176 zapolnjenih, sedem različnih
@@ -437,18 +482,24 @@ alter table public.matches alter column tournament_id set not null;
 -- a) not null povsod
 select table_name, is_nullable from information_schema.columns
 where column_name = 'country_id' and table_schema = 'public' order by table_name;
--- pričakovano: 6 vrstic, vse NO
+-- pričakovano: 7 vrstic, vse NO
 
 -- b) matches
 select is_nullable from information_schema.columns
 where table_schema='public' and table_name='matches' and column_name='tournament_id';
 -- pričakovano: NO
 
--- c) nova indeksa obstajata
+-- c) novi indeksi obstajajo, STARI GLOBALNI SO IZGINILI
 select indexname from pg_indexes
 where schemaname='public' and indexname in
-  ('users_country_emso_unique','users_country_regnum_unique');
--- pričakovano: 2 vrstici
+  ('users_country_emso_unique','users_country_regnum_unique',
+   'clubs_country_name_lower_uniq');
+-- pričakovano: 3 vrstice
+
+select indexname from pg_indexes
+where schemaname='public' and indexname in ('users_emso_uniq','clubs_name_lower_uniq');
+-- pričakovano: PRAZNO. Če katera vrstica ostane, je drop meril napačno ime —
+-- ustavi in popravi, sicer per-country enoličnost ne velja.
 ```
 
 - [ ] **Korak 4: Preveri, da aplikacija še dela**
@@ -478,17 +529,23 @@ pravne podlage.
 - [ ] **Korak 1: Popiši obstoječe politike, preden jih zamenjaš**
 
 ```sql
+-- Vse politike na koreninah IN otrocih — meja mora veljati povsod.
 select tablename, policyname, cmd, qual::text
 from pg_policies
 where schemaname = 'public'
-  and tablename in ('clubs','users','league_seasons','tournaments',
-                    'tournament_series','calendar_events')
 order by tablename, policyname;
 ```
 
-Shrani izpis v komentar commita. Migracija spodaj predpostavlja vzorec
-`role = any(array['admin','super_admin'])`; če katera politika odstopa, jo
-prilagodi posamično in **ne** ugibaj.
+Shrani izpis v komentar commita. **Imena in oblike admin politik v repu niso
+enotni** — `clubs` ima `"Admin urejanje"` (`role = any(array[...])`,
+`01_out_of_band_schema.sql`), `tournaments` ima `"Admin pisanje turnirji"`,
+`league_seasons` `"Admin pisanje liga"` (obe `auth.uid() in (select ...)`,
+`00_schema.sql`), `tournament_series` `"Admin pisanje serije"`,
+`guest_players` `"Admin ureja goste"`; `calendar_events` in `users` v repu
+admin politike za pisanje sploh nimata. Zato migracija spodaj politik ne briše
+po predpostavljenem imenu, ampak **dinamično po izpisu iz `pg_policies`**.
+Primerjaj izpis s seznamom v migraciji; kar odstopa, prilagodi posamično in
+**ne** ugibaj.
 
 - [ ] **Korak 2: Napiši migracijo**
 
@@ -499,6 +556,13 @@ alter table public.users
 
 comment on column public.users.admin_country_id is
   'Država, ki jo ta admin ureja. Smiselno le pri role=admin; pri player in super_admin je null.';
+
+-- Zapolnitev: vsi obstoječi admini so slovenski. BREZ te zapolnitve bi nove
+-- politike (admin_country_id = country_id vrstice) vsem obstoječim adminom
+-- takoj zavrnile vsako pisanje — primerjava z null nikoli ne uspe.
+update public.users
+set admin_country_id = (select id from public.countries where code = 'si')
+where role = 'admin' and admin_country_id is null;
 
 -- Pomožna funkcija: sme trenutni uporabnik urejati podatke te države?
 create or replace function public.can_admin_country(target_country uuid)
@@ -521,39 +585,119 @@ $$;
 revoke all on function public.can_admin_country(uuid) from public;
 grant execute on function public.can_admin_country(uuid) to authenticated;
 
--- Politike pisanja na šestih koreninah.
+-- Odstrani VSE obstoječe admin write politike na koreninah — dinamično po
+-- pg_policies, ker imena niso enotna ("Admin urejanje", "Admin pisanje
+-- turnirji", "Admin pisanje liga", "Admin pisanje serije", "Admin ureja
+-- goste" ...). Trdo kodirano ime bi z "if exists" tiho zgrešilo in stara,
+-- državno slepa politika bi preživela (permisivne politike se OR-ajo).
 do $$
-declare t text;
+declare p record;
+begin
+  for p in
+    select tablename, policyname from pg_policies
+    where schemaname = 'public'
+      and tablename in ('clubs','users','league_seasons','tournaments',
+                        'tournament_series','calendar_events','guest_players')
+      and policyname ilike 'admin%'
+  loop
+    execute format('drop policy %I on public.%I', p.policyname, p.tablename);
+  end loop;
+end $$;
+
+-- Nove politike pisanja na koreninah (brez users, ta je spodaj).
+-- Ločeno za insert/update/delete — "for all" bi vključil tudi select in
+-- klical can_admin_country() ob vsakem javnem branju.
+do $$
+declare t text; cmd text;
 begin
   foreach t in array array['clubs','league_seasons','tournaments',
-                           'tournament_series','calendar_events']
+                           'tournament_series','calendar_events','guest_players']
   loop
-    execute format('drop policy if exists "Admin urejanje" on public.%I', t);
+    execute format($f$
+      create policy "Admin vstavljanje po drzavi" on public.%I
+        for insert with check (public.can_admin_country(country_id))
+    $f$, t);
     execute format($f$
       create policy "Admin urejanje po drzavi" on public.%I
-        for all
+        for update
         using (public.can_admin_country(country_id))
         with check (public.can_admin_country(country_id))
+    $f$, t);
+    execute format($f$
+      create policy "Admin brisanje po drzavi" on public.%I
+        for delete using (public.can_admin_country(country_id))
     $f$, t);
   end loop;
 end $$;
 
 -- users je poseben: uporabnik sme urejati lasten profil ne glede na državo.
-drop policy if exists "Admin urejanje" on public.users;
+-- (Obstoječa politika "Lastni profil" za update se nadomesti s temi tremi.)
+drop policy if exists "Lastni profil" on public.users;
+create policy "Admin vstavljanje uporabnikov po drzavi" on public.users
+  for insert with check (auth.uid() = id or public.can_admin_country(country_id));
 create policy "Admin urejanje uporabnikov po drzavi" on public.users
-  for all
+  for update
   using (auth.uid() = id or public.can_admin_country(country_id))
   with check (auth.uid() = id or public.can_admin_country(country_id));
+create policy "Admin brisanje uporabnikov po drzavi" on public.users
+  for delete using (public.can_admin_country(country_id));
 ```
+
+- [ ] **Korak 2b: Politike na otroških tabelah — prek starša**
+
+Otroci `country_id` nimajo, imajo pa danes svoje, **državno slepe** admin
+politike (`"Admin pisanje matches"` ... v `00_schema.sql`, `"Admin write"` na
+`league_match_results`, `league_match_discipline_results`,
+`league_season_disciplines` v `01_out_of_band_schema.sql`, brisanje na
+`double_registrations`, `tournament_registrations`). Če ostanejo, meja na
+koreninah ne pomeni nič: HR admin prek surovega PostgREST piše naravnost po
+slovenskih zapisnikih.
+
+V isti migraciji za **vsako** otroško tabelo iz izpisa v koraku 1: odstrani
+obstoječo admin politiko (po dejanskem imenu iz `pg_policies`) in jo nadomesti
+s politiko, ki državo preveri **prek starša**. Vzorca:
+
+```sql
+-- Otrok z neposrednim staršem, ki nosi country_id:
+create policy "Admin pisanje po drzavi" on public.league_teams
+  for all
+  using (exists (select 1 from public.league_seasons s
+                 where s.id = league_teams.season_id
+                   and public.can_admin_country(s.country_id)))
+  with check (exists (select 1 from public.league_seasons s
+                      where s.id = league_teams.season_id
+                        and public.can_admin_country(s.country_id)));
+
+-- Otrok globlje v verigi gre prek svojega starša (league_match_results prek
+-- league_fixtures → league_seasons; group_teams prek tournament_groups →
+-- tournaments; itd.). Imena stolpcev tujih ključev preveri v shemi — NE
+-- ugibaj, vzorec pa je isti.
+```
+
+Pokrij vse otroke iz speca: `league_teams`, `league_team_players`,
+`league_fixtures`, `league_match_results`, `league_match_discipline_results`,
+`league_season_disciplines`, `tournament_registrations`, `tournament_groups`,
+`group_teams`, `matches`, `player_statistics`, `double_registrations`.
 
 - [ ] **Korak 3: Poženi in preveri, da so politike zamenjane**
 
 ```sql
-select tablename, policyname from pg_policies
-where schemaname='public' and policyname like '%po drzavi%' order by tablename;
-```
+-- a) nove politike obstajajo
+select tablename, count(*) from pg_policies
+where schemaname='public' and policyname like '%po drzavi%'
+group by tablename order by tablename;
+-- pričakovano: po 3 na vsaki od sedmih korenin (insert/update/delete)
+-- + po ena na vsaki otroški tabeli iz koraka 2b
 
-Pričakovano: 6 vrstic (5 iz zanke + `users`).
+-- b) NOBENA stara, državno slepa admin politika ni preživela
+select tablename, policyname from pg_policies
+where schemaname='public'
+  and policyname ilike 'admin%'
+  and policyname not like '%po drzavi%'
+order by tablename;
+-- pričakovano: PRAZNO. Vsaka vrstica tu je politika, ki se OR-a z novimi in
+-- mejo izniči — ustavi in jo obravnavaj, preden nadaljuješ.
+```
 
 - [ ] **Korak 4: Commit**
 
@@ -594,9 +738,33 @@ as
 
 revoke all on public.users_sensitive from anon;
 grant select on public.users_sensitive to authenticated;
+
+-- KLJUČNO: pogled sam po sebi ne zapre osnovne tabele. authenticated ima
+-- danes poln stolpčni SELECT na public.users in permisivno politiko
+-- "Javno branje" using (true) — torej vsak prijavljeni bere emso, naslov in
+-- telefon NEPOSREDNO iz users, mimo pogleda. Občutljive stolpce odvzamemo
+-- tudi authenticated, po vzoru 20260628_restrict_users_pii_from_anon.sql.
+revoke select on public.users from authenticated;
+grant select (
+  id, full_name, club, club_id, role, license_number, date_of_birth, gender,
+  photo_url, country_id, admin_country_id
+) on public.users to authenticated;
+
+-- Tudi anon rabi country_id — javne strani filtrirajo users po državi in
+-- PostgREST za filter po stolpcu zahteva pravico na njem.
+grant select (country_id) on public.users to anon;
 ```
 
-- [ ] **Korak 2: Preveri, da pogled obstaja in anon nima dostopa**
+**Posledica za kodo (izvede se v nalogi 17, korak 4):**
+`AuthContext.fetchProfile` danes bere `select('*')` — po tej migraciji tak
+klic pade (`select *` zahteva pravice na vseh stolpcih). Prevede se na izrecen
+seznam javnih stolpcev; lastne občutljive podatke (za `/profil`) bere prek
+`users_sensitive`, ki lastno vrstico vedno vsebuje (`u.id = auth.uid()`).
+**Vrstni red izdaje:** koda z izrecnimi stolpci gre v produkcijo pred to
+migracijo ali skupaj z njo — enako opozorilo kot v glavi
+`20260628_restrict_users_pii_from_anon.sql`.
+
+- [ ] **Korak 2: Preveri, da pogled obstaja in da je osnovna tabela zaprta**
 
 ```sql
 select table_name from information_schema.views
@@ -606,7 +774,16 @@ where table_schema='public' and table_name='users_sensitive';
 select grantee, privilege_type from information_schema.role_table_grants
 where table_schema='public' and table_name='users_sensitive';
 -- pričakovano: authenticated/SELECT; anon se NE pojavi
+
+select grantee, column_name from information_schema.column_privileges
+where table_schema='public' and table_name='users'
+  and column_name in ('emso','email','phone','address_street')
+order by grantee, column_name;
+-- pričakovano: PRAZNO za anon in authenticated. Če se authenticated pojavi,
+-- je neposredno branje PII še odprto — pogled ne varuje ničesar.
 ```
+
+(Neposredni poskus branja z uporabniško sejo preveri skripta v nalogi 9.)
 
 - [ ] **Korak 3: Commit**
 
@@ -700,7 +877,32 @@ function check(label, actual, expected) {
   check('HR admin SME ustvariti HR klub', insHr.error ? 'zavrnjeno' : 'uspelo', 'uspelo');
 
   const pii = await hr.from('users_sensitive').select('emso').eq('country_id', SI);
-  check('HR admin NE vidi SI osebnih podatkov', (pii.data || []).length, 0);
+  check('HR admin NE vidi SI osebnih podatkov (pogled)', (pii.data || []).length, 0);
+
+  // Neposredno na osnovno tabelo, mimo pogleda — stolpčne pravice (naloga 8)
+  // morajo vrniti napako "permission denied", ne podatkov.
+  const piiDirect = await hr.from('users').select('emso').eq('country_id', SI).limit(1);
+  check('HR admin NE bere emso neposredno iz users', piiDirect.error ? 'zavrnjeno' : 'USPELO', 'zavrnjeno');
+
+  // Otroška tabela — politika prek starša (naloga 7, korak 2b). Update z
+  // isto vrednostjo je neškodljiv tudi, če bi meja popustila; 0 vrnjenih
+  // vrstic pomeni, da RLS pisanje blokira.
+  const { data: lt } = await admin.from('league_teams').select('id, name').limit(1).maybeSingle();
+  if (lt) {
+    const child = await hr.from('league_teams').update({ name: lt.name }).eq('id', lt.id).select();
+    check('HR admin NE sme pisati po SI otrocih (league_teams)', (child.data || []).length, 0);
+  } else {
+    check('HR admin NE sme pisati po SI otrocih (league_teams)', 'ni vrstic za preverbo', 0);
+  }
+
+  // guest_players — sedma korenska tabela, brez starša.
+  const { data: gp } = await admin.from('guest_players').select('id, full_name').limit(1).maybeSingle();
+  if (gp) {
+    const guest = await hr.from('guest_players').update({ full_name: gp.full_name }).eq('id', gp.id).select();
+    check('HR admin NE sme pisati po SI guest_players', (guest.data || []).length, 0);
+  } else {
+    check('HR admin NE sme pisati po SI guest_players', 'ni vrstic za preverbo', 0);
+  }
 
   // 5. Pospravi.
   await hr.auth.signOut();
@@ -723,8 +925,10 @@ Vrednost je ista kot `VITE_SUPABASE_ANON_KEY` v korenskem `.env.local`.
 
 Run: `node scripts/check-country-isolation.cjs`
 
-Pričakovano: `5/5 preverb uspesnih`, izhodna koda 0.
+Pričakovano: `8/8 preverb uspesnih`, izhodna koda 0.
 Če katera pade, **ustavi** — politika iz naloge 7 ali 8 je napačna.
+(Preverbi na otroku in `guest_players` zahtevata, da vrstica obstaja — na
+produkcijski bazi obstaja; »ni vrstic za preverbo« obravnavaj kot FAIL.)
 
 - [ ] **Korak 4: Commit**
 
@@ -1196,6 +1400,14 @@ const { path } = useCountry()
 // NE spreminjaj: /prijava, /registracija, /profil, /admin/* — te so brez predpone.
 ```
 
+**POZOR — Navbar ne uporablja oblike `<Link to="/klubi">`.** Povezave gradi iz
+podatkovne tabele (`const links = [{ to: '/klubi', label: ... }, ...]`, enojni
+narekovaji) in jih izriše z `to={l.to}`. Tam je dovolj sprememba na mestu
+izrisa: `to={path(l.to)}` — v **obeh** izrisih (namizni in mobilni meni);
+vnosi v tabeli ostanejo brez predpone. Grep iz koraka 2 te oblike **ne ujame**
+(išče dvojne narekovaje v JSX atributu), zato prazen izpis ni dokaz — preglej
+vse `<Link`/`<NavLink` v `Navbar.tsx` ročno in se opri na klik-test v koraku 3.
+
 - [ ] **Korak 2: Poišči preostale povezave brez predpone po vsem `src/`**
 
 Run:
@@ -1315,9 +1527,9 @@ import { describe, it, expect } from 'vitest'
 import { ROOT_TABLES, isRootTable } from './fromCountry'
 
 describe('ROOT_TABLES', () => {
-  it('vsebuje natanko sest korenskih tabel', () => {
+  it('vsebuje natanko sedem korenskih tabel', () => {
     expect([...ROOT_TABLES].sort()).toEqual([
-      'calendar_events', 'clubs', 'league_seasons',
+      'calendar_events', 'clubs', 'guest_players', 'league_seasons',
       'tournament_series', 'tournaments', 'users',
     ])
   })
@@ -1340,12 +1552,13 @@ Pričakovano: FAIL — modul ne obstaja.
 import { supabase } from '../supabase'
 
 /**
- * Šest korenskih tabel, ki nosijo country_id. Vse ostale tabele državo dedujejo
+ * Sedem korenskih tabel, ki nosijo country_id. Vse ostale tabele državo dedujejo
  * prek tujega ključa na starša in filtra NE potrebujejo.
+ * guest_players je korenska: nima tujega ključa na starša.
  */
 export const ROOT_TABLES = [
   'clubs', 'users', 'league_seasons',
-  'tournaments', 'tournament_series', 'calendar_events',
+  'tournaments', 'tournament_series', 'calendar_events', 'guest_players',
 ] as const
 
 export type RootTable = (typeof ROOT_TABLES)[number]
@@ -1357,7 +1570,7 @@ export function isRootTable(t: string): t is RootTable {
 /**
  * Poizvedba na korensko tabelo, omejena na eno državo.
  *
- * Uporabljaj to namesto supabase.from() za teh šest tabel — tudi pri iskanju po
+ * Uporabljaj to namesto supabase.from() za teh sedem tabel — tudi pri iskanju po
  * uuid-u. Uuid je sicer enoličen, a brez filtra bi /si/liga/<hr-uuid> prikazal
  * hrvaško ligo pod slovensko potjo; s filtrom postane 404, kar je pravilno.
  *
@@ -1386,7 +1599,7 @@ export function fromCountry(table: RootTable, countryId: string) {
 - [ ] **Korak 4: Poženi test**
 
 Run: `npm test -- src/lib/fromCountry.test.ts`
-Pričakovano: PASS, 2 testa.
+Pričakovano: PASS, 2 testa (seznam sedmih tabel + prepoznava).
 
 - [ ] **Korak 5: Commit**
 
@@ -1399,7 +1612,7 @@ git commit -m "feat: fromCountry() -- poizvedbe na korenske tabele z drzavo"
 
 ## Naloga 16: Prevedi javne strani na `fromCountry`
 
-Sedem datotek, ki jih vidi obiskovalec. Delaj po eni in po vsaki preveri v
+Osem datotek, ki jih vidi obiskovalec. Delaj po eni in po vsaki preveri v
 brskalniku — filter, ki vrne prazen seznam namesto napake, je natanko okvara, ki
 je tipi ne ujamejo.
 
@@ -1503,15 +1716,25 @@ Konkretno po datotekah:
 |---|---|---|
 | `rangLestvica.ts` | `league_seasons`, `tournaments` | `users` ×3 (vse `.in('id', …)`) |
 | `series.ts` | `tournaments` | `users` (`.in('id', ids)`) |
-| `tournamentPlayers.ts` | — | `users` (iskanje po id-jih) |
+| `tournamentPlayers.ts` | **prvi** `users` klic — seznam vseh igralcev (`.eq('role','player')` s paginacijo, brez id filtra!) → `fromCountry('users', countryId)`, funkcija dobi `countryId` parameter | drugi `users` klic (`.in('id', missing)`) |
 | `knockoutDraw.ts` | `tournaments` (`.eq('id', tournamentId)`) | — |
 | `playerNames.ts` | — | `users` (`.in('id', uuids)`) |
 
-`tournamentPlayers.ts` in `playerNames.ts` torej sprememb **ne** potrebujeta —
-gresta pa v `ALLOWLIST` stražnega testa (naloga 19) z razlogom
-`'iskanje po id-jih iz ze filtriranega starsa'`.
+**Pozor pri `tournamentPlayers.ts`:** njen prvi klic **ni** iskanje po id-jih —
+je poizvedba čez vse igralce, ki polni izbirnike za dodajanje (partner v
+`Tournament.tsx`, urejanje prijav v `TournamentEdit.tsx`). Brez filtra bi
+izbirnik po uvozu HR igralcev mešal obe državi. Datoteka zato **ne** sodi v
+`ALLOWLIST` — prevede se, klicatelja podata `countryId`.
+
+Samo `playerNames.ts` sprememb ne potrebuje — gre v `ALLOWLIST` stražnega
+testa (naloga 19) z razlogom `'iskanje po id-jih iz ze filtriranega starsa'`.
 
 Klicna mesta posodobi tako, da podajo `countryId` iz `useCountry()`.
+
+Stražni test (naloga 19) bo po uvrstitvi `guest_players` med korenske tabele
+naštel tudi njena surova klicna mesta (npr. izbirnik gostov v
+`TournamentEdit.tsx`) — prevedi jih po istem vzorcu na
+`fromCountry('guest_players', countryId)`.
 
 - [ ] **Korak 2: Admin strani dobijo državo iz profila**
 
@@ -1616,7 +1839,15 @@ admin_country_id: string | null
 registration_number: string | null
 ```
 
-`AuthContext.fetchProfile` bere `select('*')`, zato dodatnih sprememb ni.
+`AuthContext.fetchProfile` danes bere `select('*')` — po nalogi 8
+`authenticated` nima več stolpčnih pravic na občutljivih stolpcih in
+`select('*')` **pade** (permission denied). Prevedi ga na izrecen seznam
+javnih stolpcev (`id, full_name, club, club_id, role, license_number,
+date_of_birth, gender, photo_url, country_id, admin_country_id`); kjer
+`/profil` potrebuje lastne občutljive podatke, jih beri prek
+`users_sensitive` (lastna vrstica je v pogledu vedno vidna). Ta sprememba
+mora v produkcijo **pred** migracijo iz naloge 8 ali skupaj z njo — glej
+opozorilo tam.
 
 - [ ] **Korak 5: Preveri**
 
@@ -1734,7 +1965,7 @@ import { join, relative } from 'node:path'
 
 const ROOT_TABLES = [
   'clubs', 'users', 'league_seasons',
-  'tournaments', 'tournament_series', 'calendar_events',
+  'tournaments', 'tournament_series', 'calendar_events', 'guest_players',
 ]
 
 /**
@@ -1861,14 +2092,15 @@ git commit -m "chore: dovoli bocanje.top kot razvojnega gostitelja"
 
 ---
 
-## Naloga 21: Odstrani prehodni privzetek
+## Naloga 21: Prevezava prožilca registracije in odstranitev prehodnega privzetka
 
 Privzetek, ki ostane, je tihi tovornjak podatkov v napačno državo.
 
 **Files:**
 - Create: `supabase/migrations/2026-07-19_drop_country_default.sql`
+- Modify: komponenta za registracijo (`Signup` — glej uvoz v `src/App.tsx`)
 
-- [ ] **Korak 1: Preveri, da noben pisec ne računa na privzetek**
+- [ ] **Korak 1: Popiši VSE pisce po koreninah — vključno z DB prožilci**
 
 Run:
 ```bash
@@ -1880,44 +2112,93 @@ Pričakovano: `fromCountry.insert` dodaja `country_id`, `import-players.ts` prav
 tako. Poišči še morebitne surove vstavke:
 
 ```bash
-grep -rn "\.insert(" src/ api/ | grep -E "clubs|users|league_seasons|tournaments|tournament_series|calendar_events"
+grep -rn "\.insert(" src/ api/ | grep -E "clubs|users|league_seasons|tournaments|tournament_series|calendar_events|guest_players"
 ```
 
 Pričakovano: vsi gredo skozi `fromCountry` ali izrecno navajajo `country_id`.
 
-- [ ] **Korak 2: Napiši migracijo**
+**Grep ne vidi piscev v bazi.** V `users` vstavlja tudi prožilec
+`public.handle_new_user()` (ob vsaki registraciji; definiran v
+`00_schema.sql`, nazadnje prepisan v `20260628_security_hardening.sql`) — in
+ta `country_id` **ne** nastavlja; do zdaj ga je pokrival prehodni privzetek.
+Če privzetek pade brez prevezave prožilca, **vsaka registracija pade** na
+`not null`. Preveri še morebitne druge prožilce:
 
 ```sql
--- A1: odstrani prehodni privzetek iz 2026-07-19_country_id_notnull.sql.
--- Od tu naprej mora vsak vstavek državo navesti izrecno; sicer pade na not null,
+select event_object_table, trigger_name, action_statement
+from information_schema.triggers where trigger_schema in ('public','auth');
+```
+
+- [ ] **Korak 2: Registracija pošlje državo, prožilec jo zapiše**
+
+Najprej koda (deploy PRED migracijo): v `Signup` komponenti dodaj državo iz
+`useCountry()` v metapodatke registracije:
+
+```tsx
+const { countryId } = useCountry()
+// v klicu supabase.auth.signUp dopolni options.data:
+//   options: { data: { ...obstojece, country_id: countryId } }
+```
+
+Nato v migracijo (pred `drop default`) prepiši prožilec — **izhajaj iz
+obstoječe definicije v `20260628_security_hardening.sql`** (security definer,
+obstoječi stolpci) in dodaj samo `country_id`:
+
+```sql
+-- handle_new_user do zdaj ni nastavljal country_id — pokrival ga je prehodni
+-- privzetek. Registracija brez države naj pade GLASNO, ne tiho v SI:
+-- račun je oseba, a nastane v registru ene države (spec, razdelek Model).
+--   country_id := nullif(new.raw_user_meta_data->>'country_id','')::uuid;
+--   if country_id is null then
+--     raise exception 'Registracija brez country_id — odjemalec mora poslati državo.';
+--   end if;
+-- ... insert into public.users (id, email, full_name, country_id) values (...);
+```
+
+- [ ] **Korak 3: Napiši migracijo (prožilec + odstranitev privzetka)**
+
+```sql
+-- A1: (1) handle_new_user zapiše country_id iz metapodatkov registracije,
+-- (2) odstrani prehodni privzetek iz 2026-07-19_country_id_notnull.sql.
+-- Od tu naprej mora vsak pisec državo navesti izrecno; sicer pade na not null,
 -- kar je namerno — glasna napaka je boljša od tihega vpisa v napačno državo.
+
+-- (1) ... create or replace function public.handle_new_user() — glej korak 2.
+
+-- (2) privzetki padejo:
 alter table public.clubs             alter column country_id drop default;
 alter table public.users             alter column country_id drop default;
 alter table public.league_seasons    alter column country_id drop default;
 alter table public.tournaments       alter column country_id drop default;
 alter table public.tournament_series alter column country_id drop default;
 alter table public.calendar_events   alter column country_id drop default;
+alter table public.guest_players     alter column country_id drop default;
 ```
 
-- [ ] **Korak 3: Poženi in preveri**
+- [ ] **Korak 4: Poženi in preveri**
 
 ```sql
 select table_name, column_default from information_schema.columns
 where column_name='country_id' and table_schema='public' order by table_name;
 ```
 
-Pričakovano: 6 vrstic, `column_default` povsod `null`.
+Pričakovano: 7 vrstic, `column_default` povsod `null`.
 
-- [ ] **Korak 4: Preveri, da vstavljanje še dela**
+- [ ] **Korak 5: Preveri, da vstavljanje IN registracija še delata**
 
 V aplikaciji ustvari testni klub prek `/admin/klubi`. Pričakovano: uspe in ima
 `country_id`. Nato ga pobriši.
 
-- [ ] **Korak 5: Commit**
+Opravi **testno registracijo** s sintetičnim e-mailom
+(`test.signup.<timestamp>@example.invalid`) prek `/registracija` na `/si`.
+Pričakovano: uspe, nova vrstica v `users` ima `country_id` = SI. Nato testni
+račun pobriši (auth + `users`).
+
+- [ ] **Korak 6: Commit**
 
 ```bash
-git add supabase/migrations/2026-07-19_drop_country_default.sql
-git commit -m "chore(db): odstrani prehodni privzetek country_id"
+git add supabase/migrations/2026-07-19_drop_country_default.sql src/
+git commit -m "feat(db): handle_new_user zapise country_id; odstrani prehodni privzetek"
 ```
 
 ---
@@ -1938,15 +2219,16 @@ union all select 'users', count(*) from users where country_id is null
 union all select 'league_seasons', count(*) from league_seasons where country_id is null
 union all select 'tournaments', count(*) from tournaments where country_id is null
 union all select 'tournament_series', count(*) from tournament_series where country_id is null
-union all select 'calendar_events', count(*) from calendar_events where country_id is null;
+union all select 'calendar_events', count(*) from calendar_events where country_id is null
+union all select 'guest_players', count(*) from guest_players where country_id is null;
 ```
 
-Pričakovano: vseh šest `n = 0`.
+Pričakovano: vseh sedem `n = 0`.
 
 - [ ] **Korak 2: Admin meja drži**
 
 Run: `node scripts/check-country-isolation.cjs`
-Pričakovano: `5/5 preverb uspesnih`.
+Pričakovano: `8/8 preverb uspesnih`.
 
 - [ ] **Korak 3: Stare povezave delujejo**
 
@@ -2002,16 +2284,17 @@ gh pr create --title "A1: vecdrzavni temelj (country_id, poti /si /hr, admin pra
 Temelj za večdržavni balinar.app. Nobenih hrvaških podatkov — samo dimenzija
 države, usmerjanje in pravice.
 
-- `countries` + `country_id` na šestih korenskih tabelah (otroci dedujejo)
+- `countries` + `country_id` na sedmih korenskih tabelah (otroci dedujejo)
 - poti `/si`, `/hr` + preusmeritve starih povezav + domenska preslikava
 - `fromCountry()` ovojnica + stražni test proti nefiltriranim poizvedbam
-- `admin_country_id` + RLS: admin ne doseže podatkov druge države
-- pogled `users_sensitive`: osebni podatki le za lastno državo
+- `admin_country_id` + RLS na koreninah IN otrocih: admin ne doseže podatkov druge države
+- pogled `users_sensitive` + stolpčne pravice: osebni podatki le za lastno državo, tudi mimo pogleda
+- `handle_new_user` zapiše državo registracije
 
 ## Preverjeno
 
 - števci pred/po migraciji identični, `country_id is null` nikjer
-- `scripts/check-country-isolation.cjs` — 5/5, neposredno proti bazi
+- `scripts/check-country-isolation.cjs` — 8/8, neposredno proti bazi
 - stare povezave (`/liga/tekma/<uuid>`) preusmerijo in delujejo
 - `/hr` z aktivno a prazno državo — pošteno prazna stanja, brez napak v konzoli
 - celoten paket testov, typecheck, build
@@ -2044,6 +2327,7 @@ drop table if exists _bak_a1_league_seasons_20260719;
 drop table if exists _bak_a1_tournaments_20260719;
 drop table if exists _bak_a1_tournament_series_20260719;
 drop table if exists _bak_a1_calendar_events_20260719;
+drop table if exists _bak_a1_guest_players_20260719;
 drop table if exists _bak_a1_matches_20260719;
 ```
 
