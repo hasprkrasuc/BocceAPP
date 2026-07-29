@@ -19,10 +19,19 @@
 -- dejansko postavi. `security_barrier` prepreči, da bi se uporabnikov predikat
 -- izvedel pred njim.
 --
--- ⚠️ VRSTNI RED IZDAJE: koda, ki bere `users` z izrecnimi stolpci (ta PR), gre
--- v produkcijo PRED to migracijo ali hkrati z njo. Sicer PostgREST za
--- `select=*` vrne 401 in profil ter admin strani se pokvarijo — isto opozorilo
--- kot v glavi 20260628_restrict_users_pii_from_anon.sql.
+-- Ta migracija samo DODAJA (funkcija + pogled). Nič ne odvzame, zato je varna,
+-- medtem ko v produkciji teče stara koda.
+--
+-- Odvzem pravic je namenoma v 2026-07-29_users_birth_year_2_restrict.sql, ki se
+-- požene ŠELE PO deployu kode. Razlog je krožnost: nova koda potrebuje pogled
+-- `users_sensitive` od tu, stara koda pa še bere `users` s `select('*')`. Če bi
+-- odvzem stal v tej migraciji, bi eno ali drugo padlo na 401 — ne glede na to,
+-- ali gre prej koda ali migracija.
+--
+-- Zaporedje izdaje:
+--   1. ta migracija + 2026-07-29_users_birth_year_1_add.sql   (samo dodata)
+--   2. deploy kode iz tega PR
+--   3. 2026-07-29_users_birth_year_2_restrict.sql             (odvzame pravice)
 
 -- ─────────────────────────────────────────────────────────────
 -- 1) Je trenutni uporabnik admin?
@@ -48,17 +57,8 @@ revoke execute on function public.is_admin() from public;
 grant execute on function public.is_admin() to authenticated, anon;
 
 -- ─────────────────────────────────────────────────────────────
--- 2) authenticated: enak ozek nabor stolpcev kot anon
---    (ujema se z USER_PUBLIC_COLS v src/lib/userColumns.ts)
--- ─────────────────────────────────────────────────────────────
-revoke select on public.users from authenticated;
-
-grant select (
-  id, full_name, club, club_id, role, license_number, date_of_birth, gender, photo_url
-) on public.users to authenticated;
-
--- ─────────────────────────────────────────────────────────────
--- 3) Občutljivi stolpci prek vrstično omejenega pogleda
+-- 2) Občutljivi stolpci prek vrstično omejenega pogleda
+--    (odvzem pravic na public.users je v koraku 3 — glej glavo)
 -- ─────────────────────────────────────────────────────────────
 drop view if exists public.users_sensitive;
 
