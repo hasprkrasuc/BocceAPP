@@ -63,5 +63,11 @@ $$;
 comment on function public.set_user_role(uuid, text) is
   'Nastavi vlogo uporabnika. Edina pot, po kateri admin spremeni tujo vlogo — RLS na users dovoljuje pisanje le po lastni vrstici.';
 
+-- `revoke ... from public` NE zadošča: Supabase ima privzete pravice
+-- (`alter default privileges ... grant execute on functions to anon, authenticated`),
+-- zato nova funkcija dobi EXECUTE za `anon` z izrecnim grantom, ki ga odvzem
+-- vlogi PUBLIC ne zadene. Preverjeno 2026-07-29: anon je funkcijo lahko klical
+-- in ga je ustavila šele notranja preverba. Zato odvzem tudi izrecno.
 revoke all on function public.set_user_role(uuid, text) from public;
+revoke all on function public.set_user_role(uuid, text) from anon;
 grant execute on function public.set_user_role(uuid, text) to authenticated;
