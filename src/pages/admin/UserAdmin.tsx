@@ -20,6 +20,7 @@ export default function UserAdmin() {
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all')
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
   useEffect(() => { load() }, [])
 
@@ -45,7 +46,15 @@ export default function UserAdmin() {
 
   async function updateRole(userId: string, role: UserRole) {
     setUpdating(userId)
-    await supabase.from('users').update({ role }).eq('id', userId)
+    setError('')
+    // Prek set_user_role, ne z update() na users: RLS dovoljuje pisanje samo
+    // po lastni vrstici, zato je neposreden update tujega uporabnika ujel nič
+    // vrstic in se TIHO ni zgodil. Funkcija vrne pravo napako.
+    const { error: rpcError } = await supabase.rpc('set_user_role', {
+      target_id: userId,
+      new_role: role,
+    })
+    if (rpcError) setError(rpcError.message)
     await load()
     setUpdating(null)
   }
@@ -64,6 +73,12 @@ export default function UserAdmin() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-2">Upravljanje uporabnikov</h1>
       <p className="text-sm text-gray-500 mb-6">{users.length} registriranih uporabnikov</p>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Vloge ni bilo mogoče spremeniti: {error}
+        </div>
+      )}
 
       <div className="mb-4 space-y-3">
         <input
