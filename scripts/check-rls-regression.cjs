@@ -24,15 +24,37 @@ const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
+/**
+ * Bere scripts/.env.local IN korenski .env.local (odjemalčev).
+ *
+ * Anon ključ je v obeh datotekah, a pod različnima imenoma: scripts uporablja
+ * ANON_KEY, odjemalec VITE_SUPABASE_ANON_KEY. Skripta sprejme oboje, da ga ni
+ * treba prepisovati sem in tja — je javen ključ, ki gre tako ali tako v bundle.
+ */
 function loadEnv() {
-  const env = {};
-  fs.readFileSync(path.join(__dirname, '.env.local'), 'utf8')
-    .split(/\r?\n/).forEach(l => {
-      const m = l.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/);
-      if (m) env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+  const raw = {};
+  for (const file of [path.join(__dirname, '.env.local'),
+                      path.join(__dirname, '..', '.env.local')]) {
+    if (!fs.existsSync(file)) continue;
+    fs.readFileSync(file, 'utf8').split(/\r?\n/).forEach(l => {
+      const m = l.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (m && !raw[m[1]]) raw[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
     });
-  for (const k of ['SUPABASE_URL', 'SERVICE_ROLE_KEY', 'ANON_KEY']) {
-    if (!env[k]) throw new Error(`Manjka ${k} v scripts/.env.local`);
+  }
+
+  const env = {
+    SUPABASE_URL:     raw.SUPABASE_URL     || raw.VITE_SUPABASE_URL,
+    SERVICE_ROLE_KEY: raw.SERVICE_ROLE_KEY || raw.SUPABASE_SERVICE_ROLE_KEY,
+    ANON_KEY:         raw.ANON_KEY         || raw.VITE_SUPABASE_ANON_KEY,
+  };
+
+  const missing = Object.entries(env).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) {
+    throw new Error(
+      `Manjka ${missing.join(', ')}. Pričakovano v scripts/.env.local ` +
+      '(SUPABASE_URL, SERVICE_ROLE_KEY, ANON_KEY) ali v korenskem .env.local ' +
+      '(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY).',
+    );
   }
   return env;
 }
