@@ -63,20 +63,38 @@ export function tournamentPlayerPoints(input: PlacementInput): PlayerPoints[] {
     assign(regOfGt.get(final.winner_id!), 1)
     assign(regOfGt.get(loserGt(final)!), 2)
   }
+  const thirdExists = knockoutMatches.some(m => m.stage === 'third_place')
   const third = knockoutMatches.find(m => m.stage === 'third_place' && m.winner_id)
   if (third) {
     assign(regOfGt.get(third.winner_id!), 3)
     assign(regOfGt.get(loserGt(third)!), 4)
+  } else if (!thirdExists) {
+    // Ni tekme za 3. mesto → oba poraženca polfinala si delita 3. mesto (8 točk).
+    for (const m of knockoutMatches.filter(m => m.stage === 'sf' && m.winner_id)) {
+      assign(regOfGt.get(loserGt(m)!), 3)
+    }
   }
   for (const m of knockoutMatches.filter(m => m.stage === 'qf' && m.winner_id)) {
     assign(regOfGt.get(loserGt(m)!), '5-8')
   }
-  // vse ostale prijave (poraženci r16 + neuvrščeni iz skupin)
-  for (const r of registrations) assign(r.id, '9-16')
+  // Mesta 9–16 (1 točka) dobijo SAMO ekipe, ki so se uvrstile v glavno izločilno
+  // mrežo — tj. nastopile v prvem izločilnem krogu (npr. r16). Ekipe, izpadle v
+  // skupinah (uvrstitev 17.+), NE dobijo točk. Tako se točkuje le najboljših 16.
+  const KO_ORDER = ['r128', 'r64', 'r32', 'r16', 'qf', 'sf', 'final']
+  const firstKoStage = KO_ORDER.find(s => knockoutMatches.some(m => m.stage === s))
+  if (firstKoStage) {
+    for (const m of knockoutMatches) {
+      if (m.stage !== firstKoStage) continue
+      for (const gtId of [m.team_a_id, m.team_b_id]) {
+        if (gtId) assign(regOfGt.get(gtId), '9-16')
+      }
+    }
+  }
 
   const out: PlayerPoints[] = []
   for (const r of registrations) {
-    const bucket = bucketByReg.get(r.id)!
+    const bucket = bucketByReg.get(r.id)
+    if (!bucket) continue // izven najboljših 16 (izpad v skupinah) → brez točk
     const points = bucketPoints(bucket)
     // Registriran igralec (users) ali gost-igralec (guest_players) — oba imata
     // stabilen UUID in štejeta v lestvico serije. Prosto ime brez UUID se izpusti.

@@ -17,6 +17,7 @@ export default function UserAdmin() {
   const { isSuperAdmin } = useAuth()
   const [users, setUsers] = useState<UserProfile[]>([])
   const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all')
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
 
@@ -26,8 +27,19 @@ export default function UserAdmin() {
     // Ta stran prikazuje in išče po e-pošti, torej po občutljivem stolpcu.
     // users_sensitive adminu vrne vse vrstice, navadnemu uporabniku pa samo
     // njegovo — meja je v pogledu, ne v tej komponenti.
-    const { data } = await supabase.from('users_sensitive').select('*').order('full_name')
-    setUsers((data ?? []) as UserProfile[])
+    //
+    // PostgREST vrne največ 1000 vrstic na poizvedbo — beremo po straneh, da
+    // dobimo VSE uporabnike (sicer se seznam odreže ~pri črki S).
+    const pageSize = 1000
+    const all: UserProfile[] = []
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase.from('users_sensitive').select('*')
+        .order('full_name').range(from, from + pageSize - 1)
+      if (error) break
+      all.push(...((data ?? []) as UserProfile[]))
+      if (!data || data.length < pageSize) break
+    }
+    setUsers(all)
     setLoading(false)
   }
 
@@ -39,17 +51,21 @@ export default function UserAdmin() {
   }
 
   const filtered = users.filter(u =>
-    u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-    (u.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    u.club?.toLowerCase().includes(search.toLowerCase())
+    (roleFilter === 'all' || u.role === roleFilter) &&
+    (
+      u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (u.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      u.club?.toLowerCase().includes(search.toLowerCase())
+    )
   )
+  const roleCount = (r: UserRole) => users.filter(u => u.role === r).length
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-2">Upravljanje uporabnikov</h1>
       <p className="text-sm text-gray-500 mb-6">{users.length} registriranih uporabnikov</p>
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-3">
         <input
           type="search"
           value={search}
@@ -57,6 +73,15 @@ export default function UserAdmin() {
           className="w-full max-w-md border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
           placeholder="Išči po imenu, emailu ali klubu..."
         />
+        <div className="flex flex-wrap gap-2">
+          {([['all', 'Vsi'], ['judge', `Sodniki (${roleCount('judge')})`], ['player', 'Igralci'], ['admin', 'Administratorji'], ['super_admin', 'Super admini']] as const).map(([r, label]) => (
+            <button key={r} onClick={() => setRoleFilter(r as UserRole | 'all')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
+                ${roleFilter === r ? 'bg-bocce-green text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (

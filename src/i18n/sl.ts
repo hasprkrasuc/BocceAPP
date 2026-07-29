@@ -4,6 +4,7 @@ export const sl = {
     clubs: 'Klubi',
     tournaments: 'Turnirji',
     championships: 'Državna prvenstva',
+    series: 'Serije',
     league: 'Državne lige',
     statistics: 'Statistika',
     archive: 'Arhiv',

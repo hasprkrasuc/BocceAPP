@@ -47,26 +47,33 @@ export interface PlannedMatch {
   winner: string | null
 }
 
-/** Zgradi celotno izločilno mrežo iz nosilno urejenih ekip (indeks 0 = nosilec 1). */
-export function buildKnockoutBracket(seededTeamIds: string[]): PlannedMatch[] {
-  const n = seededTeamIds.length
-  const b = bracketSize(n)
-  const order = seedOrder(b)
-  const slotTeam = (slot: number): string | null => seededTeamIds[order[slot] - 1] ?? null
+/**
+ * Zgradi CELOTNO izločilno mrežo iz eksplicitnih parov prvega kroga.
+ * Vsak par = [ekipa A, ekipa B]; ena stran NULL pomeni prosto (bye).
+ * Število parov mora dati mrežo velikosti potence 2 (2..128).
+ */
+export function buildBracketFromFirstRound(
+  pairs: Array<[string | null, string | null]>,
+  opts: { thirdPlace?: boolean } = {},
+): PlannedMatch[] {
+  const thirdPlace = opts.thirdPlace ?? true
+  const half = pairs.length
+  if (half < 1) throw new Error('Prazna izločilna mreža')
+  const b = half * 2
+  if ((b & (b - 1)) !== 0) throw new Error('Neveljavno število parov (mreža mora biti potenca 2)')
+  if (b > 128) throw new Error('Preveč ekip za izločilni del (največ 128)')
 
   const stages = KO_STAGE_ORDER.slice(KO_STAGE_ORDER.indexOf(firstStageForSize(b)))
   const matches: PlannedMatch[] = []
 
-  // Prvi krog
+  // Prvi krog — iz podanih parov
   const firstStage = stages[0]
-  for (let i = 0; i < b / 2; i++) {
-    const a = slotTeam(2 * i)
-    const c = slotTeam(2 * i + 1)
+  pairs.forEach(([a, c], i) => {
     let teamA = a, teamB = c, isBye = false, winner: string | null = null
     if (a && !c) { teamA = a; teamB = null; isBye = true; winner = a }
     else if (!a && c) { teamA = c; teamB = null; isBye = true; winner = c }
     matches.push({ stage: firstStage, matchNumber: i + 1, teamA, teamB, isBye, winner })
-  }
+  })
 
   // Nadaljnji krogi (prazni)
   for (let s = 1; s < stages.length; s++) {
@@ -76,12 +83,30 @@ export function buildKnockoutBracket(seededTeamIds: string[]): PlannedMatch[] {
     }
   }
 
-  // Tekma za 3. mesto (če obstaja polfinale)
-  if (b >= 4) {
+  // Tekma za 3. mesto (če obstaja polfinale in ni izklopljena)
+  if (b >= 4 && thirdPlace) {
     matches.push({ stage: 'third_place', matchNumber: 1, teamA: null, teamB: null, isBye: false, winner: null })
   }
 
   return matches
+}
+
+/** Standardni nosilni pari prvega kroga iz nosilno urejenih ekip (indeks 0 = nosilec 1). */
+export function pairsFromSeededTeams(seededTeamIds: string[]): Array<[string | null, string | null]> {
+  const b = bracketSize(seededTeamIds.length)
+  const order = seedOrder(b)
+  const slotTeam = (slot: number): string | null => seededTeamIds[order[slot] - 1] ?? null
+  const pairs: Array<[string | null, string | null]> = []
+  for (let i = 0; i < b / 2; i++) pairs.push([slotTeam(2 * i), slotTeam(2 * i + 1)])
+  return pairs
+}
+
+/** Zgradi celotno izločilno mrežo iz nosilno urejenih ekip (indeks 0 = nosilec 1). */
+export function buildKnockoutBracket(
+  seededTeamIds: string[],
+  opts: { thirdPlace?: boolean } = {},
+): PlannedMatch[] {
+  return buildBracketFromFirstRound(pairsFromSeededTeams(seededTeamIds), opts)
 }
 
 export interface KoMatchRow {
@@ -115,7 +140,10 @@ export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
   const want = (target: KoMatchRow | undefined, slot: KoSlotUpdate['slot'], teamId: string) => {
     if (!target) return
     const cur = slot === 'team_a_id' ? target.team_a_id : target.team_b_id
-    if (cur !== teamId) updates.push({ id: target.id, slot, teamId })
+    // Polni SAMO prazna mesta — tako se ročno sestavljeni ali žrebani krogi (že
+    // napolnjeni) ne povozijo nazaj na fiksno mrežo. Prazna mesta naslednjih
+    // krogov se napolnijo iz zmagovalcev, kot doslej.
+    if (cur === null || cur === undefined) updates.push({ id: target.id, slot, teamId })
   }
 
   for (let si = 0; si < koStages.length - 1; si++) {

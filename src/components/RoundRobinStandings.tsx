@@ -1,17 +1,28 @@
+import LaneInput from './LaneInput'
 import { teamDisplayName } from '../engines/tournament'
 import { roundRobinStandings } from '../engines/roundRobin'
-import type { Match, TournamentRegistration } from '../types'
+import type { Match, TournamentRegistration, TournamentGroup } from '../types'
+import type { JudgeOption } from './GroupBracket'
 
 interface Props {
   matches: Match[]
   registrations: TournamentRegistration[]
   isAdmin: boolean
   onEnterScore: (match: Match) => void
+  groups?: TournamentGroup[]
+  judges?: JudgeOption[]
 }
 
-export default function RoundRobinStandings({ matches, registrations, isAdmin, onEnterScore }: Props) {
+export default function RoundRobinStandings({ matches, registrations, isAdmin, onEnterScore, groups = [], judges = [] }: Props) {
   const regMap: Record<string, TournamentRegistration> = {}
   for (const reg of registrations) regMap[reg.id] = reg
+
+  // Ime sodnika po skupini (za prikaz pri vsaki tekmi na razporedu).
+  const judgeByGroup: Record<string, string> = {}
+  for (const g of groups) {
+    const nm = judges.find(j => j.id === g.judge_id)?.full_name
+    if (g.judge_id && nm) judgeByGroup[g.id] = nm
+  }
 
   // group_team id -> registracija (iz vpetih team_a/team_b)
   const teamReg: Record<string, TournamentRegistration | undefined> = {}
@@ -19,7 +30,7 @@ export default function RoundRobinStandings({ matches, registrations, isAdmin, o
     if (m.team_a) teamReg[m.team_a.id] = regMap[m.team_a.registration_id]
     if (m.team_b) teamReg[m.team_b.id] = regMap[m.team_b.registration_id]
   }
-  const nameOf = (teamId: string | null) => teamId ? teamDisplayName(teamReg[teamId]) : '—'
+  const nameOf = (teamId: string | null) => teamId ? teamDisplayName(teamReg[teamId], true) : '—'
 
   const standings = roundRobinStandings(matches)
   const played = [...matches].sort((a, b) => a.match_number - b.match_number)
@@ -73,16 +84,32 @@ export default function RoundRobinStandings({ matches, registrations, isAdmin, o
           {played.map(m => {
             const aWins = m.winner_id && m.winner_id === m.team_a_id
             const bWins = m.winner_id && m.winner_id === m.team_b_id
+            const judgeName = m.group_id ? judgeByGroup[m.group_id] : null
             return (
-              <div key={m.id} className="px-4 py-2 flex items-center gap-2 text-sm">
-                <span className={`flex-1 text-right truncate ${aWins ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{nameOf(m.team_a_id)}</span>
-                <span className="font-mono text-gray-800 whitespace-nowrap px-2">
-                  {m.score_a ?? '–'} : {m.score_b ?? '–'}
-                </span>
-                <span className={`flex-1 truncate ${bWins ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{nameOf(m.team_b_id)}</span>
-                {isAdmin && (
-                  <button onClick={() => onEnterScore(m)}
-                    className="text-xs text-gray-400 hover:text-bocce-green px-1" title="Popravi rezultat">✎</button>
+              <div key={m.id} className="px-4 py-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className={`flex-1 text-right truncate ${aWins ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{nameOf(m.team_a_id)}</span>
+                  <span className="font-mono text-gray-800 whitespace-nowrap px-2">
+                    {m.score_a ?? '–'} : {m.score_b ?? '–'}
+                  </span>
+                  <span className={`flex-1 truncate ${bWins ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>{nameOf(m.team_b_id)}</span>
+                  {isAdmin && (
+                    <button onClick={() => onEnterScore(m)}
+                      className="text-xs text-gray-400 hover:text-bocce-green px-1" title="Popravi rezultat">✎</button>
+                  )}
+                </div>
+                {(isAdmin || m.lane_number || judgeName) && (
+                  <div className="flex items-center flex-wrap justify-center gap-x-2 gap-y-1 mt-1 text-xs text-gray-500">
+                    {isAdmin ? (
+                      <span className="flex items-center gap-1.5">
+                        Steza:
+                        <LaneInput matchId={m.id} initial={m.lane_number ?? ''} />
+                      </span>
+                    ) : m.lane_number ? (
+                      <span>Steza {m.lane_number}</span>
+                    ) : null}
+                    {judgeName && <span>{(isAdmin || m.lane_number) ? '· ' : ''}Sodnik: {judgeName}</span>}
+                  </div>
                 )}
               </div>
             )

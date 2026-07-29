@@ -1,61 +1,129 @@
+import LaneInput from './LaneInput'
+import MatchJudgeSelect from './MatchJudgeSelect'
+import type { JudgeOption } from './GroupBracket'
 import { stageLabel, teamDisplayName } from '../engines/tournament'
 import type { Match, TournamentRegistration, GroupTeam, MatchStage } from '../types'
 
 const STAGES: MatchStage[] = ['r128', 'r64', 'r32', 'r16', 'qf', 'sf', 'final']
-const STAGE_WIDTHS: Partial<Record<MatchStage | 'third_place', number>> = {
-  r128: 132, r64: 132, r32: 136, r16: 140, qf: 148, sf: 156, final: 164, third_place: 156,
-}
 
 interface EnrichedMatch extends Match {
   teamA: (GroupTeam & { registration?: TournamentRegistration }) | null
   teamB: (GroupTeam & { registration?: TournamentRegistration }) | null
 }
 
-interface CardProps {
+interface JudgeCtx {
+  judges: JudgeOption[]
+  userId?: string | null
+  userIsJudge?: boolean
+}
+
+interface CardProps extends JudgeCtx {
   match: EnrichedMatch
   isAdmin: boolean
   onEnterScore: (match: Match) => void
-  compact?: boolean
+  highlight?: boolean
 }
 
-function KnockoutMatchCard({ match, isAdmin, onEnterScore, compact = false }: CardProps) {
-  const nameA = match.teamA ? teamDisplayName(match.teamA.registration) : '???'
-  const nameB = match.teamB ? teamDisplayName(match.teamB.registration) : '???'
+function KnockoutMatchCard({ match, isAdmin, onEnterScore, highlight = false, judges, userId, userIsJudge }: CardProps) {
+  const nameA = match.teamA ? teamDisplayName(match.teamA.registration, true) : '???'
+  const nameB = match.teamB ? teamDisplayName(match.teamB.registration, true) : '???'
   const winnerIsA = match.winner_id && match.winner_id === match.team_a_id
   const winnerIsB = match.winner_id && match.winner_id === match.team_b_id
+  const canScore = isAdmin || (!!userIsJudge && !!match.judge_id && match.judge_id === userId)
+  const judgeName = judges.find(j => j.id === match.judge_id)?.full_name ?? null
 
   return (
-    <div className={`bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm ${compact ? 'text-xs' : 'text-sm'}`}>
-      <div className="bg-gray-50 px-2 py-1 border-b border-gray-100">
-        <span className="text-xs text-gray-500 font-medium">T{match.match_number}</span>
+    <div className={`bg-white border rounded-lg overflow-hidden shadow-sm text-xs
+      ${highlight ? 'border-bocce-gold/40' : 'border-gray-200'}`}>
+      <div className="bg-gray-50 px-2 py-0.5 border-b border-gray-100">
+        <span className="text-[10px] text-gray-500 font-medium">T{match.match_number}</span>
       </div>
-      <div className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-100 ${winnerIsA ? 'bg-green-50' : ''}`}>
-        <span className={`flex-1 truncate ${winnerIsA ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamA ? 'text-gray-300 italic' : ''}`}>
+      <div className={`flex items-center justify-between px-2 py-1 border-b border-gray-100 ${winnerIsA ? 'bg-green-50' : ''}`}>
+        <span className={`flex-1 break-words leading-tight ${winnerIsA ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamA ? 'text-gray-300 italic' : ''}`}>
           {match.teamA ? nameA : 'Čaka...'}
         </span>
         {match.score_a !== null && (
-          <span className={`ml-2 w-6 text-center font-bold font-mono rounded ${winnerIsA ? 'text-bocce-green' : 'text-gray-500'}`}>
+          <span className={`ml-2 w-5 text-center font-bold font-mono ${winnerIsA ? 'text-bocce-green' : 'text-gray-500'}`}>
             {match.score_a}
           </span>
         )}
       </div>
-      <div className={`flex items-center justify-between px-3 py-1.5 ${winnerIsB ? 'bg-green-50' : ''}`}>
-        <span className={`flex-1 truncate ${winnerIsB ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamB ? 'text-gray-300 italic' : ''}`}>
+      <div className={`flex items-center justify-between px-2 py-1 ${winnerIsB ? 'bg-green-50' : ''}`}>
+        <span className={`flex-1 break-words leading-tight ${winnerIsB ? 'font-semibold text-bocce-green' : 'text-gray-700'} ${!match.teamB ? 'text-gray-300 italic' : ''}`}>
           {match.teamB ? nameB : (match.is_bye ? 'prosto (bye)' : 'Čaka...')}
         </span>
         {match.score_b !== null && (
-          <span className={`ml-2 w-6 text-center font-bold font-mono rounded ${winnerIsB ? 'text-bocce-green' : 'text-gray-500'}`}>
+          <span className={`ml-2 w-5 text-center font-bold font-mono ${winnerIsB ? 'text-bocce-green' : 'text-gray-500'}`}>
             {match.score_b}
           </span>
         )}
       </div>
-      {isAdmin && match.team_a_id && match.team_b_id && !match.winner_id && (
+      {!match.is_bye && (
+        isAdmin ? (
+          <div className="border-t border-gray-100 px-2 py-1 space-y-1 text-[10px] text-gray-500">
+            <div className="flex items-center gap-1">
+              <span>Steza:</span>
+              <LaneInput matchId={match.id} initial={match.lane_number ?? ''} />
+            </div>
+            <div className="flex items-center gap-1">
+              <span>Sodnik:</span>
+              <MatchJudgeSelect matchId={match.id} initial={match.judge_id ?? ''} judges={judges} />
+            </div>
+          </div>
+        ) : (match.lane_number || judgeName) ? (
+          <div className="px-2 py-0.5 text-[10px] text-gray-500 border-t border-gray-100">
+            {match.lane_number && <span>Steza {match.lane_number}</span>}
+            {match.lane_number && judgeName && <span> · </span>}
+            {judgeName && <span>Sodnik: {judgeName}</span>}
+          </div>
+        ) : null
+      )}
+
+      {canScore && match.team_a_id && match.team_b_id && !match.is_bye && (
         <button onClick={() => onEnterScore(match)}
-          className="w-full text-xs bg-bocce-green text-white py-1 hover:bg-bocce-green-light transition-colors">
-          Vnesi rezultat
+          className={`w-full text-[11px] py-0.5 transition-colors
+            ${match.winner_id ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-bocce-green text-white hover:bg-bocce-green-light'}`}>
+          {match.winner_id ? '✎ Popravi' : 'Vnesi rezultat'}
         </button>
       )}
     </div>
+  )
+}
+
+/** Ena stran (leva ali desna) mreže: stolpci krogov, tekme enakomerno razporejene. */
+function BracketSide({ stages, byStage, side, isAdmin, onEnterScore, judgeCtx }: {
+  stages: MatchStage[]
+  byStage: Record<string, EnrichedMatch[]>
+  side: 'left' | 'right'
+  isAdmin: boolean
+  onEnterScore: (match: Match) => void
+  judgeCtx: JudgeCtx
+}) {
+  // Desna stran: krogi v obratnem vrstnem redu (finale je na sredini).
+  const cols = side === 'left' ? stages : [...stages].reverse()
+  return (
+    <>
+      {cols.map(stage => {
+        const all = (byStage[stage] ?? []).slice().sort((a, b) => a.match_number - b.match_number)
+        const half = Math.ceil(all.length / 2)
+        // Leva stran = prva polovica tekem kroga, desna = druga polovica.
+        const matches = side === 'left' ? all.slice(0, half) : all.slice(half)
+        if (matches.length === 0) return null
+        return (
+          <div key={`${side}-${stage}`} className="flex flex-col justify-around gap-3 min-w-[200px]"
+               style={{ width: 210 }}>
+            <h4 className="text-[11px] font-semibold text-gray-500 text-center border-b pb-1 mb-1">
+              {stageLabel(stage)}
+            </h4>
+            <div className="flex-1 flex flex-col justify-around gap-3">
+              {matches.map(m => (
+                <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} {...judgeCtx} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </>
   )
 }
 
@@ -64,9 +132,13 @@ interface Props {
   registrations: TournamentRegistration[]
   isAdmin: boolean
   onEnterScore: (match: Match) => void
+  judges?: JudgeOption[]
+  userId?: string | null
+  userIsJudge?: boolean
 }
 
-export default function KnockoutBracket({ matches, registrations, isAdmin, onEnterScore }: Props) {
+export default function KnockoutBracket({ matches, registrations, isAdmin, onEnterScore, judges = [], userId, userIsJudge }: Props) {
+  const judgeCtx: JudgeCtx = { judges, userId, userIsJudge }
   const regMap: Record<string, TournamentRegistration> = {}
   for (const reg of registrations) regMap[reg.id] = reg
 
@@ -83,52 +155,51 @@ export default function KnockoutBracket({ matches, registrations, isAdmin, onEnt
   }
 
   const presentStages = STAGES.filter(s => byStage[s]?.length > 0)
-  const hasThirdPlace = byStage['third_place']?.length > 0
+  const stagesBeforeFinal = presentStages.filter(s => s !== 'final')
+  const finalMatches = byStage['final'] ?? []
+  const thirdPlace = byStage['third_place'] ?? []
 
   if (presentStages.length === 0) {
     return <div className="text-center py-12 text-gray-400 italic">Izločilni del še ni začet</div>
   }
 
+  // Če je le finale (brez prejšnjih krogov), prikaži samo finale na sredini.
+  const twoSided = stagesBeforeFinal.length > 0
+
   return (
-    <div>
-      {byStage['final'] && (
-        <div className="mb-6 bg-gradient-to-r from-bocce-gold/10 to-bocce-gold/5 border border-bocce-gold/30 rounded-xl p-4">
-          <h3 className="text-bocce-gold font-bold text-lg mb-3 text-center">🏆 Finale</h3>
-          <div className="max-w-sm mx-auto">
-            {byStage['final'].map(m => (
-              <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} />
-            ))}
-          </div>
-          {hasThirdPlace && (
-            <div className="mt-4 pt-4 border-t border-bocce-gold/20">
-              <h4 className="text-gray-500 font-medium text-sm mb-2 text-center">Tekma za 3. mesto</h4>
-              <div className="max-w-sm mx-auto">
-                {byStage['third_place'].map(m => (
-                  <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} />
-                ))}
-              </div>
+    <div className="overflow-x-auto pb-4">
+      <div className="flex items-stretch justify-center gap-4 min-w-max min-h-[240px]">
+        {/* Leva veja */}
+        {twoSided && (
+          <BracketSide stages={stagesBeforeFinal} byStage={byStage} side="left"
+            isAdmin={isAdmin} onEnterScore={onEnterScore} judgeCtx={judgeCtx} />
+        )}
+
+        {/* Sredina: finale (+ 3. mesto) */}
+        <div className="flex flex-col justify-center items-center min-w-[220px]" style={{ width: 240 }}>
+          {finalMatches.length > 0 && (
+            <div className="w-full bg-gradient-to-b from-bocce-gold/10 to-bocce-gold/5 border border-bocce-gold/30 rounded-xl p-3">
+              <h3 className="text-bocce-gold font-bold text-sm mb-2 text-center">🏆 Finale</h3>
+              {finalMatches.map(m => (
+                <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} highlight {...judgeCtx} />
+              ))}
+              {thirdPlace.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-bocce-gold/20">
+                  <h4 className="text-gray-500 font-medium text-[11px] mb-1 text-center">Za 3. mesto</h4>
+                  {thirdPlace.map(m => (
+                    <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} {...judgeCtx} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
 
-      <div className="overflow-x-auto">
-        <div className="flex gap-6 min-w-max pb-4">
-          {presentStages.filter(s => s !== 'final').map(stage => (
-            <div key={stage} style={{ width: STAGE_WIDTHS[stage] ?? 150 }}>
-              <h4 className="text-sm font-semibold text-gray-600 mb-3 text-center border-b pb-2">
-                {stageLabel(stage)}
-              </h4>
-              <div className="space-y-3">
-                {(byStage[stage] ?? [])
-                  .sort((a, b) => a.match_number - b.match_number)
-                  .map(m => (
-                    <KnockoutMatchCard key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} compact />
-                  ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        {/* Desna veja (zrcaljena) */}
+        {twoSided && (
+          <BracketSide stages={stagesBeforeFinal} byStage={byStage} side="right"
+            isAdmin={isAdmin} onEnterScore={onEnterScore} judgeCtx={judgeCtx} />
+        )}
       </div>
     </div>
   )

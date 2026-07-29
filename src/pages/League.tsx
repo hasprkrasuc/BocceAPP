@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useRealtimeTable, useJitteredCallback, mergeRowById } from '../lib/useRealtimeTable'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import LeagueTable from '../components/LeagueTable'
@@ -329,15 +330,48 @@ export function LeagueDetail() {
 
   useEffect(() => { load() }, [id])
 
-  // Real-time: refresh when fixtures change
-  useEffect(() => {
-    if (!id) return
-    const channel = supabase
-      .channel(`league-${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'league_fixtures', filter: `season_id=eq.${id}` }, () => { load() })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [id])
+  // Zapisniki (rezultati disciplin) — ozek refetch brez sezone, ekip in razporeda.
+  // Vpis rezultata spremeni tudi punte, ki so kriterij razvrstitve v lestvici,
+  // zato jih je po spremembi tekme treba osvežiti — a samo njih.
+  const loadResults = useCallback(async (fixtureIds: string[]) => {
+    if (!fixtureIds.length) return
+    const { data: mrData } = await supabase.from('league_match_results')
+      .select('*, discipline_results:league_match_discipline_results(*)')
+      .in('fixture_id', fixtureIds)
+    const results = (mrData ?? []) as Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>
+    setMatchResults(results)
+    const ids = results.flatMap(r => (r.discipline_results ?? [])
+      .flatMap(dr => [...(dr.home_players ?? []), ...(dr.away_players ?? [])]))
+      .filter((p): p is string => !!p)
+      .map(stripReserve)
+    setNames(await resolvePlayerNames(ids))
+  }, [])
+
+  // Id-ji tekem za ozek refetch — brez branja stanja znotraj posodobitvene funkcije.
+  const fixtureIdsRef = useRef<string[]>([])
+  useEffect(() => { fixtureIdsRef.current = fixtures.map(f => f.id) }, [fixtures])
+
+  // Zamaknjen in razpršen refetch zapisnikov — 150 gledalcev iste lige ne sme
+  // udariti v bazo v isti milisekundi.
+  const { schedule: scheduleResults } = useJitteredCallback(() => {
+    void loadResults(fixtureIdsRef.current)
+  })
+
+  // Realtime: vpis rezultata pride kot UPDATE tekme — vrstico posodobimo iz
+  // payloada (nič poizvedb), zapisnike pa dohitimo z zamikom.
+  useRealtimeTable<LeagueFixture>({
+    channel: id ? `league-${id}` : null,
+    table: 'league_fixtures',
+    filter: id ? `season_id=eq.${id}` : undefined,
+    onUpdate: row => {
+      // payload nese samo stolpce vrstice — embedov (home_team, away_team,
+      // chief_judge) v njem ni, zato jih mergeRowById ohrani.
+      setFixtures(prev => mergeRowById(prev, row))
+      scheduleResults()
+    },
+    onStructuralChange: () => { load() },
+    onResume: () => { load() },
+  })
 
   async function load() {
     if (!id) return
@@ -366,17 +400,7 @@ export function LeagueDetail() {
       .select('*').eq('season_id', id).order('order_num')
     setDisciplines((discData ?? []) as LeagueSeasonDiscipline[])
 
-    const { data: mrData } = await supabase.from('league_match_results')
-      .select('*, discipline_results:league_match_discipline_results(*)')
-      .in('fixture_id', (f ?? []).map((fx: { id: string }) => fx.id))
-    const results = (mrData ?? []) as Array<LeagueMatchResult & { discipline_results?: LeagueMatchDisciplineResult[] }>
-    setMatchResults(results)
-
-    const ids = results.flatMap(r => (r.discipline_results ?? [])
-      .flatMap(dr => [...(dr.home_players ?? []), ...(dr.away_players ?? [])]))
-      .filter((p): p is string => !!p)
-      .map(stripReserve)
-    setNames(await resolvePlayerNames(ids))
+    await loadResults((f ?? []).map((fx: { id: string }) => fx.id))
 
     setLoading(false)
   }

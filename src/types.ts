@@ -58,6 +58,8 @@ export interface UserProfile {
   address_house?: string | null
   address_postal?: string | null
   address_country?: string | null
+  /** Ob prvi prijavi z začetnim geslom mora uporabnik nastaviti novo geslo. */
+  must_change_password?: boolean
 }
 
 export type TournamentSeriesStatus = 'draft' | 'active' | 'completed'
@@ -124,6 +126,7 @@ export interface TournamentGroup {
   status: GroupStatus
   venue_name: string | null
   group_size: number | null
+  judge_id: string | null
 }
 
 export interface GroupDistribution {
@@ -163,6 +166,8 @@ export interface Match {
   is_bye: boolean
   status: MatchStatus
   played_at: string | null
+  lane_number: string | null
+  judge_id: string | null
   team_a?: GroupTeam
   team_b?: GroupTeam
 }

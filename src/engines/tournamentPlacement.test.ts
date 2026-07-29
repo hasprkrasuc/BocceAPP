@@ -61,6 +61,17 @@ describe('tournamentPlayerPoints', () => {
     expect(byPlayer['p4'].bucket).toBe(4); expect(byPlayer['p4'].points).toBe(7)
   })
 
+  test('brez tekme za 3. mesto → oba poraženca polfinala dobita 8 točk (deljeno 3.)', () => {
+    // isti nabor tekem, a BREZ third_place: gt2 in gt4 sta polfinalna poraženca
+    const km = knockoutMatches.filter(m => m.stage !== 'third_place')
+    const pts = tournamentPlayerPoints({ registrations, groupTeams, knockoutMatches: km })
+    const byPlayer = Object.fromEntries(pts.map(p => [p.player_id, p]))
+    expect(byPlayer['p1'].points).toBe(16) // zmagovalec
+    expect(byPlayer['p3'].points).toBe(10) // finalist
+    expect(byPlayer['p2'].bucket).toBe(3); expect(byPlayer['p2'].points).toBe(8) // polf. poraženec
+    expect(byPlayer['p4'].bucket).toBe(3); expect(byPlayer['p4'].points).toBe(8) // polf. poraženec
+  })
+
   test('poraženci četrtfinala dobijo 5–8 (3 točke)', () => {
     const pts = tournamentPlayerPoints({ registrations, groupTeams, knockoutMatches })
     for (const p of ['p5', 'p6', 'p7', 'p8']) {
@@ -69,19 +80,36 @@ describe('tournamentPlayerPoints', () => {
     }
   })
 
-  test('neuvrščeni iz skupin (niso v izločilnih bojih) dobijo 9–16 (1 točka)', () => {
+  test('izpadli v skupinah (niso v izločilnih bojih) NE dobijo točk (izven najboljših 16)', () => {
     const regs = [...registrations, { id: 'r9', player1_id: 'p9', player2_id: null }]
     const gts = [...groupTeams, { id: 'gt9', registration_id: 'r9' }]
     const pts = tournamentPlayerPoints({ registrations: regs, groupTeams: gts, knockoutMatches })
-    const e = pts.find(x => x.player_id === 'p9')!
+    // r9 ni nastopil v nobenem izločilnem boju → brez vrstice (0 točk)
+    expect(pts.find(x => x.player_id === 'p9')).toBeUndefined()
+  })
+
+  test('poraženci prvega izločilnega kroga (r16) dobijo 9–16 (1 točka)', () => {
+    // 4 ekipe, prvi krog = r16 z eno tekmo: gt1 > gt2 → gt2 je poraženec r16 (9-16)
+    const regs = [
+      { id: 'r1', player1_id: 'p1', player2_id: null },
+      { id: 'r2', player1_id: 'p2', player2_id: null },
+    ]
+    const gts = [
+      { id: 'gt1', registration_id: 'r1' },
+      { id: 'gt2', registration_id: 'r2' },
+    ]
+    const km = [{ stage: 'r16', team_a_id: 'gt1', team_b_id: 'gt2', winner_id: 'gt1' }]
+    const pts = tournamentPlayerPoints({ registrations: regs, groupTeams: gts, knockoutMatches: km })
+    const e = pts.find(x => x.player_id === 'p2')!
     expect(e.bucket).toBe('9-16'); expect(e.points).toBe(1)
   })
 
   test('par (dvojka/štafeta): oba člana dobita iste točke, vsak svojo vrstico', () => {
     const regs = [{ id: 'r1', player1_id: 'pa', player2_id: 'pb' }]
     const gts = [{ id: 'gt1', registration_id: 'r1' }]
-    // edina prijava brez izločilnih bojev → 9-16
-    const pts = tournamentPlayerPoints({ registrations: regs, groupTeams: gts, knockoutMatches: [] })
+    // par nastopi v prvem izločilnem krogu (r16) in izgubi → 9-16 (1 točka)
+    const km = [{ stage: 'r16', team_a_id: 'gt1', team_b_id: 'gtX', winner_id: 'gtX' }]
+    const pts = tournamentPlayerPoints({ registrations: regs, groupTeams: gts, knockoutMatches: km })
     expect(pts).toHaveLength(2)
     expect(pts.map(p => p.player_id).sort()).toEqual(['pa', 'pb'])
     expect(pts.every(p => p.points === 1)).toBe(true)

@@ -47,6 +47,13 @@ export default function AdminDashboard() {
       desc: 'Ustvari serije turnirjev (U14/U18), dodaj turnirje, poglej skupno lestvico',
       color: 'border-orange-300 hover:bg-orange-50',
     },
+    {
+      to: '/admin/gosti',
+      icon: '🌍',
+      title: 'Gostujoči igralci',
+      desc: 'Uredi imena tujih / neregistriranih igralcev (gostov)',
+      color: 'border-cyan-300 hover:bg-cyan-50',
+    },
     ...(isSuperAdmin ? [{
       to: '/admin/uporabniki',
       icon: '👤',

@@ -172,11 +172,22 @@ export interface PropagationRow {
   team_a_id: string | null
   team_b_id: string | null
   winner_id: string | null
+  score_a?: number | null
+  score_b?: number | null
 }
 
 /**
  * Za dano stanje tekem v skupini izračuna, katere odvisne tekme je treba
- * posodobiti (izpolnjeni team_a_id/team_b_id/winner_id iz že odigranih tekem).
+ * posodobiti (team_a_id/team_b_id/winner_id iz že odigranih tekem).
+ *
+ * Ključna lastnost: deluje tudi pri POPRAVKU rezultata. Če se rezultat že
+ * odigrane tekme popravi (npr. sodnik se je zmotil), se spremeni tudi
+ * zmagovalec/poraženec, zato je treba PONOVNO prebrati vse odvisne tekme —
+ * tudi tiste, ki so že "completed" — in vanje vpisati pravilne ekipe. Če se
+ * ekipi na že odigrani odvisni tekmi zamenjata, je njen prejšnji rezultat
+ * neveljaven, zato ga počistimo (score_a/score_b/winner_id = null, status =
+ * 'pending'), da ga sodnik vnese znova. Sprememba se prek propagateGroup
+ * zanke kaskadno prenese naprej.
  *
  * Vrne SAMO resnične spremembe — če je vrednost na tekmi že enaka izračunani,
  * je ne vrne. To je ključno za preprečitev neskončne zanke v propagateGroup:
@@ -195,39 +206,46 @@ export function computePropagation(
     }
   }
 
+  // Ciljna ekipa za en "slot" odvisne tekme.
+  //  - seed / BYE  → slot ni odvisen od drugih tekem (managed=false, ne diramo)
+  //  - winsMatch/losesMatch → managed=true; vrednost je zmagovalec/poraženec
+  //    izvorne tekme, ali null, če ta še ni odigrana (oz. je bil njen rezultat
+  //    počiščen — takrat je treba to ekipo tudi tu izbrisati).
+  const slotTarget = (desc: MatchTemplate['teamA']): { managed: boolean; value: string | null } => {
+    if (desc === 'BYE' || 'seed' in desc) return { managed: false, value: null }
+    const num = 'winsMatch' in desc ? desc.winsMatch : desc.losesMatch
+    const r = results[num]
+    if (!r) return { managed: true, value: null }
+    return { managed: true, value: 'winsMatch' in desc ? r.winner : r.loser }
+  }
+
   const out: Array<{ match_number: number; updates: Partial<PropagationRow> }> = []
 
   for (const tpl of template) {
-    // Tekme, ki jih je še treba izpolniti: čakajoče ali proste (bye) brez zmagovalca.
-    const dep = rows.find(m => m.match_number === tpl.num &&
-      (m.status !== 'completed' || (m.is_bye && m.winner_id === null)))
+    const dep = rows.find(m => m.match_number === tpl.num)
     if (!dep) continue
 
     const updates: Partial<PropagationRow> = {}
 
-    const setIfChanged = (field: 'team_a_id' | 'team_b_id', next: string | null | undefined) => {
-      if (next && next !== dep[field]) updates[field] = next
-    }
+    const a = slotTarget(tpl.teamA)
+    const b = slotTarget(tpl.teamB)
+    if (a.managed && a.value !== dep.team_a_id) updates.team_a_id = a.value
+    if (b.managed && b.value !== dep.team_b_id) updates.team_b_id = b.value
 
-    if (tpl.teamA !== 'BYE' && !('seed' in tpl.teamA)) {
-      const num = 'winsMatch' in tpl.teamA ? tpl.teamA.winsMatch : tpl.teamA.losesMatch
-      const isWin = 'winsMatch' in tpl.teamA
-      const r = results[num]
-      if (r) setIfChanged('team_a_id', isWin ? r.winner : r.loser)
-    }
-    if (tpl.teamB !== 'BYE' && !('seed' in tpl.teamB)) {
-      const num = 'winsMatch' in tpl.teamB ? tpl.teamB.winsMatch : tpl.teamB.losesMatch
-      const isWin = 'winsMatch' in tpl.teamB
-      const r = results[num]
-      if (r) setIfChanged('team_b_id', isWin ? r.winner : r.loser)
-    }
+    const teamsChanged = 'team_a_id' in updates || 'team_b_id' in updates
 
-    // Tekma s prostim žrebom: zmagovalec = team A, a samo če se dejansko spremeni.
     if (dep.is_bye) {
-      const resolvedTeamA = updates.team_a_id ?? dep.team_a_id
-      if (resolvedTeamA && resolvedTeamA !== dep.winner_id) {
-        updates.winner_id = resolvedTeamA
-      }
+      // Prosta tekma: zmagovalec = team A (če obstaja). Rezultat ostane 6:0.
+      const resolvedTeamA = 'team_a_id' in updates ? updates.team_a_id! : dep.team_a_id
+      const desiredWinner = resolvedTeamA ?? null
+      if (desiredWinner !== dep.winner_id) updates.winner_id = desiredWinner
+    } else if (teamsChanged && dep.winner_id !== null) {
+      // Že odigrana odvisna tekma je dobila drugo ekipo → njen rezultat ni več
+      // veljaven. Počistimo ga, da se vnese znova (in kaskadira naprej).
+      updates.winner_id = null
+      updates.status = 'pending'
+      if (dep.score_a !== null && dep.score_a !== undefined) updates.score_a = null
+      if (dep.score_b !== null && dep.score_b !== undefined) updates.score_b = null
     }
 
     if (Object.keys(updates).length > 0) {
@@ -332,18 +350,46 @@ export function nextKnockoutStage(
 // ────────────────────────────────────────────────────────────────
 // HELPERS
 // ────────────────────────────────────────────────────────────────
-export function teamDisplayName(registration: TournamentRegistration | null | undefined): string {
+/**
+ * Skrajšano ime igralca "Priimek I." (priimek + začetnica imena).
+ * Pri tujih igralcih (`foreign`) se za priimek štejeta ZADNJI DVE besedi
+ * (npr. dvojni/priobalni priimki); pri dvobesednem imenu se izpiše kar oboje.
+ */
+function shortPlayerName(name: string | null | undefined, foreign: boolean): string {
+  const words = (name ?? '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (words.length === 1) return words[0]
+  const surnameWords = foreign ? 2 : 1
+  if (words.length <= surnameWords) return words.join(' ')
+  const surname = words.slice(words.length - surnameWords).join(' ')
+  const firstInitial = words[0][0] ? `${words[0][0]}.` : ''
+  return firstInitial ? `${surname} ${firstInitial}` : surname
+}
+
+/**
+ * Prikazno ime ekipe. Privzeto le priimek(i) (najbolj kompaktno). Če je
+ * `expanded` true, se izpiše "Priimek I." (priimek + začetnica imena) —
+ * za tabele skupin in izločilnih bojev. Tuji igralci: zadnji dve besedi = priimek.
+ */
+export function teamDisplayName(
+  registration: TournamentRegistration | null | undefined,
+  expanded = false,
+): string {
   if (!registration) return '???'
-  const lastName = (full: string | null | undefined) => full?.split(' ').at(-1) ?? '?'
   // Ime igralca: registriran uporabnik → gost-igralec (guest_players) → prosto ime.
+  // "Tuji" = ni registriran uporabnik (gost ali prosto vpisano ime).
+  const fmt = (name: string | null | undefined, foreign: boolean) =>
+    expanded ? shortPlayerName(name, foreign) : (name?.split(' ').at(-1) ?? '?')
   const name1 = registration.player1?.full_name ?? registration.guest1?.full_name ?? registration.player1_name
-  const p1 = lastName(name1)
+  const foreign1 = !registration.player1?.full_name
+  const p1 = fmt(name1, foreign1)
   // Posamezna disciplina: prijava nima drugega igralca → prikaži samo eno ime
   const hasP2 = registration.player2_id || registration.player2 ||
     registration.player2_guest_id || registration.guest2 || registration.player2_name
   if (!hasP2) return p1
   const name2 = registration.player2?.full_name ?? registration.guest2?.full_name ?? registration.player2_name
-  return `${p1} / ${lastName(name2)}`
+  const foreign2 = !registration.player2?.full_name
+  return `${p1} / ${fmt(name2, foreign2)}`
 }
 
 export function matchTypeLabel(type: MatchType): string {

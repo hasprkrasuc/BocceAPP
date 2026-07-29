@@ -3,8 +3,9 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel } from '../../engines/tournament'
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
-import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer } from '../../types'
-import { drawKnockout } from '../../lib/knockoutDraw'
+import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
+import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
+import { pairsFromSeededTeams, KO_STAGE_ORDER } from '../../engines/knockout'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
@@ -61,14 +62,34 @@ export default function TournamentEdit() {
   // Swap teams between groups
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null)
 
+  // Izločilni del: način sestave parov + napredovalci + ročni pari
+  type KoQualifier = { teamId: string; label: string; groupNumber: number; position: 1 | 2 }
+  const [koMethod, setKoMethod] = useState<'auto' | 'draw' | 'manual'>('auto')
+  // Ali se igra tekma za 3. mesto (privzeto da).
+  const [koThirdPlace, setKoThirdPlace] = useState(true)
+  const [koQualifiers, setKoQualifiers] = useState<KoQualifier[]>([])
+  const [koPairs, setKoPairs] = useState<Array<[string, string]>>([])
+  // Trenutne izločilne tekme (za ponovni žreb kasnejših krogov)
+  type KoMatchRow = { id: string; stage: MatchStage; match_number: number; team_a_id: string | null; team_b_id: string | null; winner_id: string | null; status: string }
+  const [koMatches, setKoMatches] = useState<KoMatchRow[]>([])
+  // Način + ročni pari na krog (za ponovni žreb)
+  const [koRoundMethod, setKoRoundMethod] = useState<Record<string, 'auto' | 'draw' | 'manual'>>({})
+  const [koRoundPairs, setKoRoundPairs] = useState<Record<string, Array<[string, string]>>>({})
+
   useEffect(() => { load() }, [id])
+
+  // Ob odprtju zavihka Izločilni del naloži napredovalce (za ročne/žrebne pare).
+  useEffect(() => {
+    if (tab === 'knockout' && groups.length > 0) loadKoQualifiers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, groups.length])
 
   async function load() {
     try {
       const { data: groupIds } = await supabase.from('tournament_groups').select('id').eq('tournament_id', id)
       const ids = groupIds?.map(x => x.id) ?? []
 
-      const [{ data: t, error: tErr }, { data: r }, { data: g }, { data: gt }] = await Promise.all([
+      const [{ data: t, error: tErr }, { data: r }, { data: g }, { data: gt }, { data: km }] = await Promise.all([
         supabase.from('tournaments').select('*').eq('id', id).single(),
         supabase.from('tournament_registrations')
           .select('*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)')
@@ -77,12 +98,16 @@ export default function TournamentEdit() {
         ids.length > 0
           ? supabase.from('group_teams').select('*, registration:tournament_registrations(*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*))').in('group_id', ids)
           : Promise.resolve({ data: [] }),
+        supabase.from('matches')
+          .select('id, stage, match_number, team_a_id, team_b_id, winner_id, status')
+          .eq('tournament_id', id).neq('stage', 'group'),
       ])
       if (tErr) throw tErr
       setTournament(t as Tournament)
       setRegistrations((r ?? []) as TournamentRegistration[])
       setGroups((g ?? []) as TournamentGroup[])
       setGroupTeams((gt ?? []) as (GroupTeam & { registration?: TournamentRegistration })[])
+      setKoMatches((km ?? []) as KoMatchRow[])
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -403,7 +428,7 @@ export default function TournamentEdit() {
       const rangPoints: Record<string, number> = {}
       if (cat) for (const row of rang.byCategory[cat]) rangPoints[row.playerId] = row.rang
       const regs = confirmed.map(r => ({ id: r.id, player1_id: r.player1_id, player2_id: r.player2_id }))
-      const res = await drawKnockout(id!, regs, rangPoints)
+      const res = await drawKnockout(id!, regs, rangPoints, { thirdPlace: koThirdPlace })
       setMessage(`✓ Izločilni žreb opravljen: mreža ${res.bracket} (${res.teams} ekip)`)
       await load()
     } catch (err) {
@@ -412,96 +437,239 @@ export default function TournamentEdit() {
     setDrawLoading(false)
   }
 
+  /** Ime ekipe (group_teams.id) za prikaz v izločilnem delu. */
+  function koTeamName(teamId: string | null): string {
+    if (!teamId) return '—'
+    const gt = groupTeams.find(g => g.id === teamId)
+    return gt?.registration ? teamDisplayName(gt.registration) : '?'
+  }
+
+  /** Prisotni izločilni krogi v vrstnem redu (r16 → … → final). */
+  function koPresentStages(): MatchStage[] {
+    const present = new Set(koMatches.map(m => m.stage))
+    return KO_STAGE_ORDER.filter(s => present.has(s))
+  }
+
+  /** Krogi, ki jih je mogoče na novo sestaviti/žrebati (za vsakega: napredovale ekipe). */
+  function redrawableRounds() {
+    const present = koPresentStages()
+    const out: Array<{ stage: MatchStage; advancing: Array<{ teamId: string; label: string }>; feederComplete: boolean }> = []
+    for (let i = 1; i < present.length; i++) {
+      const stage = present[i]
+      const matchCount = koMatches.filter(m => m.stage === stage).length
+      if (matchCount < 2) continue // finale (1 tekma) — brez žreba
+      const feederMatches = koMatches.filter(m => m.stage === present[i - 1]).sort((a, b) => a.match_number - b.match_number)
+      const feederComplete = feederMatches.length > 0 && feederMatches.every(m => !!m.winner_id)
+      const advancing = feederMatches
+        .filter(m => m.winner_id)
+        .map(m => ({ teamId: m.winner_id as string, label: koTeamName(m.winner_id) }))
+      out.push({ stage, advancing, feederComplete })
+    }
+    return out
+  }
+
+  /** Na novo sestavi (samodejno/žreb/ročno) izbrani krog + počisti vse naslednje. */
+  async function redrawRound(stage: MatchStage) {
+    const present = koPresentStages()
+    const idx = present.indexOf(stage)
+    const feederMatches = koMatches.filter(m => m.stage === present[idx - 1]).sort((a, b) => a.match_number - b.match_number)
+    if (feederMatches.some(m => !m.winner_id)) { setMessage('❌ Prejšnji krog ni dokončan'); return }
+    const teams = feederMatches.map(m => m.winner_id as string)
+    const method = koRoundMethod[stage] ?? 'auto'
+
+    let pairs: Array<[string, string]>
+    if (method === 'manual') {
+      const mp = koRoundPairs[stage] ?? []
+      const used = mp.flat().filter(Boolean)
+      if (used.length !== teams.length || new Set(used).size !== teams.length) {
+        setMessage('❌ Ročni pari: vsaka ekipa mora biti izbrana natanko enkrat'); return
+      }
+      pairs = mp
+    } else if (method === 'draw') {
+      const ids = [...teams]
+      for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]] }
+      pairs = []
+      for (let i = 0; i < ids.length; i += 2) pairs.push([ids[i], ids[i + 1]])
+    } else {
+      pairs = []
+      for (let i = 0; i < teams.length; i += 2) pairs.push([teams[i], teams[i + 1]])
+    }
+
+    if (!window.confirm(`Ponovni žreb kroga »${stageLabel(stage)}« pobriše rezultate tega in vseh naslednjih krogov. Nadaljujem?`)) return
+
+    const targetMatches = koMatches.filter(m => m.stage === stage).sort((a, b) => a.match_number - b.match_number)
+    for (let i = 0; i < targetMatches.length; i++) {
+      const p = pairs[i] ?? ['', '']
+      await supabase.from('matches').update({
+        team_a_id: p[0] || null, team_b_id: p[1] || null, winner_id: null, score_a: null, score_b: null, status: 'pending', is_bye: false,
+      }).eq('id', targetMatches[i].id)
+    }
+    // Počisti naslednje kroge + tekmo za 3. mesto (pari se spremenijo, zato so nadaljnji krogi neveljavni).
+    for (const ds of [...present.slice(idx + 1), 'third_place' as MatchStage]) {
+      await supabase.from('matches').update({
+        team_a_id: null, team_b_id: null, winner_id: null, score_a: null, score_b: null, status: 'pending', is_bye: false,
+      }).eq('tournament_id', id).eq('stage', ds)
+    }
+    setMessage(`✓ Krog »${stageLabel(stage)}« na novo sestavljen (${method === 'manual' ? 'ročno' : method === 'draw' ? 'žreb' : 'samodejno'})`)
+    await load()
+  }
+
+  /** Doda ali odstrani tekmo za 3. mesto na obstoječi izločilni mreži. */
+  async function toggleThirdPlace() {
+    const exists = koMatches.some(m => m.stage === 'third_place')
+    if (exists) {
+      if (!window.confirm('Odstranim tekmo za 3. mesto? Njen rezultat (če obstaja) bo izbrisan.')) return
+      await supabase.from('matches').delete().eq('tournament_id', id).eq('stage', 'third_place')
+      setMessage('✓ Tekma za 3. mesto odstranjena')
+    } else {
+      const sf = koMatches.filter(m => m.stage === 'sf').sort((a, b) => a.match_number - b.match_number)
+      if (sf.length < 2) { setMessage('❌ Tekma za 3. mesto ni mogoča (ni polfinala)'); return }
+      const loserOf = (m: KoMatchRow) => m.winner_id ? (m.winner_id === m.team_a_id ? m.team_b_id : m.team_a_id) : null
+      const { error } = await supabase.from('matches').insert({
+        tournament_id: id, group_id: null, stage: 'third_place', match_type: 'knockout',
+        match_number: 1, team_a_id: loserOf(sf[0]), team_b_id: loserOf(sf[1]), winner_id: null,
+        score_a: null, score_b: null, is_bye: false, status: 'pending',
+      })
+      if (error) { setMessage('❌ Napaka: ' + error.message); return }
+      setMessage('✓ Tekma za 3. mesto dodana')
+    }
+    await load()
+  }
+
+  /** Napredovalci iz skupin (1. in 2. mesto vsake skupine) — za sestavo izločilnih parov. */
+  async function fetchQualifiers(): Promise<KoQualifier[]> {
+    const { data: gm } = await supabase.from('matches')
+      .select('group_id, match_number, winner_id')
+      .eq('tournament_id', id).eq('stage', 'group').eq('status', 'completed')
+    const gmr = (gm ?? []) as Array<{ group_id: string; match_number: number; winner_id: string | null }>
+    const nameByTeam = new Map(groupTeams.map(gt => [gt.id, gt.registration ? teamDisplayName(gt.registration) : '?']))
+    const quals: KoQualifier[] = []
+    for (const g of [...groups].sort((a, b) => a.group_number - b.group_number)) {
+      const size = g.group_size ?? 4
+      const winnersMatchNum = size <= 4 ? 3 : 7
+      const lastMatchNum = size <= 4 ? 5 : 9
+      const gMatches = gmr.filter(m => m.group_id === g.id)
+      const found: Array<[1 | 2, string | null | undefined]> = [
+        [1, gMatches.find(m => m.match_number === winnersMatchNum)?.winner_id],
+        [2, gMatches.find(m => m.match_number === lastMatchNum)?.winner_id],
+      ]
+      for (const [pos, wid] of found) {
+        if (wid) quals.push({
+          teamId: wid, groupNumber: g.group_number, position: pos,
+          label: `${nameByTeam.get(wid) ?? '?'} (S${g.group_number}·${pos}.)`,
+        })
+      }
+    }
+    return quals
+  }
+
+  /** Samodejni nosilni pari: zmagovalci = nosilci 1..G, drugouvrščeni = G+1..2G (obratno). */
+  function autoSeedPairs(quals: KoQualifier[]): Array<[string | null, string | null]> {
+    const byGroup = (a: KoQualifier, b: KoQualifier) => a.groupNumber - b.groupNumber
+    const winners = quals.filter(q => q.position === 1).sort(byGroup).map(q => q.teamId)
+    const runners = quals.filter(q => q.position === 2).sort(byGroup).map(q => q.teamId)
+    return pairsFromSeededTeams([...winners, ...runners.reverse()])
+  }
+
+  /** Naloži napredovalce (ko odpreš zavihek Izločilni del) + pripravi privzete ročne pare. */
+  async function loadKoQualifiers() {
+    const quals = await fetchQualifiers()
+    setKoQualifiers(quals)
+    // Privzeti ročni pari = samodejni razpored — le če je napredovalcev potenca 2 (≥2).
+    const n = quals.length
+    if (n >= 2 && (n & (n - 1)) === 0) {
+      setKoPairs(autoSeedPairs(quals).map(([a, b]) => [a ?? '', b ?? ''] as [string, string]))
+    } else {
+      setKoPairs([])
+    }
+  }
+
   async function generateKnockout() {
+    if (!window.confirm('Ustvarjanje izločilnega dela pobriše morebitne obstoječe izločilne tekme in njihove rezultate. Nadaljujem?')) return
     setMessage('')
     try {
       const confirmed = registrations.filter(r => r.status === 'confirmed')
-      // Uporabi DEJANSKO število skupin (kot je bilo žrebano), ne le števila ekip,
-      // sicer se lahko določitev stopnje (extra/direct) razlikuje od žreba.
       const dist = suggestGroupDistribution(confirmed.length, groups.length || undefined)
 
-      const { data: finalMatches } = await supabase.from('matches')
-        .select('*, group:tournament_groups(*)')
-        .eq('tournament_id', id)
-        .eq('stage', 'group')
-        .eq('status', 'completed')
+      // Konfiguracija z dodatnim krogom (skupine niso potenca 2) → poseben razpored.
+      if (dist.extraStage !== null) { await legacyGenerateExtra(dist); return }
 
-      // Collect qualifiers from each group
-      const directQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
-      const extraQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
+      const quals = await fetchQualifiers()
+      const n = quals.length
+      if (n < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
+      if ((n & (n - 1)) !== 0) { setMessage(`Število napredovalcev (${n}) ni potenca 2 — izločilni del ni mogoč`); return }
 
-      for (const g of groups) {
-        const size = (g.group_size ?? 4) as 3 | 4 | 5
-        const winnersMatchNum = size <= 4 ? 3 : 7
-        const lastMatchNum = size <= 4 ? 5 : 9
-
-        const gMatches = ((finalMatches ?? []) as Array<{
-          group_id: string; match_number: number; winner_id: string | null
-        }>).filter(m => m.group_id === g.id)
-
-        const m1st = gMatches.find(m => m.match_number === winnersMatchNum)
-        const m2nd = gMatches.find(m => m.match_number === lastMatchNum)
-
-        // Skupina po 3 igra dodatni krog LE, kadar tak krog obstaja (G ni potenca 2).
-        // Pri potenci 2 (npr. 8 skupin) so tudi skupine po 3 direktne → po 2 naprej.
-        const isExtra = size === 3 && dist.extraStage !== null
-        const target = isExtra ? extraQualifiers : directQualifiers
-
-        if (m1st?.winner_id) target.push({ groupNumber: g.group_number, position: 1, teamId: m1st.winner_id })
-        if (m2nd?.winner_id) target.push({ groupNumber: g.group_number, position: 2, teamId: m2nd.winner_id })
-      }
-
-      if (directQualifiers.length + extraQualifiers.length < 2) {
-        setMessage('Ni dovolj napredovalcev za izločilni del')
-        return
-      }
-
-      let matchNum = 1
-
-      // Create extra stage matches (groups of 3 qualifiers)
-      if (extraQualifiers.length > 0 && dist.extraStage) {
-        const pos1 = extraQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
-        const pos2 = extraQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
-        const n = Math.min(pos1.length, pos2.length)
-        for (let i = 0; i < n; i++) {
-          await supabase.from('matches').insert({
-            tournament_id: id, group_id: null, stage: dist.extraStage,
-            match_type: 'knockout', match_number: matchNum++,
-            team_a_id: pos1[i]?.teamId ?? null,
-            team_b_id: pos2[n - 1 - i]?.teamId ?? null,
-            status: 'pending',
-          })
+      let pairs: Array<[string | null, string | null]>
+      if (koMethod === 'manual') {
+        const flat = koPairs.flat()
+        const used = flat.filter(Boolean)
+        if (used.length !== n || new Set(used).size !== n) {
+          setMessage('❌ Ročni pari: vsaka ekipa mora biti izbrana natanko enkrat'); return
         }
+        pairs = koPairs.map(([a, b]) => [a || null, b || null])
+      } else if (koMethod === 'draw') {
+        const ids = quals.map(q => q.teamId)
+        for (let i = ids.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]
+        }
+        pairs = []
+        for (let i = 0; i < ids.length; i += 2) pairs.push([ids[i], ids[i + 1]])
+      } else {
+        pairs = autoSeedPairs(quals)
       }
 
-      // Create direct stage matches (groups of 4/5 qualifiers)
-      const pos1d = directQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
-      const pos2d = directQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
-      const nd = Math.min(pos1d.length, pos2d.length)
-      matchNum = 1
-      for (let i = 0; i < nd; i++) {
-        await supabase.from('matches').insert({
-          tournament_id: id, group_id: null, stage: dist.directStage,
-          match_type: 'knockout', match_number: matchNum++,
-          team_a_id: pos1d[i]?.teamId ?? null,
-          team_b_id: pos2d[nd - 1 - i]?.teamId ?? null,
-          status: 'pending',
-        })
-        await supabase.from('matches').insert({
-          tournament_id: id, group_id: null, stage: dist.directStage,
-          match_type: 'knockout', match_number: matchNum++,
-          team_a_id: pos2d[i]?.teamId ?? null,
-          team_b_id: pos1d[nd - 1 - i]?.teamId ?? null,
-          status: 'pending',
-        })
-      }
-
-      const extraMsg = dist.extraStage ? ` + ${stageLabel(dist.extraStage)} za skupini po 3` : ''
-      setMessage(`✓ Izločilni del ustvarjen — ${stageLabel(dist.directStage)} za direktne${extraMsg}`)
+      await insertKnockoutBracket(id!, pairs, { thirdPlace: koThirdPlace })
+      setMessage(`✓ Izločilni del ustvarjen (${koMethod === 'manual' ? 'ročno' : koMethod === 'draw' ? 'žreb' : 'samodejno'})`)
       load()
     } catch (err) {
       setMessage('Napaka: ' + (err as Error).message)
     }
+  }
+
+  /** Star razpored za konfiguracije z DODATNIM krogom (skupine niso potenca 2). */
+  async function legacyGenerateExtra(dist: GroupDistribution) {
+    const { data: finalMatches } = await supabase.from('matches')
+      .select('*, group:tournament_groups(*)')
+      .eq('tournament_id', id).eq('stage', 'group').eq('status', 'completed')
+    const directQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
+    const extraQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
+    for (const g of groups) {
+      const size = (g.group_size ?? 4) as 3 | 4 | 5
+      const winnersMatchNum = size <= 4 ? 3 : 7
+      const lastMatchNum = size <= 4 ? 5 : 9
+      const gMatches = ((finalMatches ?? []) as Array<{ group_id: string; match_number: number; winner_id: string | null }>).filter(m => m.group_id === g.id)
+      const m1st = gMatches.find(m => m.match_number === winnersMatchNum)
+      const m2nd = gMatches.find(m => m.match_number === lastMatchNum)
+      const isExtra = size === 3 && dist.extraStage !== null
+      const target = isExtra ? extraQualifiers : directQualifiers
+      if (m1st?.winner_id) target.push({ groupNumber: g.group_number, position: 1, teamId: m1st.winner_id })
+      if (m2nd?.winner_id) target.push({ groupNumber: g.group_number, position: 2, teamId: m2nd.winner_id })
+    }
+    if (directQualifiers.length + extraQualifiers.length < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
+    let matchNum = 1
+    if (extraQualifiers.length > 0 && dist.extraStage) {
+      const pos1 = extraQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
+      const pos2 = extraQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
+      const n = Math.min(pos1.length, pos2.length)
+      for (let i = 0; i < n; i++) {
+        await supabase.from('matches').insert({
+          tournament_id: id, group_id: null, stage: dist.extraStage, match_type: 'knockout', match_number: matchNum++,
+          team_a_id: pos1[i]?.teamId ?? null, team_b_id: pos2[n - 1 - i]?.teamId ?? null, status: 'pending',
+        })
+      }
+    }
+    const pos1d = directQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
+    const pos2d = directQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
+    const nd = Math.min(pos1d.length, pos2d.length)
+    matchNum = 1
+    for (let i = 0; i < nd; i++) {
+      await supabase.from('matches').insert({
+        tournament_id: id, group_id: null, stage: dist.directStage, match_type: 'knockout', match_number: matchNum++,
+        team_a_id: pos1d[i]?.teamId ?? null, team_b_id: pos2d[nd - 1 - i]?.teamId ?? null, status: 'pending',
+      })
+    }
+    setMessage(`✓ Izločilni del ustvarjen — ${stageLabel(dist.directStage)}`)
+    load()
   }
 
   if (loading) return <div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-bocce-green" /></div>
@@ -934,23 +1102,167 @@ export default function TournamentEdit() {
       {/* Knockout tab */}
       {tab === 'knockout' && (
         <div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-            <p className="text-sm text-amber-800 font-medium mb-1">Izločilni del</p>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 space-y-3">
+            <p className="text-sm text-amber-800 font-medium">Izločilni del</p>
             {dist.extraStage ? (
-              <p className="text-xs text-amber-700 mb-3">
+              <p className="text-xs text-amber-700">
                 Skupini po 4/5 → direktno v <strong>{stageLabel(dist.directStage)}</strong> ·
                 Skupini po 3 → najprej <strong>{stageLabel(dist.extraStage)}</strong>, nato {stageLabel(dist.directStage)}
+                <br />(dodatni krog — samodejni razpored)
               </p>
             ) : (
-              <p className="text-xs text-amber-700 mb-3">
-                Vse skupini → direktno v <strong>{stageLabel(dist.directStage)}</strong>
-              </p>
+              <>
+                <p className="text-xs text-amber-700">
+                  Vse skupini → direktno v <strong>{stageLabel(dist.directStage)}</strong> · napredovalcev: <strong>{koQualifiers.length}</strong>
+                </p>
+                {/* Način sestave parov */}
+                <div className="flex flex-wrap gap-2">
+                  {([['auto', 'Samodejno (križanje)'], ['draw', 'Žreb (naključno)'], ['manual', 'Ročno']] as const).map(([m, label]) => (
+                    <button key={m} onClick={() => setKoMethod(m)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${koMethod === m
+                        ? 'bg-bocce-green text-white border-bocce-green'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {/* Ročni urejevalnik parov */}
+                {koMethod === 'manual' && (
+                  koQualifiers.length >= 2 && (koQualifiers.length & (koQualifiers.length - 1)) === 0 ? (
+                    <div className="space-y-1.5 bg-white rounded-lg p-3 border border-amber-100">
+                      <p className="text-xs text-gray-500">Sestavi pare prvega kroga (vsaka ekipa enkrat):</p>
+                      {koPairs.map((pair, pi) => (
+                        <div key={pi} className="flex items-center gap-1.5">
+                          <span className="text-xs text-gray-400 w-5">{pi + 1}.</span>
+                          <select value={pair[0]}
+                            onChange={e => setKoPairs(prev => { const cp = prev.map(p => [...p] as [string, string]); cp[pi][0] = e.target.value; return cp })}
+                            className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                            <option value="">—</option>
+                            {koQualifiers.map(q => <option key={q.teamId} value={q.teamId}>{q.label}</option>)}
+                          </select>
+                          <span className="text-xs text-gray-400">–</span>
+                          <select value={pair[1]}
+                            onChange={e => setKoPairs(prev => { const cp = prev.map(p => [...p] as [string, string]); cp[pi][1] = e.target.value; return cp })}
+                            className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                            <option value="">—</option>
+                            {koQualifiers.map(q => <option key={q.teamId} value={q.teamId}>{q.label}</option>)}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-red-600">
+                      Za ročni razpored morajo biti vpisani vsi rezultati skupin — napredovalcev mora biti potenca 2 (trenutno {koQualifiers.length}).
+                    </p>
+                  )
+                )}
+              </>
             )}
-            <button onClick={generateKnockout}
-              className="bg-bocce-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-gold-light transition-colors">
-              Ustvari izločilni del
-            </button>
+            <label className="flex items-center gap-2 text-xs text-amber-800 cursor-pointer">
+              <input type="checkbox" checked={koThirdPlace}
+                onChange={e => setKoThirdPlace(e.target.checked)}
+                className="rounded border-gray-300" />
+              Igraj tekmo za 3. mesto
+            </label>
+            <div>
+              <button onClick={generateKnockout}
+                className="bg-bocce-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-gold-light transition-colors">
+                Ustvari izločilni del
+              </button>
+              <p className="text-[11px] text-amber-700 mt-2">
+                ⚠️ Ponovno ustvarjanje pobriše obstoječe izločilne tekme in njihove rezultate.
+              </p>
+            </div>
           </div>
+
+          {/* Tekma za 3. mesto — dodaj/odstrani na obstoječi mreži */}
+          {koMatches.some(m => m.stage === 'sf') && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-gray-700">Tekma za 3. mesto</p>
+                <p className="text-xs text-gray-500">
+                  {koMatches.some(m => m.stage === 'third_place')
+                    ? 'Trenutno se igra. Če je ne igrate, jo odstranite — polfinalna poraženca si delita 3. mesto.'
+                    : 'Trenutno se NE igra. Polfinalna poraženca si delita 3. mesto.'}
+                </p>
+              </div>
+              <button onClick={toggleThirdPlace}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${koMatches.some(m => m.stage === 'third_place')
+                  ? 'bg-white text-red-600 border-red-200 hover:bg-red-50'
+                  : 'bg-bocce-green text-white border-bocce-green hover:bg-bocce-green-light'}`}>
+                {koMatches.some(m => m.stage === 'third_place') ? 'Odstrani tekmo za 3. mesto' : 'Dodaj tekmo za 3. mesto'}
+              </button>
+            </div>
+          )}
+
+          {/* Ponovni žreb kasnejših krogov (četrtfinale, polfinale …) */}
+          {redrawableRounds().length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 space-y-4">
+              <p className="text-sm font-semibold text-gray-700">Ponovni žreb kroga</p>
+              {redrawableRounds().map(r => {
+                const method = koRoundMethod[r.stage] ?? 'auto'
+                return (
+                  <div key={r.stage} className="border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">{stageLabel(r.stage)}</span>
+                      {!r.feederComplete && <span className="text-xs text-gray-400 italic">prejšnji krog ni dokončan</span>}
+                    </div>
+                    {r.feederComplete && (
+                      <>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {([['auto', 'Samodejno'], ['draw', 'Žreb'], ['manual', 'Ročno']] as const).map(([m, label]) => (
+                            <button key={m}
+                              onClick={() => {
+                                setKoRoundMethod(prev => ({ ...prev, [r.stage]: m }))
+                                if (m === 'manual') {
+                                  const ids = r.advancing.map(a => a.teamId)
+                                  const p: Array<[string, string]> = []
+                                  for (let i = 0; i < ids.length; i += 2) p.push([ids[i], ids[i + 1] ?? ''])
+                                  setKoRoundPairs(prev => ({ ...prev, [r.stage]: p }))
+                                }
+                              }}
+                              className={`text-xs px-3 py-1 rounded-lg border transition-colors ${method === m
+                                ? 'bg-bocce-green text-white border-bocce-green'
+                                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {method === 'manual' && (
+                          <div className="space-y-1.5 mb-2">
+                            {(koRoundPairs[r.stage] ?? []).map((pair, pi) => (
+                              <div key={pi} className="flex items-center gap-1.5">
+                                <span className="text-xs text-gray-400 w-5">{pi + 1}.</span>
+                                <select value={pair[0]}
+                                  onChange={e => setKoRoundPairs(prev => { const arr = (prev[r.stage] ?? []).map(x => [...x] as [string, string]); arr[pi][0] = e.target.value; return { ...prev, [r.stage]: arr } })}
+                                  className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                                  <option value="">—</option>
+                                  {r.advancing.map(a => <option key={a.teamId} value={a.teamId}>{a.label}</option>)}
+                                </select>
+                                <span className="text-xs text-gray-400">–</span>
+                                <select value={pair[1]}
+                                  onChange={e => setKoRoundPairs(prev => { const arr = (prev[r.stage] ?? []).map(x => [...x] as [string, string]); arr[pi][1] = e.target.value; return { ...prev, [r.stage]: arr } })}
+                                  className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                                  <option value="">—</option>
+                                  {r.advancing.map(a => <option key={a.teamId} value={a.teamId}>{a.label}</option>)}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button onClick={() => redrawRound(r.stage)}
+                          className="text-xs bg-bocce-gold text-white px-3 py-1.5 rounded-lg hover:bg-bocce-gold-light transition-colors">
+                          Sestavi krog
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+              <p className="text-[11px] text-gray-500">Sestava kroga pobriše rezultate tega in vseh naslednjih krogov.</p>
+            </div>
+          )}
+
           <p className="text-sm text-gray-500 italic">
             Za vnos rezultatov pojdi na <Link to={`/turnirji/${id}`} className="text-bocce-green hover:underline">javno stran turnirja</Link>.
           </p>

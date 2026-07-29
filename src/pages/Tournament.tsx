@@ -3,8 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { loadTournamentPlayers } from '../lib/tournamentPlayers'
+import { useRealtimeTable, mergeRowById } from '../lib/useRealtimeTable'
 import { useAuth } from '../contexts/AuthContext'
-import GroupBracket from '../components/GroupBracket'
+import GroupBracket, { type JudgeOption } from '../components/GroupBracket'
 import KnockoutBracket from '../components/KnockoutBracket'
 import RoundRobinStandings from '../components/RoundRobinStandings'
 import ScoreModal from '../components/ScoreModal'
@@ -158,7 +159,7 @@ export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind 
 // ──────────────────────────────────────────────────────────────
 export function TournamentDetail() {
   const { id } = useParams<{ id: string }>()
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, profile } = useAuth()
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [groups, setGroups] = useState<TournamentGroup[]>([])
@@ -171,25 +172,39 @@ export function TournamentDetail() {
   const [loadError, setLoadError] = useState('')
   const [regForm, setRegForm] = useState({ partner: '' })
   const [players, setPlayers] = useState<PlayerOption[]>([])
+  const [judges, setJudges] = useState<JudgeOption[]>([])
   const [regLoading, setRegLoading] = useState(false)
   const [regError, setRegError] = useState('')
 
   useEffect(() => { load() }, [id])
+
+  // Sodniki (za izbiro pri skupinah) — role sodnik/admin.
+  useEffect(() => {
+    supabase.from('users').select('id, full_name')
+      .in('role', ['judge', 'admin', 'super_admin']).order('full_name')
+      .then(({ data }) => setJudges((data ?? []) as JudgeOption[]))
+  }, [])
 
   useEffect(() => {
     if (tournament?.format === 'knockout') setTab('knockout')
     else if (tournament?.format === 'round_robin') setTab('standings')
   }, [tournament?.format])
 
-  // Real-time subscription for match updates
-  useEffect(() => {
-    if (!id) return
-    const channel = supabase
-      .channel(`tournament-${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${id}` }, () => { load() })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [id])
+  // Realtime: vpis rezultata pride kot UPDATE tekme. Vrstica je v payloadu,
+  // zato je posodobimo lokalno — brez ene same dodatne poizvedbe. Prej je vsak
+  // vpis sprožil poln load() pri vseh gledalcih turnirja hkrati.
+  useRealtimeTable<Match>({
+    channel: id ? `tournament-${id}` : null,
+    table: 'matches',
+    filter: id ? `tournament_id=eq.${id}` : undefined,
+    onUpdate: row => {
+      // Embedi (team_a, team_b z registracijami) niso del payloada, zato jih
+      // mergeRowById ohrani.
+      setMatches(prev => mergeRowById(prev, row))
+    },
+    onStructuralChange: () => { load() },
+    onResume: () => { load() },
+  })
 
   async function load() {
     if (!id) return
@@ -257,7 +272,8 @@ export function TournamentDetail() {
 
     if (match.group_id) {
       await propagateGroup(match.group_id)
-    } else if (tournament?.format === 'knockout' && match.stage !== 'group') {
+    } else if (match.stage !== 'group') {
+      // Izločilna tekma (velja za oba formata — čisti izločilni IN skupine→izločilni).
       await propagateKnockout(match.tournament_id)
     }
 
@@ -267,7 +283,7 @@ export function TournamentDetail() {
   async function propagateGroup(groupId: string) {
     const { data: fresh } = await supabase
       .from('matches')
-      .select('id, match_number, status, is_bye, team_a_id, team_b_id, winner_id')
+      .select('id, match_number, status, is_bye, team_a_id, team_b_id, winner_id, score_a, score_b')
       .eq('group_id', groupId)
     if (!fresh) return
 
@@ -417,7 +433,9 @@ export function TournamentDetail() {
                 matches={groupMatches.filter(m => m.group_id === g.id)}
                 registrations={registrations}
                 isAdmin={isAdmin}
+                canScore={isAdmin || (profile?.role === 'judge' && g.judge_id === user?.id)}
                 onEnterScore={setScoreMatch}
+                judges={judges}
               />
             ))
           )}
@@ -430,6 +448,9 @@ export function TournamentDetail() {
           registrations={registrations}
           isAdmin={isAdmin}
           onEnterScore={setScoreMatch}
+          judges={judges}
+          userId={user?.id}
+          userIsJudge={profile?.role === 'judge'}
         />
       )}
 
@@ -439,6 +460,8 @@ export function TournamentDetail() {
           registrations={registrations}
           isAdmin={isAdmin}
           onEnterScore={setScoreMatch}
+          groups={groups}
+          judges={judges}
         />
       )}
 

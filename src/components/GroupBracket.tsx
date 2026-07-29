@@ -1,5 +1,10 @@
+import { useState } from 'react'
+import { supabase } from '../supabase'
+import LaneInput from './LaneInput'
 import { matchTypeLabel, teamDisplayName } from '../engines/tournament'
 import type { TournamentGroup, Match, TournamentRegistration, GroupTeam, MatchType } from '../types'
+
+export interface JudgeOption { id: string; full_name: string | null }
 
 const TYPE_COLORS: Record<MatchType, string> = {
   zm:      'bg-green-50 border-green-300 text-green-800',
@@ -41,11 +46,13 @@ interface MatchRowProps {
   match: EnrichedMatch
   onEnterScore: (match: Match) => void
   isAdmin: boolean
+  canScore: boolean
+  judgeName?: string | null
 }
 
-function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
-  const nameA = match.teamA ? teamDisplayName(match.teamA.registration) : (match.is_bye ? '—' : '???')
-  const nameB = match.is_bye ? 'Prosta' : (match.teamB ? teamDisplayName(match.teamB.registration) : '???')
+function MatchRow({ match, onEnterScore, isAdmin, canScore, judgeName }: MatchRowProps) {
+  const nameA = match.teamA ? teamDisplayName(match.teamA.registration, true) : (match.is_bye ? '—' : '???')
+  const nameB = match.is_bye ? 'Prosta' : (match.teamB ? teamDisplayName(match.teamB.registration, true) : '???')
   const winnerIsA = match.winner && match.winner.id === match.team_a_id
   const winnerIsB = match.winner && match.winner.id === match.team_b_id
   const colors = TYPE_COLORS[match.match_type] ?? TYPE_COLORS.zm
@@ -61,16 +68,30 @@ function MatchRow({ match, onEnterScore, isAdmin }: MatchRowProps) {
 
       <div className="space-y-1">
         <div className={`flex items-center justify-between gap-2 px-2 py-1 rounded ${winnerIsA ? 'bg-white/70 font-semibold' : ''}`}>
-          <span className="text-sm truncate flex-1">{nameA}</span>
+          <span className="text-sm break-words leading-tight flex-1">{nameA}</span>
           <ScoreBadge score={match.score_a} isWinner={!!winnerIsA} />
         </div>
         <div className={`flex items-center justify-between gap-2 px-2 py-1 rounded ${winnerIsB ? 'bg-white/70 font-semibold' : ''} ${match.is_bye ? 'text-gray-400' : ''}`}>
-          <span className="text-sm truncate flex-1">{nameB}</span>
+          <span className="text-sm break-words leading-tight flex-1">{nameB}</span>
           <ScoreBadge score={match.is_bye ? 0 : match.score_b} isWinner={!!winnerIsB} />
         </div>
       </div>
 
-      {isAdmin && !match.is_bye && match.team_a_id && match.team_b_id && (
+      {!match.is_bye && (isAdmin || match.lane_number || judgeName) && (
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-2 text-xs text-gray-500">
+          {isAdmin ? (
+            <span className="flex items-center gap-1.5">
+              Steza:
+              <LaneInput matchId={match.id} initial={match.lane_number ?? ''} />
+            </span>
+          ) : match.lane_number ? (
+            <span>Steza {match.lane_number}</span>
+          ) : null}
+          {judgeName && <span>{(isAdmin || match.lane_number) ? '· ' : ''}Sodnik: {judgeName}</span>}
+        </div>
+      )}
+
+      {canScore && !match.is_bye && match.team_a_id && match.team_b_id && (
         <button onClick={() => onEnterScore(match)}
           className={`mt-2 w-full text-xs py-1 rounded transition-colors
             ${match.winner_id
@@ -88,10 +109,29 @@ interface Props {
   matches: Match[]
   registrations: TournamentRegistration[]
   isAdmin: boolean
+  /** Ali sme trenutni uporabnik vnašati rezultate te skupine (admin ali sodnik skupine). */
+  canScore?: boolean
   onEnterScore: (match: Match) => void
+  judges?: JudgeOption[]
 }
 
-export default function GroupBracket({ group, matches, registrations, isAdmin, onEnterScore }: Props) {
+export default function GroupBracket({ group, matches, registrations, isAdmin, canScore, onEnterScore, judges = [] }: Props) {
+  const mayScore = canScore ?? isAdmin
+  const [venue, setVenue] = useState(group.venue_name ?? '')
+  const [judgeId, setJudgeId] = useState(group.judge_id ?? '')
+  const [venueSaved, setVenueSaved] = useState(false)
+  const [judgeSaved, setJudgeSaved] = useState(false)
+  const saveVenue = async () => {
+    const { error } = await supabase.from('tournament_groups').update({ venue_name: venue.trim() || null }).eq('id', group.id)
+    if (!error) { setVenueSaved(true); setTimeout(() => setVenueSaved(false), 1500) }
+  }
+  const saveJudge = async (v: string) => {
+    setJudgeId(v)
+    const { error } = await supabase.from('tournament_groups').update({ judge_id: v || null }).eq('id', group.id)
+    if (!error) { setJudgeSaved(true); setTimeout(() => setJudgeSaved(false), 1500) }
+  }
+  const judgeName = judges.find(j => j.id === group.judge_id)?.full_name ?? null
+
   const regMap: Record<string, TournamentRegistration> = {}
   for (const reg of registrations) regMap[reg.id] = reg
 
@@ -123,7 +163,7 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
       <div className="bg-bocce-green px-4 py-3 flex items-center justify-between">
         <h3 className="text-white font-semibold">
           Skupina {group.group_number}
-          {group.venue_name && <span className="text-green-200 text-sm ml-2">— {group.venue_name}</span>}
+          {venue && <span className="text-green-200 text-sm ml-2">— {venue}</span>}
         </h3>
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium
           ${group.status === 'completed' ? 'bg-bocce-gold text-white' : 'bg-green-700 text-green-100'}`}>
@@ -131,12 +171,37 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
         </span>
       </div>
 
+      {/* Lokacija + sodnik skupine */}
+      {isAdmin ? (
+        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex flex-wrap items-center gap-2">
+          <span className="flex-1 min-w-[130px] flex items-center gap-1">
+            <input value={venue} onChange={e => setVenue(e.target.value)} onBlur={saveVenue}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              placeholder="Lokacija (prostoročno)"
+              className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white" />
+            {venueSaved && <span className="text-green-600 text-[11px] font-medium">✓</span>}
+          </span>
+          <span className="flex items-center gap-1 max-w-[45%]">
+            <select value={judgeId} onChange={e => saveJudge(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white min-w-0">
+              <option value="">— Sodnik —</option>
+              {judges.map(j => <option key={j.id} value={j.id}>{j.full_name}</option>)}
+            </select>
+            {judgeSaved && <span className="text-green-600 text-[11px] font-medium">✓</span>}
+          </span>
+        </div>
+      ) : judgeName ? (
+        <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 text-xs text-gray-500">
+          Sodnik: {judgeName}
+        </div>
+      ) : null}
+
       <div className="p-4">
         {groupMatches.length === 0 ? (
           <p className="text-gray-400 text-sm italic text-center py-4">Žreb še ni opravljen</p>
         ) : (
           groupMatches.map(m => (
-            <MatchRow key={m.id} match={m} isAdmin={isAdmin} onEnterScore={onEnterScore} />
+            <MatchRow key={m.id} match={m} isAdmin={isAdmin} canScore={mayScore} onEnterScore={onEnterScore} judgeName={judgeName} />
           ))
         )}
       </div>
@@ -148,13 +213,13 @@ export default function GroupBracket({ group, matches, registrations, isAdmin, o
             {qualifiers[1] && (
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-bocce-gold text-white text-xs font-bold flex items-center justify-center">1</span>
-                <span className="text-sm font-medium">{teamDisplayName(qualifiers[1].registration)}</span>
+                <span className="text-sm font-medium">{teamDisplayName(qualifiers[1].registration, true)}</span>
               </div>
             )}
             {qualifiers[2] && (
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-gray-400 text-white text-xs font-bold flex items-center justify-center">2</span>
-                <span className="text-sm font-medium">{teamDisplayName(qualifiers[2].registration)}</span>
+                <span className="text-sm font-medium">{teamDisplayName(qualifiers[2].registration, true)}</span>
               </div>
             )}
           </div>
