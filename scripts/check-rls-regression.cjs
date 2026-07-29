@@ -183,7 +183,8 @@ async function cleanup() {
   // tiho ne shrani — natanko sredi tekmovanja. Zato se preverjata oba koraka.
   if (judgeOwn.data?.[0]) {
     const { data: disc } = await admin.from('league_season_disciplines')
-      .insert({ season_id: season.id, name: 'ZZ Test disciplina', order_num: 1 })
+      .insert({ season_id: season.id, name: 'ZZ Test disciplina',
+                discipline_type: 'trojka', order_num: 1 })
       .select().single();
 
     if (disc) {
@@ -203,13 +204,22 @@ async function cleanup() {
   }
 
   // ── igralec ────────────────────────────────────────────────────────────
+  // RETURNING mora navesti javne stolpce: goli .select() pomeni RETURNING *,
+  // kar po PII popravku pade na zaprtih stolpcih (emso, email ...) in bi
+  // celoten UPDATE zavrnilo. Aplikacija (updateProfile) je prevedena enako.
   const playerProfile = await player.client.from('users')
-    .update({ full_name: 'Testni igralec (spremenjeno)' }).eq('id', player.id).select();
+    .update({ full_name: 'Testni igralec (spremenjeno)' }).eq('id', player.id)
+    .select('id, full_name');
   check('igralec UREJA svoj profil', wrote(playerProfile), playerProfile.error?.message);
 
+  // Tudi tu RETURNING z javnimi stolpci — z golim .select() bi preverba
+  // "uspela" zaradi permission denied na stolpcih, ne zaradi RLS vrstic,
+  // torej ne bi merila tistega, kar trdi.
   const playerOther = await player.client.from('users')
-    .update({ full_name: 'VDOR' }).eq('id', judge.id).select();
+    .update({ full_name: 'VDOR' }).eq('id', judge.id).select('id, full_name');
   check('igralec NE ureja tujega profila', !wrote(playerOther));
+  const { data: judgeName } = await admin.from('users').select('full_name').eq('id', judge.id).single();
+  check('  ... in tuje ime v bazi ni spremenjeno', judgeName.full_name !== 'VDOR');
 
   const playerWrite = await player.client.from('league_fixtures')
     .update({ home_score: 42 }).eq('id', myFixture.id).select();
