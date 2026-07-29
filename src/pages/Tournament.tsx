@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { loadTournamentPlayers } from '../lib/tournamentPlayers'
+import { useRealtimeTable, mergeRowById } from '../lib/useRealtimeTable'
 import { useAuth } from '../contexts/AuthContext'
 import GroupBracket from '../components/GroupBracket'
 import KnockoutBracket from '../components/KnockoutBracket'
@@ -181,15 +182,21 @@ export function TournamentDetail() {
     else if (tournament?.format === 'round_robin') setTab('standings')
   }, [tournament?.format])
 
-  // Real-time subscription for match updates
-  useEffect(() => {
-    if (!id) return
-    const channel = supabase
-      .channel(`tournament-${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `tournament_id=eq.${id}` }, () => { load() })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [id])
+  // Realtime: vpis rezultata pride kot UPDATE tekme. Vrstica je v payloadu,
+  // zato je posodobimo lokalno — brez ene same dodatne poizvedbe. Prej je vsak
+  // vpis sprožil poln load() pri vseh gledalcih turnirja hkrati.
+  useRealtimeTable<Match>({
+    channel: id ? `tournament-${id}` : null,
+    table: 'matches',
+    filter: id ? `tournament_id=eq.${id}` : undefined,
+    onUpdate: row => {
+      // Embedi (team_a, team_b z registracijami) niso del payloada, zato jih
+      // mergeRowById ohrani.
+      setMatches(prev => mergeRowById(prev, row))
+    },
+    onStructuralChange: () => { load() },
+    onResume: () => { load() },
+  })
 
   async function load() {
     if (!id) return
