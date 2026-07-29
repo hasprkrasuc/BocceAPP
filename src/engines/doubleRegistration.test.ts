@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFemale, eligibleSecondaryTeams, isAgeEligible, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible, seasonStartYear } from './doubleRegistration'
+import { isFemale, eligibleSecondaryTeams, isAgeEligible, isAgeEligibleByYear, ageInYear, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible, seasonStartYear } from './doubleRegistration'
 
 describe('isFemale', () => {
   it('prepozna "Ž" kot žensko', () => {
@@ -161,6 +161,36 @@ describe('isAgeEligible — po sezoni (letnik, ne dnevna starost)', () => {
   })
   it('pikčasti datum + referenčno leto', () => {
     expect(isAgeEligible('12.1.2002', 2025)).toBe(true)
+  })
+})
+
+describe('isAgeEligibleByYear — enak izid kot iz polnega datuma', () => {
+  it('letnik 2002 JE upravičen za ref 2025', () => {
+    expect(isAgeEligibleByYear(2002, 2025)).toBe(true)
+  })
+  it('letnik 2002 NI upravičen za ref 2026', () => {
+    expect(isAgeEligibleByYear(2002, 2026)).toBe(false)
+  })
+  it('se ujema z različico iz polnega datuma (pravilo je po letniku)', () => {
+    for (const [dob, year] of [['2002-01-12', 2002], ['12.1.2002', 2002], ['2003-05-01', 2003]] as const) {
+      for (const ref of [2025, 2026]) {
+        expect(isAgeEligibleByYear(year, ref)).toBe(isAgeEligible(dob, ref))
+      }
+    }
+  })
+  it('brez letnice ni upravičen', () => {
+    expect(isAgeEligibleByYear(null, 2025)).toBe(false)
+    expect(isAgeEligibleByYear(undefined, 2025)).toBe(false)
+  })
+})
+
+describe('ageInYear', () => {
+  it('vrne razliko let', () => {
+    expect(ageInYear(1990, 2026)).toBe(36)
+  })
+  it('brez letnice vrne null', () => {
+    expect(ageInYear(null, 2026)).toBeNull()
+    expect(ageInYear(0, 2026)).toBeNull()
   })
 })
 

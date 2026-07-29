@@ -24,12 +24,16 @@ export default function UserAdmin() {
   useEffect(() => { load() }, [])
 
   async function load() {
+    // Ta stran prikazuje in išče po e-pošti, torej po občutljivem stolpcu.
+    // users_sensitive adminu vrne vse vrstice, navadnemu uporabniku pa samo
+    // njegovo — meja je v pogledu, ne v tej komponenti.
+    //
     // PostgREST vrne največ 1000 vrstic na poizvedbo — beremo po straneh, da
     // dobimo VSE uporabnike (sicer se seznam odreže ~pri črki S).
     const pageSize = 1000
     const all: UserProfile[] = []
     for (let from = 0; ; from += pageSize) {
-      const { data, error } = await supabase.from('users').select('*')
+      const { data, error } = await supabase.from('users_sensitive').select('*')
         .order('full_name').range(from, from + pageSize - 1)
       if (error) break
       all.push(...((data ?? []) as UserProfile[]))

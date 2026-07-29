@@ -13,7 +13,9 @@ import type { UserProfile } from '../types'
  * po straneh. Rezultat je urejen po imenu.
  */
 export async function loadTournamentPlayers(
-  columns = 'id, full_name, club, club_id, date_of_birth',
+  // birth_year namesto date_of_birth: poln datum je občutljiv, za starostne
+  // kategorije pa zadošča letnik.
+  columns = 'id, full_name, club, club_id, birth_year',
 ): Promise<UserProfile[]> {
   const pageSize = 1000
   const all: UserProfile[] = []

@@ -161,6 +161,46 @@ async function cleanup() {
     .update({ home_score: 42 }).eq('id', myFixture.id).select();
   check('igralec NE piše po tekmah', !wrote(playerWrite));
 
+  // ── osebni podatki (2026-07-29_users_pii_authenticated.sql) ────────────
+  // Doslej je vsak prijavljen račun prebral emso, e-pošto, telefon in naslov
+  // VSEH uporabnikov. To so preverbe, da je tisto okno zaprto.
+  const piiDirect = await player.client.from('users').select('emso, email, phone').limit(1);
+  check('igralec NE bere PII neposredno iz users', !!piiDirect.error,
+        piiDirect.error ? '' : 'poizvedba je uspela');
+
+  const piiStar = await player.client.from('users').select('*').limit(1);
+  check('igralec NE bere users(*)', !!piiStar.error,
+        piiStar.error ? '' : 'poizvedba je uspela');
+
+  const piiPublic = await player.client.from('users').select('id, full_name, club').limit(1);
+  check('igralec BERE javne stolpce users', !piiPublic.error, piiPublic.error?.message);
+
+  const dobDirect = await player.client.from('users').select('date_of_birth').limit(1);
+  check('igralec NE bere polnega datuma rojstva', !!dobDirect.error);
+
+  const licDirect = await player.client.from('users').select('license_number').limit(1);
+  check('igralec NE bere stevilke licence', !!licDirect.error);
+
+  const yearPublic = await anon.from('users').select('id, birth_year').limit(1);
+  check('anon BERE letnico rojstva (birth_year)', !yearPublic.error, yearPublic.error?.message);
+
+  const dobAnon = await anon.from('users').select('date_of_birth').limit(1);
+  check('anon NE bere polnega datuma rojstva', !!dobAnon.error);
+
+  const ownView = await player.client.from('users_sensitive').select('id, phone').eq('id', player.id);
+  check('igralec BERE svoj profil prek users_sensitive',
+        !ownView.error && (ownView.data || []).length === 1, ownView.error?.message);
+
+  const othersView = await player.client.from('users_sensitive').select('id').neq('id', player.id);
+  check('igralec prek pogleda NE vidi tujih profilov', (othersView.data || []).length === 0);
+
+  const anonView = await anon.from('users_sensitive').select('id').limit(1);
+  check('anon NE doseže users_sensitive', !!anonView.error || (anonView.data || []).length === 0);
+
+  const adminView = await adminUser.client.from('users_sensitive').select('id').limit(5);
+  check('admin BERE profile prek users_sensitive',
+        !adminView.error && (adminView.data || []).length > 0, adminView.error?.message);
+
   // ── admin ──────────────────────────────────────────────────────────────
   const adminSeason = await adminUser.client.from('league_seasons')
     .update({ name: `ZZ Test RLS ${STAMP} (admin)` }).eq('id', season.id).select();

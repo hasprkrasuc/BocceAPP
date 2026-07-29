@@ -163,14 +163,10 @@ export default function TournamentEdit() {
     // ki tudi igrajo) — sicer bi manjkali na seznamu.
     const all = await loadTournamentPlayers()
     // Mladinske serije/turnirji: pokaži le igralce letnika 2008 ali mlajše.
-    // Igralci brez (razberljivega) datuma rojstva se izpustijo, ker starosti ni
-    // mogoče preveriti. date_of_birth je lahko ISO ali pikčasti BZS zapis, zato
-    // uporabimo birthYearOf (robusten razčlenjevalnik).
+    // Igralci brez znane letnice se izpustijo, ker starosti ni mogoče preveriti.
+    // birth_year je izpeljan v bazi iz date_of_birth (ISO ali pikčasti BZS zapis).
     if (isYouthCategory(tournament?.category)) {
-      setPlayers(all.filter(p => {
-        const y = birthYearOf(p.date_of_birth)
-        return y !== null && parseInt(y, 10) >= YOUTH_MIN_BIRTH_YEAR
-      }))
+      setPlayers(all.filter(p => p.birth_year != null && p.birth_year >= YOUTH_MIN_BIRTH_YEAR))
     } else {
       setPlayers(all)
     }
