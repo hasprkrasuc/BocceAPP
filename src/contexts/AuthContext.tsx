@@ -27,7 +27,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   async function fetchProfile(userId: string) {
-    const { data } = await supabase.from('users').select('*').eq('id', userId).single()
+    // Lasten profil vključuje občutljive stolpce (telefon), zato gre skozi
+    // users_sensitive — na public.users jih vloga authenticated ne sme brati.
+    // Pogled vrstice omeji na lasten profil (ali na vse, če je uporabnik admin),
+    // zato je filter po id tu nujen.
+    const { data } = await supabase.from('users_sensitive').select('*').eq('id', userId).single()
     setProfile(data)
     setLoading(false)
   }
@@ -51,9 +55,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function updateProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
-    const { data, error } = await supabase
-      .from('users').update(updates).eq('id', user!.id).select().single()
+    // Brez .select(): RETURNING bi zahteval bralno pravico na vseh vrnjenih
+    // stolpcih, teh pa authenticated na public.users nima. Osvežen profil
+    // preberemo iz pogleda.
+    const { error } = await supabase.from('users').update(updates).eq('id', user!.id)
     if (error) throw error
+    const { data, error: readError } = await supabase
+      .from('users_sensitive').select('*').eq('id', user!.id).single()
+    if (readError) throw readError
     setProfile(data)
     return data
   }

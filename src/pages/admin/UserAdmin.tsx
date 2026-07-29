@@ -23,7 +23,10 @@ export default function UserAdmin() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data } = await supabase.from('users').select('*').order('full_name')
+    // Ta stran prikazuje in išče po e-pošti, torej po občutljivem stolpcu.
+    // users_sensitive adminu vrne vse vrstice, navadnemu uporabniku pa samo
+    // njegovo — meja je v pogledu, ne v tej komponenti.
+    const { data } = await supabase.from('users_sensitive').select('*').order('full_name')
     setUsers((data ?? []) as UserProfile[])
     setLoading(false)
   }

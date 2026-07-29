@@ -84,7 +84,9 @@ async function fetchAllExistingUsers(): Promise<ExistingUser[]> {
   const PAGE = 1000
   for (;;) {
     const { data, error } = await supabase
-      .from('users')
+      // emso je občutljiv stolpec — na public.users ga authenticated ne bere.
+      // Uvoz teče pod adminom, ki mu users_sensitive vrne vse vrstice.
+      .from('users_sensitive')
       .select('id, full_name, emso, club_id, date_of_birth')
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)

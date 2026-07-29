@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
+import { USER_PUBLIC_COLS } from '../../lib/userColumns'
 import { bergerFixtures, MAX_BERGER_TEAMS } from '../../engines/berger'
 import { phase2Fixtures, validateDraw, type Phase2Team } from '../../engines/leagueGroups'
 import { calculateStandings, type MatchResultWithDisc } from '../../engines/league'
@@ -186,7 +187,9 @@ export default function LeagueAdmin() {
   async function loadTeams() {
     if (!selectedSeason) return
     const { data } = await supabase.from('league_teams')
-      .select('*, captain:users(*), league_team_players(*, player:users(*))')
+      // Izrecni stolpci namesto users(*): občutljivih stolpcev vloga
+      // authenticated ne sme brati, zvezdica bi vrnila 401.
+      .select(`*, captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`)
       .eq('season_id', selectedSeason.id)
       .order('draw_number', { ascending: true, nullsFirst: false })
       .order('club_name')
