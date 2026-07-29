@@ -24,15 +24,37 @@ const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
+/**
+ * Bere scripts/.env.local IN korenski .env.local (odjemalčev).
+ *
+ * Anon ključ je v obeh datotekah, a pod različnima imenoma: scripts uporablja
+ * ANON_KEY, odjemalec VITE_SUPABASE_ANON_KEY. Skripta sprejme oboje, da ga ni
+ * treba prepisovati sem in tja — je javen ključ, ki gre tako ali tako v bundle.
+ */
 function loadEnv() {
-  const env = {};
-  fs.readFileSync(path.join(__dirname, '.env.local'), 'utf8')
-    .split(/\r?\n/).forEach(l => {
-      const m = l.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/);
-      if (m) env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+  const raw = {};
+  for (const file of [path.join(__dirname, '.env.local'),
+                      path.join(__dirname, '..', '.env.local')]) {
+    if (!fs.existsSync(file)) continue;
+    fs.readFileSync(file, 'utf8').split(/\r?\n/).forEach(l => {
+      const m = l.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (m && !raw[m[1]]) raw[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
     });
-  for (const k of ['SUPABASE_URL', 'SERVICE_ROLE_KEY', 'ANON_KEY']) {
-    if (!env[k]) throw new Error(`Manjka ${k} v scripts/.env.local`);
+  }
+
+  const env = {
+    SUPABASE_URL:     raw.SUPABASE_URL     || raw.VITE_SUPABASE_URL,
+    SERVICE_ROLE_KEY: raw.SERVICE_ROLE_KEY || raw.SUPABASE_SERVICE_ROLE_KEY,
+    ANON_KEY:         raw.ANON_KEY         || raw.VITE_SUPABASE_ANON_KEY,
+  };
+
+  const missing = Object.entries(env).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) {
+    throw new Error(
+      `Manjka ${missing.join(', ')}. Pričakovano v scripts/.env.local ` +
+      '(SUPABASE_URL, SERVICE_ROLE_KEY, ANON_KEY) ali v korenskem .env.local ' +
+      '(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY).',
+    );
   }
   return env;
 }
@@ -54,7 +76,8 @@ function wrote(res) {
 
 const STAMP = Date.now();
 const PASSWORD = 'Test-RLS-Regresija-2026!';
-const created = { users: [], season: null, teams: [], fixtures: [], results: [] };
+const created = { users: [], season: null, teams: [], fixtures: [], results: [],
+                  disciplines: [], tournament: null };
 
 async function makeUser(tag, role) {
   const email = `test.rls.${tag}.${STAMP}@example.invalid`;
@@ -75,6 +98,13 @@ async function makeUser(tag, role) {
 }
 
 async function cleanup() {
+  await admin.from('league_match_discipline_results').delete()
+    .in('match_result_id', created.results.length ? created.results : ['00000000-0000-0000-0000-000000000000']);
+  for (const id of created.disciplines) await admin.from('league_season_disciplines').delete().eq('id', id);
+  if (created.tournament) {
+    await admin.from('tournament_registrations').delete().eq('tournament_id', created.tournament);
+    await admin.from('tournaments').delete().eq('id', created.tournament);
+  }
   for (const id of created.results) await admin.from('league_match_results').delete().eq('id', id);
   for (const id of created.fixtures) await admin.from('league_fixtures').delete().eq('id', id);
   for (const id of created.teams) await admin.from('league_teams').delete().eq('id', id);
@@ -148,14 +178,48 @@ async function cleanup() {
     .update({ home_score: 9 }).eq('id', otherFixture.id).select();
   check('sodnik NE ureja tuje tekme', !wrote(judgeOtherFixture));
 
+  // Discipline: save() v LeagueMatchScoresheet.tsx najprej POBRIŠE obstoječe
+  // discipline in jih vpiše znova. Če politika za brisanje manjka, se zapisnik
+  // tiho ne shrani — natanko sredi tekmovanja. Zato se preverjata oba koraka.
+  if (judgeOwn.data?.[0]) {
+    const { data: disc } = await admin.from('league_season_disciplines')
+      .insert({ season_id: season.id, name: 'ZZ Test disciplina',
+                discipline_type: 'trojka', order_num: 1 })
+      .select().single();
+
+    if (disc) {
+      created.disciplines.push(disc.id);
+      const drIns = await judge.client.from('league_match_discipline_results')
+        .insert({ match_result_id: judgeOwn.data[0].id, discipline_id: disc.id,
+                  home_score: 13, away_score: 7 }).select();
+      check('sodnik VPIŠE discipline svojega zapisnika', wrote(drIns), drIns.error?.message);
+
+      const drDel = await judge.client.from('league_match_discipline_results')
+        .delete().eq('match_result_id', judgeOwn.data[0].id).select();
+      check('sodnik POBRIŠE discipline (pot shranjevanja zapisnika)', wrote(drDel),
+            drDel.error?.message);
+    } else {
+      check('sodnik VPIŠE discipline svojega zapisnika', false, 'discipline ni bilo mogoce ustvariti');
+    }
+  }
+
   // ── igralec ────────────────────────────────────────────────────────────
+  // RETURNING mora navesti javne stolpce: goli .select() pomeni RETURNING *,
+  // kar po PII popravku pade na zaprtih stolpcih (emso, email ...) in bi
+  // celoten UPDATE zavrnilo. Aplikacija (updateProfile) je prevedena enako.
   const playerProfile = await player.client.from('users')
-    .update({ full_name: 'Testni igralec (spremenjeno)' }).eq('id', player.id).select();
+    .update({ full_name: 'Testni igralec (spremenjeno)' }).eq('id', player.id)
+    .select('id, full_name');
   check('igralec UREJA svoj profil', wrote(playerProfile), playerProfile.error?.message);
 
+  // Tudi tu RETURNING z javnimi stolpci — z golim .select() bi preverba
+  // "uspela" zaradi permission denied na stolpcih, ne zaradi RLS vrstic,
+  // torej ne bi merila tistega, kar trdi.
   const playerOther = await player.client.from('users')
-    .update({ full_name: 'VDOR' }).eq('id', judge.id).select();
+    .update({ full_name: 'VDOR' }).eq('id', judge.id).select('id, full_name');
   check('igralec NE ureja tujega profila', !wrote(playerOther));
+  const { data: judgeName } = await admin.from('users').select('full_name').eq('id', judge.id).single();
+  check('  ... in tuje ime v bazi ni spremenjeno', judgeName.full_name !== 'VDOR');
 
   const playerWrite = await player.client.from('league_fixtures')
     .update({ home_score: 42 }).eq('id', myFixture.id).select();
@@ -209,6 +273,28 @@ async function cleanup() {
   const adminFixture = await adminUser.client.from('league_fixtures')
     .update({ venue: 'Testno igrišče' }).eq('id', otherFixture.id).select();
   check('admin UREJA katerokoli tekmo', wrote(adminFixture), adminFixture.error?.message);
+
+  // Brisanje prijave na turnir: prva različica migracije je politiko
+  // "Admin izbriše prijave" odstranila in je ni nadomestila, ker
+  // tournament_registrations ni bila v zanki. Ta preverba to ujame.
+  const { data: trn } = await admin.from('tournaments')
+    .insert({ name: `ZZ Test turnir ${STAMP}`, date: '2099-01-01',
+              location: 'Testno', category: 'men', status: 'registration_open' })
+    .select().single();
+  if (trn) {
+    created.tournament = trn.id;
+    const { data: reg } = await admin.from('tournament_registrations')
+      .insert({ tournament_id: trn.id, player1_id: player.id }).select().single();
+    if (reg) {
+      const adminDelReg = await adminUser.client.from('tournament_registrations')
+        .delete().eq('id', reg.id).select();
+      check('admin IZBRIŠE prijavo na turnir', wrote(adminDelReg), adminDelReg.error?.message);
+    } else {
+      check('admin IZBRIŠE prijavo na turnir', false, 'prijave ni bilo mogoce ustvariti');
+    }
+  } else {
+    check('admin IZBRIŠE prijavo na turnir', false, 'turnirja ni bilo mogoce ustvariti');
+  }
 
   // ── vloge (2026-07-29_set_user_role.sql) ───────────────────────────────
   // Neposreden update tuje vrstice ujame nič vrstic in TIHO ne naredi nič —
