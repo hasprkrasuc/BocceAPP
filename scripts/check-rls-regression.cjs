@@ -54,7 +54,8 @@ function wrote(res) {
 
 const STAMP = Date.now();
 const PASSWORD = 'Test-RLS-Regresija-2026!';
-const created = { users: [], season: null, teams: [], fixtures: [], results: [] };
+const created = { users: [], season: null, teams: [], fixtures: [], results: [],
+                  disciplines: [], tournament: null };
 
 async function makeUser(tag, role) {
   const email = `test.rls.${tag}.${STAMP}@example.invalid`;
@@ -75,6 +76,13 @@ async function makeUser(tag, role) {
 }
 
 async function cleanup() {
+  await admin.from('league_match_discipline_results').delete()
+    .in('match_result_id', created.results.length ? created.results : ['00000000-0000-0000-0000-000000000000']);
+  for (const id of created.disciplines) await admin.from('league_season_disciplines').delete().eq('id', id);
+  if (created.tournament) {
+    await admin.from('tournament_registrations').delete().eq('tournament_id', created.tournament);
+    await admin.from('tournaments').delete().eq('id', created.tournament);
+  }
   for (const id of created.results) await admin.from('league_match_results').delete().eq('id', id);
   for (const id of created.fixtures) await admin.from('league_fixtures').delete().eq('id', id);
   for (const id of created.teams) await admin.from('league_teams').delete().eq('id', id);
@@ -148,6 +156,30 @@ async function cleanup() {
     .update({ home_score: 9 }).eq('id', otherFixture.id).select();
   check('sodnik NE ureja tuje tekme', !wrote(judgeOtherFixture));
 
+  // Discipline: save() v LeagueMatchScoresheet.tsx najprej POBRIŠE obstoječe
+  // discipline in jih vpiše znova. Če politika za brisanje manjka, se zapisnik
+  // tiho ne shrani — natanko sredi tekmovanja. Zato se preverjata oba koraka.
+  if (judgeOwn.data?.[0]) {
+    const { data: disc } = await admin.from('league_season_disciplines')
+      .insert({ season_id: season.id, name: 'ZZ Test disciplina', order_num: 1 })
+      .select().single();
+
+    if (disc) {
+      created.disciplines.push(disc.id);
+      const drIns = await judge.client.from('league_match_discipline_results')
+        .insert({ match_result_id: judgeOwn.data[0].id, discipline_id: disc.id,
+                  home_score: 13, away_score: 7 }).select();
+      check('sodnik VPIŠE discipline svojega zapisnika', wrote(drIns), drIns.error?.message);
+
+      const drDel = await judge.client.from('league_match_discipline_results')
+        .delete().eq('match_result_id', judgeOwn.data[0].id).select();
+      check('sodnik POBRIŠE discipline (pot shranjevanja zapisnika)', wrote(drDel),
+            drDel.error?.message);
+    } else {
+      check('sodnik VPIŠE discipline svojega zapisnika', false, 'discipline ni bilo mogoce ustvariti');
+    }
+  }
+
   // ── igralec ────────────────────────────────────────────────────────────
   const playerProfile = await player.client.from('users')
     .update({ full_name: 'Testni igralec (spremenjeno)' }).eq('id', player.id).select();
@@ -209,6 +241,28 @@ async function cleanup() {
   const adminFixture = await adminUser.client.from('league_fixtures')
     .update({ venue: 'Testno igrišče' }).eq('id', otherFixture.id).select();
   check('admin UREJA katerokoli tekmo', wrote(adminFixture), adminFixture.error?.message);
+
+  // Brisanje prijave na turnir: prva različica migracije je politiko
+  // "Admin izbriše prijave" odstranila in je ni nadomestila, ker
+  // tournament_registrations ni bila v zanki. Ta preverba to ujame.
+  const { data: trn } = await admin.from('tournaments')
+    .insert({ name: `ZZ Test turnir ${STAMP}`, date: '2099-01-01',
+              location: 'Testno', category: 'men', status: 'registration_open' })
+    .select().single();
+  if (trn) {
+    created.tournament = trn.id;
+    const { data: reg } = await admin.from('tournament_registrations')
+      .insert({ tournament_id: trn.id, player1_id: player.id }).select().single();
+    if (reg) {
+      const adminDelReg = await adminUser.client.from('tournament_registrations')
+        .delete().eq('id', reg.id).select();
+      check('admin IZBRIŠE prijavo na turnir', wrote(adminDelReg), adminDelReg.error?.message);
+    } else {
+      check('admin IZBRIŠE prijavo na turnir', false, 'prijave ni bilo mogoce ustvariti');
+    }
+  } else {
+    check('admin IZBRIŠE prijavo na turnir', false, 'turnirja ni bilo mogoce ustvariti');
+  }
 
   const adminInsert = await adminUser.client.from('league_teams')
     .insert({ season_id: season.id, club_name: `ZZ Test C ${STAMP}`, short_name: 'ZZC' }).select();
