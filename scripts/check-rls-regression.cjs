@@ -210,6 +210,33 @@ async function cleanup() {
     .update({ venue: 'Testno igrišče' }).eq('id', otherFixture.id).select();
   check('admin UREJA katerokoli tekmo', wrote(adminFixture), adminFixture.error?.message);
 
+  // ── vloge (2026-07-29_set_user_role.sql) ───────────────────────────────
+  // Neposreden update tuje vrstice ujame nič vrstic in TIHO ne naredi nič —
+  // zato gre menjava vloge prek set_user_role.
+  const roleDirect = await adminUser.client.from('users')
+    .update({ role: 'judge' }).eq('id', player.id);
+  const { data: afterDirect } = await admin.from('users').select('role').eq('id', player.id).single();
+  check('neposreden update tuje vloge NE deluje (zato RPC)',
+        afterDirect.role !== 'judge', roleDirect.error?.message);
+
+  const roleRpc = await adminUser.client.rpc('set_user_role',
+    { target_id: player.id, new_role: 'judge' });
+  const { data: afterRpc } = await admin.from('users').select('role').eq('id', player.id).single();
+  check('admin SPREMENI tujo vlogo prek set_user_role',
+        !roleRpc.error && afterRpc.role === 'judge', roleRpc.error?.message);
+
+  const roleByPlayer = await player.client.rpc('set_user_role',
+    { target_id: judge.id, new_role: 'admin' });
+  const { data: afterByPlayer } = await admin.from('users').select('role').eq('id', judge.id).single();
+  check('igralec NE more spreminjati vlog',
+        !!roleByPlayer.error && afterByPlayer.role !== 'admin');
+
+  const roleSuper = await adminUser.client.rpc('set_user_role',
+    { target_id: player.id, new_role: 'super_admin' });
+  const { data: afterSuper } = await admin.from('users').select('role').eq('id', player.id).single();
+  check('admin NE more podeliti super_admin',
+        !!roleSuper.error && afterSuper.role !== 'super_admin');
+
   const adminInsert = await adminUser.client.from('league_teams')
     .insert({ season_id: season.id, club_name: `ZZ Test C ${STAMP}`, short_name: 'ZZC' }).select();
   check('admin USTVARI ekipo', wrote(adminInsert), adminInsert.error?.message);
