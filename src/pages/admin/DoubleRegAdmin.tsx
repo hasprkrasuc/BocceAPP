@@ -23,7 +23,7 @@ export default function DoubleRegAdmin() {
       .from('double_registrations')
       .select(`
         *,
-        player:users(id, full_name, club, date_of_birth),
+        player:users(id, full_name, club, birth_year),
         primary_team:league_teams!primary_team_id(id, club_name, season:league_seasons(name, tier)),
         secondary_team:league_teams!secondary_team_id(id, club_name, season:league_seasons(name, tier))
       `)

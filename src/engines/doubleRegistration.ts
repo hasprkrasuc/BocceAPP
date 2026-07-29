@@ -209,6 +209,37 @@ export function isAgeEligible(
   return year - dob.getFullYear() <= DOUBLE_REG_MAX_AGE
 }
 
+/**
+ * Ista presoja kot `isAgeEligible`, a iz same letnice rojstva.
+ *
+ * Javne strani polnega datuma rojstva ne berejo več (osebni podatek); dobijo
+ * izpeljano `users.birth_year`. Ker je pravilo tako ali tako po letniku, je ta
+ * različica enako natančna — ne gre za približek.
+ */
+export function isAgeEligibleByYear(
+  birthYear: number | null | undefined,
+  refYear?: number | null,
+): boolean {
+  if (!birthYear) return false
+  const year = refYear ?? new Date().getFullYear()
+  return year - birthYear <= DOUBLE_REG_MAX_AGE
+}
+
+/**
+ * Starost po letniku (razlika let), kot jo navaja športna evidenca.
+ *
+ * Ni starost na dan natančno — za to je potreben poln datum rojstva, ki je
+ * občutljiv in ga javne strani ne berejo. Kdor ima poln datum (lasten profil,
+ * admin), naj uporabi `calcAge`.
+ */
+export function ageInYear(
+  birthYear: number | null | undefined,
+  refYear?: number | null,
+): number | null {
+  if (!birthYear) return null
+  return (refYear ?? new Date().getFullYear()) - birthYear
+}
+
 /** Prikaz tier-a za UI */
 export const DR_TIER_LABELS: Record<string, string> = {
   super_liga:      'Super liga',

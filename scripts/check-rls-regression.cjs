@@ -175,6 +175,18 @@ async function cleanup() {
   const piiPublic = await player.client.from('users').select('id, full_name, club').limit(1);
   check('igralec BERE javne stolpce users', !piiPublic.error, piiPublic.error?.message);
 
+  const dobDirect = await player.client.from('users').select('date_of_birth').limit(1);
+  check('igralec NE bere polnega datuma rojstva', !!dobDirect.error);
+
+  const licDirect = await player.client.from('users').select('license_number').limit(1);
+  check('igralec NE bere stevilke licence', !!licDirect.error);
+
+  const yearPublic = await anon.from('users').select('id, birth_year').limit(1);
+  check('anon BERE letnico rojstva (birth_year)', !yearPublic.error, yearPublic.error?.message);
+
+  const dobAnon = await anon.from('users').select('date_of_birth').limit(1);
+  check('anon NE bere polnega datuma rojstva', !!dobAnon.error);
+
   const ownView = await player.client.from('users_sensitive').select('id, phone').eq('id', player.id);
   check('igralec BERE svoj profil prek users_sensitive',
         !ownView.error && (ownView.data || []).length === 1, ownView.error?.message);

@@ -43,7 +43,10 @@ export interface UserProfile {
   role: UserRole
   phone?: string | null
   license_number?: string | null
+  /** Poln datum rojstva — občutljiv; berljiv le prek `users_sensitive`. */
   date_of_birth?: string | null
+  /** Letnica rojstva, izpeljana v bazi iz `date_of_birth`. Javno berljiva, samo za branje. */
+  birth_year?: number | null
   photo_url?: string | null
   gender?: string | null
   // Razširjeni osebni podatki (iz BZS registracije)

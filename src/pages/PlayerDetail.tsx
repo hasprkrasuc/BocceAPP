@@ -4,7 +4,7 @@ import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import type { UserProfile, PlayerStatistics, DoubleRegistration } from '../types'
-import { isAgeEligible, calcAge, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams, birthYearOf, seasonStartYear, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
+import { isAgeEligibleByYear, ageInYear, isFemale, eligibleSecondaryTeams, latestSeasonsOnly, primaryTeams, seasonStartYear, DR_STATUS_LABELS, DR_STATUS_COLORS, DR_TIER_LABELS } from '../engines/doubleRegistration'
 import { computeRangLestvica, computePlayerSeasonStats, RANG_CATEGORY_LABELS, type PlayerSeasonSummary, type RangCategory } from '../lib/rangLestvica'
 import { findPlayerRankInCategories, type CategoryPlayerRank } from '../lib/findPlayerRank'
 
@@ -114,9 +114,12 @@ export default function PlayerDetail() {
   )
   if (!player) return <div className="text-center py-12 text-gray-400">Igralec ni najden</div>
 
-  const birthYear = birthYearOf(player.date_of_birth)
-  const age = calcAge(player.date_of_birth)
-  const drEligible = isAgeEligible(player.date_of_birth, drRefYear)
+  // Poln datum rojstva ni javno berljiv (osebni podatek) — javni profil dela
+  // z izpeljano letnico. Pravilo za dvojno registracijo je po letniku, zato je
+  // presoja enako natančna; starost je letnik, ne starost na dan.
+  const birthYear = player.birth_year ?? null
+  const age = ageInYear(player.birth_year)
+  const drEligible = isAgeEligibleByYear(player.birth_year, drRefYear)
 
   // Statistika za vse odigrane sezone (najnovejša zgoraj)
   const displaySeasons = [...seasonStats].sort((a, b) =>
@@ -187,12 +190,8 @@ export default function PlayerDetail() {
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-gray-800 mb-3">{player.full_name}</h1>
           <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
-            {player.license_number && (
-              <>
-                <dt className="text-gray-500">Številka licence</dt>
-                <dd className="font-medium text-gray-800">{player.license_number}</dd>
-              </>
-            )}
+            {/* Številka licence je odstranjena iz javnega profila — vidita jo
+                lastnik profila in admin (users_sensitive). */}
             {birthYear && (
               <>
                 <dt className="text-gray-500">Leto rojstva</dt>
