@@ -378,10 +378,15 @@ export function LeagueDetail() {
     const [{ data: s }, { data: t }, { data: f }] = await Promise.all([
       supabase.from('league_seasons').select('*').eq('id', id).single(),
       supabase.from('league_teams').select(`*, captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`).eq('season_id', id),
-      supabase.from('league_fixtures').select(`*, home_team:league_teams!league_fixtures_home_team_id_fkey(*), away_team:league_teams!league_fixtures_away_team_id_fkey(*)`).eq('season_id', id).order('round_number').order('scheduled_date'),
+      // Brez vgnezdenih ekip: sezona ima ~9 ekip, tekem pa ~80, zato je embed
+      // prinesel isto ekipo do 160-krat (izmerjeno 71 KB → 35 KB). Ekipe so že
+      // naložene v poizvedbi nad to vrstico; spodaj jih pripnemo po id-ju, zato
+      // prikazna koda (f.home_team?.club_name) ostane nespremenjena.
+      supabase.from('league_fixtures').select('*').eq('season_id', id).order('round_number').order('scheduled_date'),
     ])
     setSeason(s as LeagueSeason)
-    setTeams((t ?? []) as LeagueTeam[])
+    const teamList = (t ?? []) as LeagueTeam[]
+    setTeams(teamList)
 
     // imena glavnih sodnikov (za pasico) — ločena poizvedba, brez krhkih embedov
     const fixturesRaw = (f ?? []) as LeagueFixture[]
@@ -391,8 +396,13 @@ export function LeagueDetail() {
       const { data: cj } = await supabase.from('users').select('id, full_name').in('id', cjIds)
       cjMap = Object.fromEntries((cj ?? []).map((u: { id: string; full_name: string | null }) => [u.id, u.full_name]))
     }
+    // Ena ekipa = en objekt, deljen med vsemi njenimi tekmami. Ko bo ekipa dobila
+    // logotip, ga bo imela vsaka tekma brez dodatnega prenosa.
+    const teamById = new Map(teamList.map(tm => [tm.id, tm]))
     setFixtures(fixturesRaw.map(fx => ({
       ...fx,
+      home_team: teamById.get(fx.home_team_id),
+      away_team: teamById.get(fx.away_team_id),
       chief_judge: fx.chief_judge_id ? { full_name: cjMap[fx.chief_judge_id] ?? null } : null,
     })))
 
