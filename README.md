@@ -130,15 +130,20 @@ uveljavil. Pravila so v [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Tri stvari o tej mapi, ki niso očitne:
 
-- **Abecedni vrstni red ni kronološki.** V rabi sta dve shemi poimenovanja
-  (`2026-07-29_*` z vezaji in `20260628_*` brez), znak `-` pa se razvrsti pred
-  števkami — zato se junijske datoteke izpišejo *za* julijskimi. Kronologijo
-  beri iz datuma v imenu, ne iz vrstnega reda izpisa.
-- **`00_schema.sql` in `01_out_of_band_schema.sql` sta izhodišče**, ne navadni
-  migraciji: prva je osnovna shema, druga dokumentira objekte, ki so nastali
-  mimo repozitorija.
-- **`*_ROLLBACK.sql` ni migracija.** To je ročni povratek za primer, ko gre kaj
-  narobe; nikoli je ne poganjaj kot del zaporedja.
+- **Poimenovanje je `YYYYMMDD_NN_opis.sql`**, kjer `NN` uredi datoteke znotraj
+  istega dne. Abecedni vrstni red je zato hkrati veljaven vrstni red izvajanja
+  — nova migracija dobi naslednjo prosto številko tistega dne.
+- **`00_schema.sql`, `01_out_of_band_schema.sql` in
+  `02_out_of_band_schema_dopolnitev.sql` so izhodišče**, ne navadne migracije:
+  prva je osnovna shema, drugi dve dokumentirata objekte, ki so nastali mimo
+  repozitorija.
+- **Zaporedje znotraj dneva ni okras.** Primer: `20260729_02_users_pii_authenticated`
+  ustvari pogled `users_sensitive`, `20260729_04_users_birth_year_2_restrict` pa
+  ga pobriše in ustvari znova z `birth_year`. Ob zamenjanem vrstnem redu bi se
+  baza zgradila brez napake, pogled pa bi ostal brez stolpca.
+
+Povratke (`*_ROLLBACK.sql`) najdeš v `supabase/rollback/`. Namenoma niso v
+`migrations/`, da jih noben izvajalec ne požene kot del zaporedja.
 
 Ključni pojmi:
 

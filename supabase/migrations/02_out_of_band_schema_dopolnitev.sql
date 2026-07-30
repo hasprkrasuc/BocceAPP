@@ -6,7 +6,7 @@
 --
 --   1) tabela `double_registrations` — v produkciji obstaja in jo aplikacija
 --      polno uporablja, a je nobena migracija ne ustvari. Hkrati
---      `20260628_security_hardening.sql` in `2026-07-29_perf_*` nanjo
+--      `20260628_02_security_hardening.sql` in `20260729_*_perf_*` nanjo
 --      postavljajo politike in indekse — na sveži bazi bi to padlo z
 --      "relation does not exist".
 --
@@ -27,8 +27,8 @@
 --    Definicija je povzeta po produkciji (stolpci in tuji ključi prek
 --    PostgREST introspekcije) in po `src/types.ts`:
 --      DoubleRegStatus = 'pending' | 'approved' | 'rejected'
---    RLS politike zanjo so v 20260628_security_hardening.sql (javno branje +
---    admin pisanje), indeksi pa v 2026-07-29_perf_fk_indexes.sql.
+--    RLS politike zanjo so v 20260628_02_security_hardening.sql (javno branje +
+--    admin pisanje), indeksi pa v 20260729_01_perf_fk_indexes.sql.
 -- ─────────────────────────────────────────────────────────────
 create table if not exists public.double_registrations (
   id                uuid primary key default gen_random_uuid(),

@@ -1,7 +1,7 @@
 -- Varnost: osebni podatki v `users` so dostopni vsakemu prijavljenemu uporabniku.
 --
 -- Stanje pred to migracijo:
---   - `20260628_restrict_users_pii_from_anon.sql` je občutljive stolpce odvzel
+--   - `20260628_01_restrict_users_pii_from_anon.sql` je občutljive stolpce odvzel
 --     samo vlogi `anon`.
 --   - Vloga `authenticated` ima privzete Supabase pravice na celotni tabeli,
 --     politika `"Javno branje" for select using (true)` pa ne omejuje vrstic.
@@ -22,21 +22,21 @@
 -- Ta migracija samo DODAJA (funkcija + pogled). Nič ne odvzame, zato je varna,
 -- medtem ko v produkciji teče stara koda.
 --
--- Odvzem pravic je namenoma v 2026-07-29_users_birth_year_2_restrict.sql, ki se
+-- Odvzem pravic je namenoma v 20260729_04_users_birth_year_2_restrict.sql, ki se
 -- požene ŠELE PO deployu kode. Razlog je krožnost: nova koda potrebuje pogled
 -- `users_sensitive` od tu, stara koda pa še bere `users` s `select('*')`. Če bi
 -- odvzem stal v tej migraciji, bi eno ali drugo padlo na 401 — ne glede na to,
 -- ali gre prej koda ali migracija.
 --
 -- Zaporedje izdaje:
---   1. ta migracija + 2026-07-29_users_birth_year_1_add.sql   (samo dodata)
+--   1. ta migracija + 20260729_03_users_birth_year_1_add.sql   (samo dodata)
 --   2. deploy kode iz tega PR
---   3. 2026-07-29_users_birth_year_2_restrict.sql             (odvzame pravice)
+--   3. 20260729_04_users_birth_year_2_restrict.sql             (odvzame pravice)
 
 -- ─────────────────────────────────────────────────────────────
 -- 1) Je trenutni uporabnik admin?
 --    (`create or replace` — enaka definicija je tudi v
---     2026-07-29_perf_rls_initplan.sql, zato je vrstni red uvedbe vseeno.)
+--     20260729_06_perf_rls_initplan.sql, zato je vrstni red uvedbe vseeno.)
 -- ─────────────────────────────────────────────────────────────
 create or replace function public.is_admin()
 returns boolean

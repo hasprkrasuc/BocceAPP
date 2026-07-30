@@ -19,7 +19,7 @@
 - **Novo:** `src/engines/knockout.ts` — čiste funkcije (bracketSize, seedOrder, firstStageForSize, buildKnockoutBracket, knockoutPropagation, seedRegistrations).
 - **Novo:** `src/engines/knockout.test.ts` — Vitest testi.
 - **Novo:** `src/lib/knockoutDraw.ts` — DB helperja `drawKnockout`, `propagateKnockout`.
-- **Novo:** `supabase/migrations/2026-07-04_knockout_format.sql` — zapis migracij v repo.
+- **Novo:** `supabase/migrations/20260704_02_knockout_format.sql` — zapis migracij v repo.
 - **Sprememba:** `src/types.ts` (`Tournament.format`, `MatchStage` += `r128`).
 - **Sprememba:** `src/engines/tournament.ts` (`stageLabel` += r128).
 - **Sprememba:** `src/pages/admin/TournamentAdmin.tsx` (izbirnik formata).
@@ -32,11 +32,11 @@
 ## Task 1: Migraciji baze (format + razširjen stage CHECK)
 
 **Files:**
-- Create: `supabase/migrations/2026-07-04_knockout_format.sql`
+- Create: `supabase/migrations/20260704_02_knockout_format.sql`
 
 - [ ] **Step 1: Zapiši migracijsko datoteko v repo**
 
-Create `supabase/migrations/2026-07-04_knockout_format.sql`:
+Create `supabase/migrations/20260704_02_knockout_format.sql`:
 
 ```sql
 -- Direktni izločilni sistem za DP: format turnirja + večji izločilni krogi.
@@ -69,7 +69,7 @@ Expected: `format_col = text`; `stage_def` vsebuje `r128`, `r64`, `r32`.
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C /c/Users/HP/BocceAPP add supabase/migrations/2026-07-04_knockout_format.sql
+git -C /c/Users/HP/BocceAPP add supabase/migrations/20260704_02_knockout_format.sql
 git -C /c/Users/HP/BocceAPP commit -m "feat(db): tournaments.format + razširjen matches.stage CHECK za knock-out"
 ```
 

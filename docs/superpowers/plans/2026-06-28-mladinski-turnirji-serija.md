@@ -16,7 +16,7 @@
 
 | Datoteka | Odgovornost |
 |---|---|
-| `supabase/migrations/20260628_youth_tournament_series.sql` | Nova tabela `tournament_series`, stolpca na `tournaments`, `player2_id` nullable, RLS |
+| `supabase/migrations/20260628_03_youth_tournament_series.sql` | Nova tabela `tournament_series`, stolpca na `tournaments`, `player2_id` nullable, RLS |
 | `src/types.ts` (modify) | `TournamentSeries`; `series_id`+`discipline_type` na `Tournament`; `player2_id` nullable |
 | `src/engines/tournamentPlacement.ts` (create) | Čista funkcija: tekme → uvrstitveni koš → točke po igralcih |
 | `src/engines/tournamentPlacement.test.ts` (create) | Testi enginea uvrstitev |
@@ -35,11 +35,11 @@
 ## Task 1: DB migracija
 
 **Files:**
-- Create: `supabase/migrations/20260628_youth_tournament_series.sql`
+- Create: `supabase/migrations/20260628_03_youth_tournament_series.sql`
 
 - [ ] **Step 1: Napiši migracijo**
 
-Ustvari `supabase/migrations/20260628_youth_tournament_series.sql`:
+Ustvari `supabase/migrations/20260628_03_youth_tournament_series.sql`:
 
 ```sql
 -- Serija mladinskih turnirjev (sezona)
@@ -91,7 +91,7 @@ Pričakovano: oba stolpca prisotna; `is_nullable = YES`.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add supabase/migrations/20260628_youth_tournament_series.sql
+git add supabase/migrations/20260628_03_youth_tournament_series.sql
 git commit -m "feat(db): tournament_series + series_id/discipline_type + player2 nullable"
 ```
 

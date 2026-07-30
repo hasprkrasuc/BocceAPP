@@ -8,7 +8,7 @@
 --
 -- Ime "01_" → teče takoj za 00_schema.sql (osnovne tabele) in PRED vsemi
 -- datiranimi migracijami, ki te objekte že uporabljajo (npr.
--- 2026-07-09_import_unique_constraints.sql indeksira clubs; skupinski_sistem
+-- 20260709_02_import_unique_constraints.sql indeksira clubs; skupinski_sistem
 -- FK-a na league_seasons ipd.).
 --
 -- Definicija izvožena iz žive baze 9.7.2026 (information_schema + pg_catalog).
@@ -118,7 +118,7 @@ create policy "Admin write" on public.league_match_discipline_results for all us
 -- ─────────────────────────────────────────────────────────────
 -- 5) users — stolpci in omejitve, dodani mimo repozitorija
 --    (osnovna tabela + politiki "Javno branje"/"Lastni profil" so v 00_schema;
---     column-level grant za anon je v 20260628_restrict_users_pii_from_anon.sql)
+--     column-level grant za anon je v 20260628_01_restrict_users_pii_from_anon.sql)
 -- ─────────────────────────────────────────────────────────────
 alter table public.users add column if not exists gender          text;
 alter table public.users add column if not exists club_id         uuid;
@@ -151,5 +151,5 @@ alter table public.users add constraint users_role_check
   check (role = any (array['player','admin','super_admin','judge']));
 
 -- OPOMBA: prožilca trg_sync_user_club in trg_prevent_role_escalation NISTA tu —
--- vezana sta na svoji funkciji (2026-07-07_sync_user_club.sql,
--- 20260628_security_hardening.sql), ki tečeta pozneje in ju že ustvarita.
+-- vezana sta na svoji funkciji (20260707_01_sync_user_club.sql,
+-- 20260628_02_security_hardening.sql), ki tečeta pozneje in ju že ustvarita.
