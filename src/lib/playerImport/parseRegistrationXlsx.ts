@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx'
 import type { ClubHeader, ParsedPlayer, ParseResult } from './types'
 import { parseBirthDate } from './parseDate'
 import { normalizeEmso } from './emso'
@@ -221,7 +220,13 @@ export function parseRegistrationRows(rows: unknown[][]): ParseResult {
 }
 
 // Ovojnica: File → prvi list → matrika vrstic → parseRegistrationRows
+//
+// `xlsx` se naloži šele tu, ob dejanskem uvozu datoteke. Statični uvoz na vrhu
+// je knjižnico (7 MB v node_modules) vlekel v glavni sveženj, ki ga naloži vsak
+// obiskovalec — tudi neprijavljen gledalec lestvice, ki uvoza ne bo nikoli
+// odprl. Razčlenjevalne funkcije v tej datoteki so čiste in XLSX ne rabijo.
 export async function parseRegistrationFile(file: File): Promise<ParseResult> {
+  const XLSX = await import('xlsx')
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array' })
   const ws = wb.Sheets[wb.SheetNames[0]]
