@@ -15,7 +15,7 @@
 ## Datotečna struktura
 
 **Ustvari:**
-- `supabase/migrations/2026-07-09_add_address_city.sql` — nov stolpec `users.address_city`
+- `supabase/migrations/20260709_01_add_address_city.sql` — nov stolpec `users.address_city`
 - `src/lib/playerImport/types.ts` — skupni tipi
 - `src/lib/playerImport/emso.ts` (+ `.test.ts`) — validacija EMŠO
 - `src/lib/playerImport/parseDate.ts` (+ `.test.ts`) — datum rojstva (Excel serijsko + besedilo)
@@ -37,13 +37,13 @@
 ## Task 1: Setup — migracija, vercel.json, odvisnost
 
 **Files:**
-- Create: `supabase/migrations/2026-07-09_add_address_city.sql`
+- Create: `supabase/migrations/20260709_01_add_address_city.sql`
 - Modify: `vercel.json`
 - Modify: `package.json` (prek npm)
 
 - [ ] **Step 1: Migracija za `address_city`**
 
-Ustvari `supabase/migrations/2026-07-09_add_address_city.sql`:
+Ustvari `supabase/migrations/20260709_01_add_address_city.sql`:
 
 ```sql
 -- Bivališče: kraj (Excel "Kraj" v naslovu). users že ima address_street/house/postal/country.
@@ -80,7 +80,7 @@ Expected: doda se v `devDependencies`, brez napak.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/migrations/2026-07-09_add_address_city.sql vercel.json package.json package-lock.json
+git add supabase/migrations/20260709_01_add_address_city.sql vercel.json package.json package-lock.json
 git commit -m "chore(uvoz): migracija address_city + vercel /api rewrite + @vercel/node"
 ```
 

@@ -1,6 +1,6 @@
 // scripts/check-rls-regression.cjs
 //
-// Regresijski test RLS pravic po prepisu politik (2026-07-29_perf_rls_initplan.sql).
+// Regresijski test RLS pravic po prepisu politik (20260729_06_perf_rls_initplan.sql).
 // Preverja MATRIKO VLOG neposredno proti bazi, mimo UI — politika, ki jo obide
 // surov PostgREST klic, ni politika.
 //
@@ -225,7 +225,7 @@ async function cleanup() {
     .update({ home_score: 42 }).eq('id', myFixture.id).select();
   check('igralec NE piše po tekmah', !wrote(playerWrite));
 
-  // ── osebni podatki (2026-07-29_users_pii_authenticated.sql) ────────────
+  // ── osebni podatki (20260729_02_users_pii_authenticated.sql) ────────────
   // Doslej je vsak prijavljen račun prebral emso, e-pošto, telefon in naslov
   // VSEH uporabnikov. To so preverbe, da je tisto okno zaprto.
   const piiDirect = await player.client.from('users').select('emso, email, phone').limit(1);
@@ -296,7 +296,7 @@ async function cleanup() {
     check('admin IZBRIŠE prijavo na turnir', false, 'turnirja ni bilo mogoce ustvariti');
   }
 
-  // ── vloge (2026-07-29_set_user_role.sql) ───────────────────────────────
+  // ── vloge (20260729_05_set_user_role.sql) ───────────────────────────────
   // Neposreden update tuje vrstice ujame nič vrstic in TIHO ne naredi nič —
   // zato gre menjava vloge prek set_user_role.
   const roleDirect = await adminUser.client.from('users')

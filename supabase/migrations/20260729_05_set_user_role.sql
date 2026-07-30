@@ -14,7 +14,7 @@
 -- Zakaj funkcija in ne RLS politika: politika `for update using (is_admin())`
 -- na `users` bi adminom odprla pisanje po VSEH stolpcih vseh uporabnikov,
 -- vključno z EMŠO in naslovi, ki smo jim branje pravkar zaprli
--- (2026-07-29_users_pii_authenticated.sql). Admin potrebuje eno samo pravico —
+-- (20260729_02_users_pii_authenticated.sql). Admin potrebuje eno samo pravico —
 -- nastaviti vlogo — zato jo dobi natanko to.
 --
 -- Pravilo za super_admin: vlogo `super_admin` sme podeliti ali odvzeti le

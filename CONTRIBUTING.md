@@ -36,7 +36,7 @@ pravice ne potrebuje več. Migracija, ki **doda** stolpec ali pogled, mora priti
 
 Če potrebuješ oboje hkrati, razbij na dva koraka (expand/contract): najprej
 dodaj, deployaj kodo, šele nato odvzemi. Primer je v
-`2026-07-29_users_birth_year_1_add.sql` in `_2_restrict.sql`.
+`20260729_03_users_birth_year_1_add.sql` in `_2_restrict.sql`.
 
 ### 4. `select('*')` na `users` odpove
 

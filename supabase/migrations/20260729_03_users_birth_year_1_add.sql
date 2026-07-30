@@ -11,7 +11,7 @@
 -- Zaporedje izdaje:
 --   1. ta migracija            (stara koda dela naprej, birth_year obstaja)
 --   2. deploy kode iz tega PR  (bere birth_year namesto date_of_birth)
---   3. 2026-07-29_users_birth_year_2_restrict.sql  (odvzem starih stolpcev)
+--   3. 20260729_04_users_birth_year_2_restrict.sql  (odvzem starih stolpcev)
 --
 -- `date_of_birth` je `text` z dvema zapisoma (ISO "1990-01-01" in pikčasti BZS
 -- "1.1.1990"). Prva skupina štirih zaporednih števk je v obeh ravno letnica.

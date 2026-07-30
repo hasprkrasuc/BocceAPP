@@ -1,4 +1,4 @@
--- POVRATEK za 2026-07-29_perf_rls_initplan.sql
+-- POVRATEK za 20260729_06_perf_rls_initplan.sql
 --
 -- Ni del rednega zaporedja migracij. Pognati ROČNO v Supabase SQL editorju,
 -- če se po uvedbi P2 karkoli obnaša narobe — predvsem, če sodnik ne more
