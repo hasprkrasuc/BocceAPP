@@ -8,6 +8,8 @@ import {
   DOUBLE_REG_MAX_AGE,
   DR_TIER_LABELS, DR_STATUS_COLORS, DR_STATUS_LABELS,
 } from '../engines/doubleRegistration'
+import { ROLE_LABELS } from '../lib/roles'
+import AccountLoginSection from '../components/AccountLoginSection'
 
 interface JudgeFixture extends LeagueFixture {
   home_team?: { club_name: string }
@@ -194,10 +196,11 @@ export default function Profile() {
       {profile?.role && profile.role !== 'player' && (
         <div className="mt-4 bg-bocce-gold/10 border border-bocce-gold/30 rounded-xl p-4">
           <p className="text-sm font-medium text-bocce-gold">
-            Tvoja vloga: {profile.role === 'admin' ? 'Administrator' : profile.role === 'super_admin' ? 'Super administrator' : 'Igralec'}
+            Tvoja vloga: {ROLE_LABELS[profile.role]}
           </p>
         </div>
       )}
+      <AccountLoginSection />
 
       {(chiefFixtures.length > 0 || judgeFixtures.length > 0) && (
         <div className="mt-6">

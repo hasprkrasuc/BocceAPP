@@ -2,16 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { UserProfile, UserRole } from '../../types'
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  player: 'Igralec', admin: 'Administrator', super_admin: 'Super admin', judge: 'Sodnik',
-}
-const ROLE_COLORS: Record<UserRole, string> = {
-  player: 'bg-gray-100 text-gray-600',
-  admin: 'bg-bocce-gold/20 text-bocce-gold',
-  super_admin: 'bg-red-100 text-red-600',
-  judge: 'bg-blue-100 text-blue-700',
-}
+import { ROLE_LABELS, ROLE_COLORS, ROLE_ORDER } from '../../lib/roles'
 
 export default function UserAdmin() {
   const { isSuperAdmin } = useAuth()
@@ -131,9 +122,13 @@ export default function UserAdmin() {
                         onChange={e => updateRole(u.id, e.target.value as UserRole)}
                         className={`text-xs px-2 py-1 rounded-full border-0 font-medium cursor-pointer ${ROLE_COLORS[u.role]}`}
                       >
-                        <option value="player">Igralec</option>
-                        <option value="admin">Administrator</option>
-                        <option value="super_admin">Super admin</option>
+                        {/* Možnosti iz ROLE_ORDER, da seznam ne more več zaostati
+                            za tipom UserRole — 'judge' je prej manjkal, čeprav ga
+                            set_user_role dovoli, zato izbirnik pri sodniku ni imel
+                            ujemajoče možnosti. */}
+                        {ROLE_ORDER.map(r => (
+                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                        ))}
                       </select>
                     ) : (
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role]}`}>
