@@ -7,7 +7,10 @@
 -- zato je kazal zastarel naslov.
 --
 -- security definer: trigger teče nad auth.users, pisati pa mora v public.users.
--- Fiksen search_path je zahteva iz 20260628_02_security_hardening.sql.
+-- Fiksen search_path zahteva 20260628_02_security_hardening.sql. Tam je vrednost
+-- '' s popolnoma kvalificiranimi imeni; novejše migracije (20260729_02, _05, _06)
+-- uporabljajo 'public'. Držimo se novejše navade — telo je tako ali tako
+-- kvalificirano (public.users), zato je razlika brez posledic.
 
 create or replace function public.sync_user_email()
 returns trigger

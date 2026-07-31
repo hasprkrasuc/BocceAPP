@@ -24,6 +24,50 @@ export default function AccountLoginSection({ onSkip }: { onSkip?: () => void })
 
   useEffect(() => { isGoogleEnabled().then(setGoogleNaVoljo) }, [])
 
+  // Po vrnitvi z Googla: linkIdentity identiteto le PRIPNE, naslova računa pa
+  // ne spremeni. Zamenja ga strežniška funkcija, ki ga nastavi z email_confirm
+  // (naslov je s prijavo že dokazan, zato pisma ni). Brez tega koraka bi gumb
+  // navidez deloval, naslov pa bi tiho ostal generičen — najslabša odpoved.
+  //
+  // Sprožilca ni: OAuth se vrne kot navadno nalaganje strani, zato ob vsakem
+  // priklopu preverimo, ali je naslov še generičen IN Google že pripet. Po
+  // uspehu naslov ni več generičen, zato se to ne ponovi.
+  useEffect(() => {
+    let odpovedano = false
+
+    async function prevzemiPoVrnitvi() {
+      if (!user || !isGenericEmail(user.email)) return
+
+      const { data: idData } = await supabase.auth.getUserIdentities()
+      if (!(idData?.identities ?? []).some(i => i.provider === 'google')) return
+      if (odpovedano) return
+
+      setStanje('delam')
+      const { data: seja } = await supabase.auth.getSession()
+      const res = await fetch('/api/adopt-google-email', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${seja.session?.access_token ?? ''}` },
+      })
+      const telo = await res.json().catch(() => ({}))
+      if (odpovedano) return
+
+      if (!res.ok) {
+        setStanje('mirno')
+        setNapaka(telo.error ?? 'Zamenjave naslova po povezavi z Googlom ni bilo mogoče dokončati.')
+        return
+      }
+
+      // Žeton seje še nosi star naslov — brez osvežitve bi vmesnik kazal
+      // generičnega, dokler se uporabnik ne bi znova prijavil.
+      await supabase.auth.refreshSession()
+      await refreshProfile()
+      if (!odpovedano) setStanje('mirno')
+    }
+
+    prevzemiPoVrnitvi()
+    return () => { odpovedano = true }
+  }, [user?.id])
+
   async function poveziGoogle() {
     setNapaka('')
     setStanje('delam')
@@ -111,7 +155,8 @@ export default function AccountLoginSection({ onSkip }: { onSkip?: () => void })
       )}
 
       {onSkip && (
-        <button type="button" onClick={onSkip} className="w-full text-center text-sm text-gray-500 hover:text-gray-700">
+        <button type="button" onClick={onSkip} disabled={stanje === 'delam'}
+          className="w-full text-center text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50">
           {stanje === 'caka' ? 'Nadaljuj' : 'Preskoči'}
         </button>
       )}
