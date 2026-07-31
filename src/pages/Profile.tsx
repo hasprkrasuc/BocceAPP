@@ -9,6 +9,7 @@ import {
   DR_TIER_LABELS, DR_STATUS_COLORS, DR_STATUS_LABELS,
 } from '../engines/doubleRegistration'
 import { ROLE_LABELS } from '../lib/roles'
+import AccountLoginSection from '../components/AccountLoginSection'
 
 interface JudgeFixture extends LeagueFixture {
   home_team?: { club_name: string }
@@ -199,6 +200,7 @@ export default function Profile() {
           </p>
         </div>
       )}
+      <AccountLoginSection />
 
       {(chiefFixtures.length > 0 || judgeFixtures.length > 0) && (
         <div className="mt-6">
