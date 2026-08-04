@@ -109,6 +109,32 @@ export function buildKnockoutBracket(
   return buildBracketFromFirstRound(pairsFromSeededTeams(seededTeamIds), opts)
 }
 
+/** Ena tekma naslednjega kroga (npr. 1/16) v konfiguraciji z dodatnim predkolom:
+ *  `direct` (direktni napredovalec z bye) igra proti zmagovalcu predtekme
+ *  `extraA`–`extraB` (dva dodatna napredovalca). */
+export interface PreRoundSlot {
+  direct: string | null
+  extraA: string | null
+  extraB: string | null
+}
+
+/**
+ * Pari PRVEGA kroga (predkolo) za ročno razporejeno konfiguracijo z dodatnim
+ * predkolom, izraženo po tekmah NASLEDNJEGA kroga. Za vsako tekmo naslednjega
+ * kroga vrne dva para: bye direktne ekipe + predtekmo med dodatnima ekipama.
+ * Ker buildBracketFromFirstRound veže par 2k in 2k+1 v isto tekmo naslednjega
+ * kroga, direktna ekipa in zmagovalec predtekme pristaneta skupaj (1 direktna
+ * proti 1 predtekmi). Vrne 2×N parov; N tekem naslednjega kroga.
+ */
+export function preRoundFirstRoundPairs(slots: PreRoundSlot[]): Array<[string | null, string | null]> {
+  const pairs: Array<[string | null, string | null]> = []
+  for (const s of slots) {
+    pairs.push([s.direct ?? null, null])            // bye direktne ekipe
+    pairs.push([s.extraA ?? null, s.extraB ?? null]) // predtekma dveh dodatnih
+  }
+  return pairs
+}
+
 export interface KoMatchRow {
   id: string
   stage: MatchStage

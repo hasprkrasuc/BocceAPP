@@ -5,7 +5,7 @@ import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel 
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
 import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
-import { pairsFromSeededTeams, KO_STAGE_ORDER } from '../../engines/knockout'
+import { pairsFromSeededTeams, preRoundFirstRoundPairs, KO_STAGE_ORDER } from '../../engines/knockout'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
@@ -92,6 +92,14 @@ export default function TournamentEdit() {
   // Način + ročni pari na krog (za ponovni žreb)
   const [koRoundMethod, setKoRoundMethod] = useState<Record<string, 'auto' | 'draw' | 'manual'>>({})
   const [koRoundPairs, setKoRoundPairs] = useState<Record<string, Array<[string, string]>>>({})
+  // Konfiguracija z dodatnim predkolom: način + ročni razpored po tekmah naslednjega
+  // kroga (vsak slot = 1 direktna ekipa proti predtekmi dveh dodatnih).
+  type KoPreSlot = { direct: string; extraA: string; extraB: string }
+  const [koExtraMethod, setKoExtraMethod] = useState<'auto' | 'manual'>('auto')
+  const [koPreSlots, setKoPreSlots] = useState<KoPreSlot[]>([])
+  // Ali je za to konfiguracijo mogoča ročna razporeditev (vsaka tekna naslednjega
+  // kroga = natanko 1 direktna + 1 predtekma; velja za standardna števila skupin).
+  const [koPreEditable, setKoPreEditable] = useState(false)
 
   useEffect(() => { load() }, [id])
 
@@ -599,6 +607,37 @@ export default function TournamentEdit() {
     return pairsFromSeededTeams([...winners, ...runners.reverse()])
   }
 
+  /** Razdeli napredovalce na direktne (skupine 4/5) in dodatne (skupine 3),
+   *  urejene po nosilnem vrstnem redu (najprej zmagovalci, nato drugi; po skupini). */
+  function splitQualifiers(quals: KoQualifier[]): { direct: KoQualifier[]; extra: KoQualifier[] } {
+    const sizeByGroup = new Map(groups.map(g => [g.group_number, g.group_size ?? 4]))
+    const isExtra = (gn: number) => (sizeByGroup.get(gn) ?? 4) === 3
+    const ord = (qs: KoQualifier[]) => [
+      ...qs.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber),
+      ...qs.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber),
+    ]
+    return { direct: ord(quals.filter(q => !isExtra(q.groupNumber))), extra: ord(quals.filter(q => isExtra(q.groupNumber))) }
+  }
+
+  /** Privzeti ročni razpored predkola iz SAMODEJNE mreže: za vsako tekmo naslednjega
+   *  kroga izlušči direktno ekipo (bye) in predtekmo (dve dodatni). `editable` pove,
+   *  ali je ta konfiguracija sploh primerna za ročni razpored (vsaka tekma naslednjega
+   *  kroga = natanko 1 bye + 1 predtekma; velja za standardna števila skupin). */
+  function defaultPreSlots(quals: KoQualifier[]): { slots: KoPreSlot[]; editable: boolean } {
+    const { direct, extra } = splitQualifiers(quals)
+    const pairs = pairsFromSeededTeams([...direct.map(q => q.teamId), ...extra.map(q => q.teamId)])
+    const slots: KoPreSlot[] = []
+    let editable = pairs.length >= 2 && pairs.length % 2 === 0
+    for (let k = 0; 2 * k + 1 < pairs.length; k++) {
+      const a = pairs[2 * k], b = pairs[2 * k + 1]
+      const aIsBye = (a[0] == null) !== (a[1] == null)   // natanko ena stran zasedena
+      const bIsReal = b[0] != null && b[1] != null       // predtekma dveh ekip
+      if (!aIsBye || !bIsReal) editable = false
+      slots.push({ direct: a[0] ?? a[1] ?? '', extraA: b?.[0] ?? '', extraB: b?.[1] ?? '' })
+    }
+    return { slots, editable }
+  }
+
   /** Naloži napredovalce (ko odpreš zavihek Izločilni del) + pripravi privzete ročne pare. */
   async function loadKoQualifiers() {
     const quals = await fetchQualifiers()
@@ -609,6 +648,18 @@ export default function TournamentEdit() {
       setKoPairs(autoSeedPairs(quals).map(([a, b]) => [a ?? '', b ?? ''] as [string, string]))
     } else {
       setKoPairs([])
+    }
+    // Konfiguracija z dodatnim predkolom: pripravi privzeti ročni razpored po tekmah 1/16.
+    const confirmedN = registrations.filter(r => r.status === 'confirmed').length
+    const dist = suggestGroupDistribution(confirmedN, groups.length || undefined)
+    if (dist.extraStage) {
+      const { slots, editable } = defaultPreSlots(quals)
+      setKoPreSlots(slots)
+      setKoPreEditable(editable)
+      if (!editable) setKoExtraMethod('auto')
+    } else {
+      setKoPreSlots([])
+      setKoPreEditable(false)
     }
   }
 
@@ -672,23 +723,36 @@ export default function TournamentEdit() {
    */
   async function generateKnockoutWithPreRound(dist: GroupDistribution) {
     const quals = await fetchQualifiers()
-    const sizeByGroup = new Map(groups.map(g => [g.group_number, g.group_size ?? 4]))
-    const isExtraGroup = (groupNumber: number) => (sizeByGroup.get(groupNumber) ?? 4) === 3
-    // Nosilni vrstni red znotraj skupine napredovalcev: najprej zmagovalci
-    // (1. mesto), nato drugouvrščeni — oboje po številki skupine.
-    const seededIds = (qs: KoQualifier[]) => [
-      ...qs.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber),
-      ...qs.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber),
-    ].map(q => q.teamId)
-    // Direktni najprej (najvišji nosilci → bye), nato dodatni (nižji → predkolo).
-    const seeded = [
-      ...seededIds(quals.filter(q => !isExtraGroup(q.groupNumber))),
-      ...seededIds(quals.filter(q => isExtraGroup(q.groupNumber))),
-    ]
-    if (seeded.length < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
-    await insertKnockoutBracket(id!, pairsFromSeededTeams(seeded), { thirdPlace: koThirdPlace })
+    const { direct, extra } = splitQualifiers(quals)
+    if (direct.length + extra.length < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
+
+    let pairs: Array<[string | null, string | null]>
+    if (koExtraMethod === 'manual' && koPreEditable) {
+      // Ročni razpored po tekmah naslednjega kroga: vsak slot = 1 direktna + 1 predtekma.
+      const directIds = koPreSlots.map(s => s.direct)
+      const extraIds = koPreSlots.flatMap(s => [s.extraA, s.extraB])
+      const wantDirect = new Set(direct.map(q => q.teamId))
+      const wantExtra = new Set(extra.map(q => q.teamId))
+      if (directIds.some(x => !x) || extraIds.some(x => !x)) {
+        setMessage('❌ Ročni razpored: vsa polja morajo biti izpolnjena'); return
+      }
+      if (new Set(directIds).size !== directIds.length || directIds.length !== wantDirect.size || directIds.some(x => !wantDirect.has(x))) {
+        setMessage('❌ Ročni razpored: vsaka direktna ekipa mora biti izbrana natanko enkrat'); return
+      }
+      if (new Set(extraIds).size !== extraIds.length || extraIds.length !== wantExtra.size || extraIds.some(x => !wantExtra.has(x))) {
+        setMessage('❌ Ročni razpored: vsaka dodatna ekipa mora biti izbrana natanko enkrat'); return
+      }
+      pairs = preRoundFirstRoundPairs(koPreSlots)
+    } else {
+      // Samodejno: direktni = najvišji nosilci (bye), dodatni = nižji (predkolo).
+      const seeded = [...direct.map(q => q.teamId), ...extra.map(q => q.teamId)]
+      pairs = pairsFromSeededTeams(seeded)
+    }
+
+    await insertKnockoutBracket(id!, pairs, { thirdPlace: koThirdPlace })
     const preLabel = dist.extraStage ? `predkolo ${stageLabel(dist.extraStage)} → ` : ''
-    setMessage(`✓ Izločilni del ustvarjen — ${preLabel}${stageLabel(dist.directStage)}`)
+    const how = koExtraMethod === 'manual' && koPreEditable ? 'ročno' : 'samodejno'
+    setMessage(`✓ Izločilni del ustvarjen (${how}) — ${preLabel}${stageLabel(dist.directStage)}`)
     load()
   }
 
@@ -1125,11 +1189,66 @@ export default function TournamentEdit() {
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 space-y-3">
             <p className="text-sm text-amber-800 font-medium">Izločilni del</p>
             {dist.extraStage ? (
-              <p className="text-xs text-amber-700">
-                Skupini po 4/5 → direktno v <strong>{stageLabel(dist.directStage)}</strong> ·
-                Skupini po 3 → najprej <strong>{stageLabel(dist.extraStage)}</strong>, nato {stageLabel(dist.directStage)}
-                <br />(dodatni krog — samodejni razpored)
-              </p>
+              <>
+                <p className="text-xs text-amber-700">
+                  Skupini po 4/5 → direktno v <strong>{stageLabel(dist.directStage)}</strong> ·
+                  Skupini po 3 → najprej <strong>{stageLabel(dist.extraStage)}</strong>, nato {stageLabel(dist.directStage)}
+                </p>
+                {koPreEditable ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {([['auto', 'Samodejno (nosilci)'], ['manual', 'Ročno']] as const).map(([m, label]) => (
+                        <button key={m} onClick={() => setKoExtraMethod(m)}
+                          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${koExtraMethod === m
+                            ? 'bg-bocce-green text-white border-bocce-green'
+                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {koExtraMethod === 'manual' && (() => {
+                      const directOpts = splitQualifiers(koQualifiers).direct
+                      const extraOpts = splitQualifiers(koQualifiers).extra
+                      return (
+                        <div className="space-y-1.5 bg-white rounded-lg p-3 border border-amber-100">
+                          <p className="text-xs text-gray-500">
+                            Vsaka vrstica = ena tekma <strong>{stageLabel(dist.directStage)}</strong>: direktna ekipa (bye) proti
+                            zmagovalcu predtekme <strong>{stageLabel(dist.extraStage)}</strong>. Vsaka ekipa natanko enkrat.
+                          </p>
+                          {koPreSlots.map((slot, si) => {
+                            const setSlot = (patch: Partial<KoPreSlot>) =>
+                              setKoPreSlots(prev => prev.map((s, i) => (i === si ? { ...s, ...patch } : s)))
+                            return (
+                              <div key={si} className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs text-gray-400 w-5">{si + 1}.</span>
+                                <select value={slot.direct} onChange={e => setSlot({ direct: e.target.value })}
+                                  className="flex-1 min-w-[120px] border border-gray-300 rounded px-1.5 py-1 text-xs bg-white">
+                                  <option value="">— direktna —</option>
+                                  {directOpts.map(q => <option key={q.teamId} value={q.teamId}>{q.label}</option>)}
+                                </select>
+                                <span className="text-xs text-gray-400">vs predtekma</span>
+                                <select value={slot.extraA} onChange={e => setSlot({ extraA: e.target.value })}
+                                  className="flex-1 min-w-[120px] border border-gray-300 rounded px-1.5 py-1 text-xs bg-white">
+                                  <option value="">—</option>
+                                  {extraOpts.map(q => <option key={q.teamId} value={q.teamId}>{q.label}</option>)}
+                                </select>
+                                <span className="text-xs text-gray-400">–</span>
+                                <select value={slot.extraB} onChange={e => setSlot({ extraB: e.target.value })}
+                                  className="flex-1 min-w-[120px] border border-gray-300 rounded px-1.5 py-1 text-xs bg-white">
+                                  <option value="">—</option>
+                                  {extraOpts.map(q => <option key={q.teamId} value={q.teamId}>{q.label}</option>)}
+                                </select>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+                  </>
+                ) : (
+                  <p className="text-xs text-amber-700">(dodatni krog — samodejni razpored)</p>
+                )}
+              </>
             ) : (
               <>
                 <p className="text-xs text-amber-700">
