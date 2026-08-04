@@ -94,7 +94,7 @@ export default function TournamentEdit() {
   const [koQualifiers, setKoQualifiers] = useState<KoQualifier[]>([])
   const [koPairs, setKoPairs] = useState<Array<[string, string]>>([])
   // Trenutne izločilne tekme (za ponovni žreb kasnejših krogov)
-  type KoMatchRow = { id: string; stage: MatchStage; match_number: number; team_a_id: string | null; team_b_id: string | null; winner_id: string | null; status: string }
+  type KoMatchRow = { id: string; stage: MatchStage; match_number: number; team_a_id: string | null; team_b_id: string | null; winner_id: string | null; status: string; is_bye: boolean }
   const [koMatches, setKoMatches] = useState<KoMatchRow[]>([])
   // Način + ročni pari na krog (za ponovni žreb)
   const [koRoundMethod, setKoRoundMethod] = useState<Record<string, 'auto' | 'draw' | 'manual'>>({})
@@ -107,6 +107,8 @@ export default function TournamentEdit() {
   // Ali je za to konfiguracijo mogoča ročna razporeditev (vsaka tekna naslednjega
   // kroga = natanko 1 direktna + 1 predtekma; velja za standardna števila skupin).
   const [koPreEditable, setKoPreEditable] = useState(false)
+  // Izbrani ekipni "slot" za zamenjavo parov v prvem izločilnem krogu (klik–klik).
+  const [koSwapSource, setKoSwapSource] = useState<{ matchId: string; slot: 'a' | 'b' } | null>(null)
 
   useEffect(() => { load() }, [id])
 
@@ -187,7 +189,7 @@ export default function TournamentEdit() {
           ? supabase.from('group_teams').select(`*, registration:tournament_registrations(${PRIJAVA_SELECT})`).in('group_id', ids)
           : Promise.resolve({ data: [], error: null }),
         supabase.from('matches')
-          .select('id, stage, match_number, team_a_id, team_b_id, winner_id, status')
+          .select('id, stage, match_number, team_a_id, team_b_id, winner_id, status, is_bye')
           .eq('tournament_id', id).neq('stage', 'group'),
       ])
       // Preverimo napako VSAKE poizvedbe, ne le prve. Rezultati se berejo kot
@@ -558,6 +560,41 @@ export default function TournamentEdit() {
   function koPresentStages(): MatchStage[] {
     const present = new Set(koMatches.map(m => m.stage))
     return KO_STAGE_ORDER.filter(s => present.has(s))
+  }
+
+  /**
+   * Zamenjava ekip v PRVEM izločilnem krogu s klikom–klikom (kot pri skupinah).
+   * Prvi klik izbere ekipo, drugi jo zamenja z drugo. Deluje le na neodigranih
+   * tekmah (brez rezultata), ker menjava odigrane tekme bi razveljavila rezultat.
+   * Ker so tekme prvega kroga neodigrane, naslednji krogi ostanejo prazni —
+   * dodatnega čiščenja ni.
+   */
+  async function koSwapFirstRound(matchId: string, slot: 'a' | 'b') {
+    const teamOf = (m: KoMatchRow | undefined, s: 'a' | 'b') => (s === 'a' ? m?.team_a_id : m?.team_b_id) ?? null
+    const tgt = koMatches.find(m => m.id === matchId)
+    if (!tgt || teamOf(tgt, slot) === null) return
+    if (!koSwapSource) { setKoSwapSource({ matchId, slot }); return }
+    if (koSwapSource.matchId === matchId && koSwapSource.slot === slot) { setKoSwapSource(null); return }
+
+    const srcM = koMatches.find(m => m.id === koSwapSource.matchId)
+    if (!srcM) { setKoSwapSource(null); return }
+    if (srcM.winner_id || tgt.winner_id) { setMessage('❌ Ene od tekem ni mogoče urejati (že odigrana)'); setKoSwapSource(null); return }
+    const srcTeam = teamOf(srcM, koSwapSource.slot)
+    const tgtTeam = teamOf(tgt, slot)
+    const col = (s: 'a' | 'b') => (s === 'a' ? 'team_a_id' : 'team_b_id')
+
+    // Zamenjaj ekipi: znotraj iste tekme z enim update-om, sicer z dvema.
+    if (srcM.id === tgt.id) {
+      await supabase.from('matches').update({ [col(koSwapSource.slot)]: tgtTeam, [col(slot)]: srcTeam }).eq('id', srcM.id)
+    } else {
+      await Promise.all([
+        supabase.from('matches').update({ [col(koSwapSource.slot)]: tgtTeam }).eq('id', srcM.id),
+        supabase.from('matches').update({ [col(slot)]: srcTeam }).eq('id', tgt.id),
+      ])
+    }
+    setKoSwapSource(null)
+    setMessage('✓ Ekipi zamenjani')
+    await load()
   }
 
   /** Krogi, ki jih je mogoče na novo sestaviti/žrebati (za vsakega: napredovale ekipe). */
@@ -1466,6 +1503,56 @@ export default function TournamentEdit() {
               </p>
             </div>
           </div>
+
+          {/* Zamenjava parov v PRVEM izločilnem krogu (klik–klik), brez ponovnega ustvarjanja */}
+          {(() => {
+            const firstStage = koPresentStages()[0]
+            const rows = firstStage
+              ? koMatches.filter(m => m.stage === firstStage && !m.is_bye).sort((a, b) => a.match_number - b.match_number)
+              : []
+            if (rows.length < 1) return null
+            const chip = (m: KoMatchRow, s: 'a' | 'b') => {
+              const teamId = s === 'a' ? m.team_a_id : m.team_b_id
+              const selected = koSwapSource?.matchId === m.id && koSwapSource?.slot === s
+              const selecting = koSwapSource !== null && !selected
+              const locked = !teamId || !!m.winner_id
+              return (
+                <button disabled={locked} onClick={() => koSwapFirstRound(m.id, s)}
+                  className={`flex-1 min-w-0 truncate text-left text-xs px-2 py-1 rounded border transition-colors ${
+                    selected ? 'bg-amber-100 border-amber-400 ring-1 ring-amber-400'
+                    : selecting ? 'bg-white border-gray-300 hover:bg-bocce-green/10'
+                    : 'bg-white border-gray-200 hover:bg-gray-50'} ${locked ? 'opacity-50 cursor-default' : ''}`}>
+                  {koTeamName(teamId)}
+                </button>
+              )
+            }
+            const srcM = koSwapSource ? koMatches.find(m => m.id === koSwapSource.matchId) : undefined
+            const srcTeamId = srcM ? (koSwapSource!.slot === 'a' ? srcM.team_a_id : srcM.team_b_id) : null
+            return (
+              <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-gray-700">Uredi pare {stageLabel(firstStage)}</p>
+                  {koSwapSource && <button onClick={() => setKoSwapSource(null)} className="text-xs text-amber-600 hover:underline">Prekliči izbor</button>}
+                </div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Klikni ekipo, nato drugo — zamenjata se. Deluje le na neodigranih tekmah; naslednjih krogov to ne spremeni.
+                </p>
+                <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                  {rows.map(m => (
+                    <div key={m.id} className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-400 w-6 flex-shrink-0">T{m.match_number}</span>
+                      {chip(m, 'a')}
+                      <span className="text-xs text-gray-400">–</span>
+                      {chip(m, 'b')}
+                    </div>
+                  ))}
+                </div>
+                {koSwapSource && (
+                  <p className="text-[11px] text-amber-600 mt-2">✋ Izbrana: {koTeamName(srcTeamId)} — klikni drugo ekipo za zamenjavo.</p>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Tekma za 3. mesto — dodaj/odstrani na obstoječi mreži */}
           {koMatches.some(m => m.stage === 'sf') && (
