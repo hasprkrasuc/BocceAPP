@@ -619,8 +619,9 @@ export default function TournamentEdit() {
       const confirmed = registrations.filter(r => r.status === 'confirmed')
       const dist = suggestGroupDistribution(confirmed.length, groups.length || undefined)
 
-      // Konfiguracija z dodatnim krogom (skupine niso potenca 2) → poseben razpored.
-      if (dist.extraStage !== null) { await legacyGenerateExtra(dist); return }
+      // Konfiguracija z dodatnim (pred)krogom (skupine niso potenca 2) → sklenjena
+      // mreža z bye za direktne napredovalce.
+      if (dist.extraStage !== null) { await generateKnockoutWithPreRound(dist); return }
 
       const quals = await fetchQualifiers()
       const n = quals.length
@@ -654,49 +655,40 @@ export default function TournamentEdit() {
     }
   }
 
-  /** Star razpored za konfiguracije z DODATNIM krogom (skupine niso potenca 2). */
-  async function legacyGenerateExtra(dist: GroupDistribution) {
-    const { data: finalMatches } = await supabase.from('matches')
-      .select('*, group:tournament_groups(*)')
-      .eq('tournament_id', id).eq('stage', 'group').eq('status', 'completed')
-    const directQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
-    const extraQualifiers: Array<{ groupNumber: number; position: 1 | 2; teamId: string }> = []
-    for (const g of groups) {
-      const size = (g.group_size ?? 4) as 3 | 4 | 5
-      const winnersMatchNum = size <= 4 ? 3 : 7
-      const lastMatchNum = size <= 4 ? 5 : 9
-      const gMatches = ((finalMatches ?? []) as Array<{ group_id: string; match_number: number; winner_id: string | null }>).filter(m => m.group_id === g.id)
-      const m1st = gMatches.find(m => m.match_number === winnersMatchNum)
-      const m2nd = gMatches.find(m => m.match_number === lastMatchNum)
-      const isExtra = size === 3 && dist.extraStage !== null
-      const target = isExtra ? extraQualifiers : directQualifiers
-      if (m1st?.winner_id) target.push({ groupNumber: g.group_number, position: 1, teamId: m1st.winner_id })
-      if (m2nd?.winner_id) target.push({ groupNumber: g.group_number, position: 2, teamId: m2nd.winner_id })
-    }
-    if (directQualifiers.length + extraQualifiers.length < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
-    let matchNum = 1
-    if (extraQualifiers.length > 0 && dist.extraStage) {
-      const pos1 = extraQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
-      const pos2 = extraQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
-      const n = Math.min(pos1.length, pos2.length)
-      for (let i = 0; i < n; i++) {
-        await supabase.from('matches').insert({
-          tournament_id: id, group_id: null, stage: dist.extraStage, match_type: 'knockout', match_number: matchNum++,
-          team_a_id: pos1[i]?.teamId ?? null, team_b_id: pos2[n - 1 - i]?.teamId ?? null, status: 'pending',
-        })
-      }
-    }
-    const pos1d = directQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
-    const pos2d = directQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
-    const nd = Math.min(pos1d.length, pos2d.length)
-    matchNum = 1
-    for (let i = 0; i < nd; i++) {
-      await supabase.from('matches').insert({
-        tournament_id: id, group_id: null, stage: dist.directStage, match_type: 'knockout', match_number: matchNum++,
-        team_a_id: pos1d[i]?.teamId ?? null, team_b_id: pos2d[nd - 1 - i]?.teamId ?? null, status: 'pending',
-      })
-    }
-    setMessage(`✓ Izločilni del ustvarjen — ${stageLabel(dist.directStage)}`)
+  /**
+   * Izločilna mreža za konfiguracije z DODATNIM (pred)krogom — ko število skupin
+   * ni potenca 2 (npr. 24 skupin → predkolo 1/32 → 1/16). Zgradi se ENA sklenjena
+   * mreža (predkolo → … → finale), zato izločilni del napreduje enako kot pri
+   * vsakem drugem turnirju (prek `propagateKnockout`).
+   *
+   * Ključ: mreža ima velikost 2×`targetKnockout`. Direktni napredovalci (skupine,
+   * ki gredo naravnost naprej) so najvišji nosilci in dobijo bye skozi predkolo;
+   * dodatni napredovalci (skupine po 3) so nižji nosilci in predkolo odigrajo med
+   * sabo. Ker je število direktnih napredovalcev natanko enako številu praznih
+   * mest v mreži te velikosti, bye pripade prav vsem direktnim — in nihče od njih
+   * ne pade v predkolo. Prej je ta veja vpisala dva NEPOVEZANA kroga (predkolo +
+   * 1/16 z direktnimi, ki so igrali med sabo), zato zmagovalci predkola niso imeli
+   * kam napredovati in izločilnega dela ni bilo mogoče odigrati do konca.
+   */
+  async function generateKnockoutWithPreRound(dist: GroupDistribution) {
+    const quals = await fetchQualifiers()
+    const sizeByGroup = new Map(groups.map(g => [g.group_number, g.group_size ?? 4]))
+    const isExtraGroup = (groupNumber: number) => (sizeByGroup.get(groupNumber) ?? 4) === 3
+    // Nosilni vrstni red znotraj skupine napredovalcev: najprej zmagovalci
+    // (1. mesto), nato drugouvrščeni — oboje po številki skupine.
+    const seededIds = (qs: KoQualifier[]) => [
+      ...qs.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber),
+      ...qs.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber),
+    ].map(q => q.teamId)
+    // Direktni najprej (najvišji nosilci → bye), nato dodatni (nižji → predkolo).
+    const seeded = [
+      ...seededIds(quals.filter(q => !isExtraGroup(q.groupNumber))),
+      ...seededIds(quals.filter(q => isExtraGroup(q.groupNumber))),
+    ]
+    if (seeded.length < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
+    await insertKnockoutBracket(id!, pairsFromSeededTeams(seeded), { thirdPlace: koThirdPlace })
+    const preLabel = dist.extraStage ? `predkolo ${stageLabel(dist.extraStage)} → ` : ''
+    setMessage(`✓ Izločilni del ustvarjen — ${preLabel}${stageLabel(dist.directStage)}`)
     load()
   }
 

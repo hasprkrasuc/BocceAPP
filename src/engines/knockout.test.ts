@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { bracketSize, seedOrder, firstStageForSize } from './knockout'
-import { buildKnockoutBracket, buildBracketFromFirstRound } from './knockout'
+import { buildKnockoutBracket, buildBracketFromFirstRound, pairsFromSeededTeams } from './knockout'
 import { knockoutPropagation, type KoMatchRow } from './knockout'
 import { seedRegistrations, type SeedableReg } from './knockout'
 
@@ -50,6 +50,51 @@ describe('buildBracketFromFirstRound', () => {
     expect(m.filter(x => x.stage === 'r16')).toHaveLength(8)
     const used = m.filter(x => x.stage === 'r16').flatMap(x => [x.teamA, x.teamB]).filter(Boolean)
     expect(new Set(used).size).toBe(16)
+  })
+
+  test('predkolo (24 skupin): 16 direktnih dobi bye, 32 dodatnih igra predkolo — mreža je sklenjena', () => {
+    // 24 skupin: 8 direktnih (16 napredovalcev) + 16 dodatnih (32 napredovalcev).
+    // Direktni so najvišji nosilci, zato v mreži velikosti 64 dobijo bye,
+    // dodatni pa odigrajo predkolo (r64/1/32) med sabo. Regresija za napako, ko
+    // sta bila vpisana dva NEPOVEZANA kroga in zmagovalci predkola niso napredovali.
+    const direct = Array.from({ length: 16 }, (_, i) => `D${i + 1}`)
+    const extra = Array.from({ length: 32 }, (_, i) => `E${i + 1}`)
+    const planned = buildBracketFromFirstRound(pairsFromSeededTeams([...direct, ...extra]), { thirdPlace: true })
+
+    // Predkolo (r64): 32 tekem = 16 bye (direktni) + 16 realnih (dodatni med sabo).
+    const r64 = planned.filter(x => x.stage === 'r64')
+    expect(r64).toHaveLength(32)
+    const byes = r64.filter(x => x.isBye)
+    expect(byes).toHaveLength(16)
+    expect(byes.every(x => direct.includes(x.winner!))).toBe(true)
+    const real = r64.filter(x => !x.isBye)
+    expect(real).toHaveLength(16)
+    expect(real.every(x => extra.includes(x.teamA!) && extra.includes(x.teamB!))).toBe(true)
+
+    // Sklenjena mreža vse do finala (predkolo → 1/16 → 1/8 → čf → pf → finale).
+    for (const [stage, n] of [['r32', 16], ['r16', 8], ['qf', 4], ['sf', 2], ['final', 1], ['third_place', 1]] as const) {
+      expect(planned.filter(x => x.stage === stage)).toHaveLength(n)
+    }
+
+    // Po razrešitvi bye napredujejo VSI direktni v 1/16 (r32) — nobeno mesto ni
+    // "obtičalo" (jedro prejšnje napake). Simuliramo z DB-vrsticami + propagacijo.
+    const rows: KoMatchRow[] = planned.map((p, i) => ({
+      id: `m${i}`, stage: p.stage, match_number: p.matchNumber,
+      team_a_id: p.teamA, team_b_id: p.teamB, winner_id: p.winner, is_bye: p.isBye,
+    }))
+    for (const u of knockoutPropagation(rows)) {
+      const row = rows.find(r => r.id === u.id)!
+      if (u.slot === 'team_a_id') row.team_a_id = u.teamId; else row.team_b_id = u.teamId
+    }
+    const r32 = rows.filter(r => r.stage === 'r32')
+    const placed = r32.flatMap(r => [r.team_a_id, r.team_b_id]).filter(Boolean)
+    // 16 direktnih (iz bye) že zasedenih; 16 mest čaka na zmagovalce predkola.
+    expect(placed.filter(t => direct.includes(t!))).toHaveLength(16)
+    expect(placed).toHaveLength(16)
+    // Vsaka tekma 1/16 ima natanko eno direktno ekipo (nasproti mesta za predkolo).
+    expect(r32.every(r =>
+      [r.team_a_id, r.team_b_id].filter(t => t && direct.includes(t)).length === 1
+    )).toBe(true)
   })
 })
 
