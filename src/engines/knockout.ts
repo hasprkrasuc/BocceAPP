@@ -109,6 +109,49 @@ export function buildKnockoutBracket(
   return buildBracketFromFirstRound(pairsFromSeededTeams(seededTeamIds), opts)
 }
 
+/**
+ * Nosilno KRIŽANJE po skupinah za samodejni razpored prvega kroga.
+ * Prvi iz skupine i (winners[i]) igra proti drugemu iz skupine (G+1−i)
+ * (runners[G−1−i]). Zaporedje parov je tako, da buildBracketFromFirstRound
+ * (par 2k in 2k+1 → ista tekma naslednjega kroga) sreča zmagovalca 1. para z
+ * zmagovalcem 2. para, 3. s 4. itd. Posledica: prvi in drugi IZ ISTE skupine
+ * sta v nasprotnih polovicah in se lahko srečata šele v finalu.
+ *
+ * Primer (8 skupin): [W1–R8, W2–R7, W3–R6, W4–R5, W5–R4, W6–R3, W7–R2, W8–R1].
+ */
+export function crossPairs(winners: string[], runners: string[]): Array<[string | null, string | null]> {
+  const g = Math.max(winners.length, runners.length)
+  const pairs: Array<[string | null, string | null]> = []
+  for (let i = 0; i < g; i++) pairs.push([winners[i] ?? null, runners[g - 1 - i] ?? null])
+  return pairs
+}
+
+/** Ena tekma naslednjega kroga (npr. 1/16) v konfiguraciji z dodatnim predkolom:
+ *  `direct` (direktni napredovalec z bye) igra proti zmagovalcu predtekme
+ *  `extraA`–`extraB` (dva dodatna napredovalca). */
+export interface PreRoundSlot {
+  direct: string | null
+  extraA: string | null
+  extraB: string | null
+}
+
+/**
+ * Pari PRVEGA kroga (predkolo) za ročno razporejeno konfiguracijo z dodatnim
+ * predkolom, izraženo po tekmah NASLEDNJEGA kroga. Za vsako tekmo naslednjega
+ * kroga vrne dva para: bye direktne ekipe + predtekmo med dodatnima ekipama.
+ * Ker buildBracketFromFirstRound veže par 2k in 2k+1 v isto tekmo naslednjega
+ * kroga, direktna ekipa in zmagovalec predtekme pristaneta skupaj (1 direktna
+ * proti 1 predtekmi). Vrne 2×N parov; N tekem naslednjega kroga.
+ */
+export function preRoundFirstRoundPairs(slots: PreRoundSlot[]): Array<[string | null, string | null]> {
+  const pairs: Array<[string | null, string | null]> = []
+  for (const s of slots) {
+    pairs.push([s.direct ?? null, null])            // bye direktne ekipe
+    pairs.push([s.extraA ?? null, s.extraB ?? null]) // predtekma dveh dodatnih
+  }
+  return pairs
+}
+
 export interface KoMatchRow {
   id: string
   stage: MatchStage
