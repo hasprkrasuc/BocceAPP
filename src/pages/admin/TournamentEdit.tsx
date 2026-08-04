@@ -1,7 +1,7 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
-import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel } from '../../engines/tournament'
+import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel, seededPotDraw } from '../../engines/tournament'
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
 import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
@@ -76,6 +76,13 @@ export default function TournamentEdit() {
   // Manual group count override
   const [manualGroups, setManualGroups] = useState<number | ''>('')
 
+  // Žreb skupin: naključni ali nosilni po rang lestvici (bobni). Privzeto nosilni
+  // pri državnih prvenstvih, naključni pri navadnih turnirjih.
+  const [drawMethod, setDrawMethod] = useState<'random' | 'seeded'>('random')
+  // Rang točke po igralcu (playerId → rang) za nosilni žreb; null = še ni naloženo.
+  const [rangByPlayer, setRangByPlayer] = useState<Record<string, number> | null>(null)
+  const [rangLoading, setRangLoading] = useState(false)
+
   // Swap teams between groups
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null)
 
@@ -108,6 +115,56 @@ export default function TournamentEdit() {
     if (tab === 'knockout' && groups.length > 0) loadKoQualifiers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, groups.length])
+
+  // Državna prvenstva privzeto uporabijo nosilni žreb po rang lestvici.
+  useEffect(() => {
+    if (tournament?.kind === 'championship') setDrawMethod('seeded')
+  }, [tournament?.kind])
+
+  // Ob prehodu na nosilni žreb naloži rang lestvico (enkrat).
+  useEffect(() => {
+    if (tab === 'draw' && drawMethod === 'seeded' && rangByPlayer === null && !rangLoading) ensureRang()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, drawMethod])
+
+  /** Naloži rang lestvico za kategorijo turnirja → mapa playerId → rang točke. */
+  async function ensureRang() {
+    setRangLoading(true)
+    try {
+      const rang = await computeRangLestvica()
+      const cat = tournament ? toRangCat(tournament.category) : null
+      const rp: Record<string, number> = {}
+      if (cat) for (const row of rang.byCategory[cat]) rp[row.playerId] = row.rang
+      setRangByPlayer(rp)
+    } catch {
+      setRangByPlayer({})
+    }
+    setRangLoading(false)
+  }
+
+  /** Nosilna vrednost ekipe: ročni seed_points, sicer vsota rang točk igralcev.
+   *  `needsManual` = registriranih rang točk ni (tuji/neuvrščeni) in ni ročne vrednosti. */
+  function teamSeed(r: TournamentRegistration): { value: number; manual: boolean; needsManual: boolean } {
+    if (r.seed_points != null) return { value: r.seed_points, manual: true, needsManual: false }
+    const rp = rangByPlayer ?? {}
+    const p1 = r.player1_id ? (rp[r.player1_id] ?? 0) : 0
+    const p2 = r.player2_id ? (rp[r.player2_id] ?? 0) : 0
+    // Slot potrebuje ročno vrednost, če na njem ni registriranega igralca z rangom
+    // (gost/tuji ali registriran brez rang točk).
+    const slotUnranked = (id: string | null) => !id || (rp[id] ?? 0) === 0
+    const needsManual = slotUnranked(r.player1_id) || (isPairDiscipline(tournament?.discipline_type ?? 'dvojka') && slotUnranked(r.player2_id))
+    return { value: p1 + p2, manual: false, needsManual }
+  }
+
+  /** Shrani (ali počisti) ročno nosilno vrednost ekipe. Prazno → NULL (nazaj na izračun). */
+  async function saveSeedPoints(regId: string, raw: string) {
+    const trimmed = raw.trim()
+    const value = trimmed === '' ? null : Number(trimmed)
+    if (value !== null && !Number.isFinite(value)) { setMessage('❌ Nosilna vrednost mora biti število'); return }
+    const { error } = await supabase.from('tournament_registrations').update({ seed_points: value }).eq('id', regId)
+    if (error) { setMessage(`❌ Napaka: ${error.message}`); return }
+    setRegistrations(prev => prev.map(r => (r.id === regId ? { ...r, seed_points: value } : r)))
+  }
 
   async function load() {
     try {
@@ -350,15 +407,6 @@ export default function TournamentEdit() {
         return
       }
 
-      await supabase.from('tournament_groups').delete().eq('tournament_id', id)
-
-      // Fisher-Yates shuffle
-      const shuffled = [...confirmed]
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-      }
-
       // Build ordered list of group sizes: first 5s, then 4s, then 3s
       const groupSizes: (3 | 4 | 5)[] = [
         ...Array(dist.groups5).fill(5),
@@ -366,13 +414,39 @@ export default function TournamentEdit() {
         ...Array(dist.groups3).fill(3),
       ]
 
-      // Assign teams to groups
-      let teamIdx = 0
-      const assignments: Array<{ size: 3 | 4 | 5; teams: TournamentRegistration[] }> = []
-      for (const size of groupSizes) {
-        assignments.push({ size, teams: shuffled.slice(teamIdx, teamIdx + size) })
-        teamIdx += size
+      // Naključna permutacija indeksov [0..n-1] (Fisher-Yates).
+      const shuffleIdx = (n: number) => {
+        const a = Array.from({ length: n }, (_, i) => i)
+        for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]] }
+        return a
       }
+
+      // Sestavi razporeditev ekip po skupinah — naključno ali nosilno po bobnih.
+      const byId = new Map(confirmed.map(r => [r.id, r]))
+      let assignments: Array<{ size: 3 | 4 | 5; teams: TournamentRegistration[] }>
+      if (drawMethod === 'seeded') {
+        // Če rang še ni naložen, ga naloži zdaj (npr. hiter klik pred učinkom).
+        let rp = rangByPlayer
+        if (rp === null) {
+          const rang = await computeRangLestvica()
+          const cat = tournament ? toRangCat(tournament.category) : null
+          rp = {}
+          if (cat) for (const row of rang.byCategory[cat]) rp[row.playerId] = row.rang
+          setRangByPlayer(rp)
+        }
+        const teams = confirmed.map(r => ({ id: r.id, seed: r.seed_points != null ? r.seed_points
+          : (r.player1_id ? rp![r.player1_id] ?? 0 : 0) + (r.player2_id ? rp![r.player2_id] ?? 0 : 0) }))
+        const drawn = seededPotDraw(teams, groupSizes, shuffleIdx)
+        assignments = groupSizes.map((size, gi) => ({ size, teams: drawn[gi].map(rid => byId.get(rid)!) }))
+      } else {
+        const order = shuffleIdx(confirmed.length)
+        const shuffled = order.map(i => confirmed[i])
+        let teamIdx = 0
+        assignments = []
+        for (const size of groupSizes) { assignments.push({ size, teams: shuffled.slice(teamIdx, teamIdx + size) }); teamIdx += size }
+      }
+
+      await supabase.from('tournament_groups').delete().eq('tournament_id', id)
 
       // Batch insert groups with group_size
       const { data: createdGroups, error: groupErr } = await supabase
@@ -445,7 +519,7 @@ export default function TournamentEdit() {
         dist.groups3 > 0 ? `${dist.groups3}×3` : '',
       ].filter(Boolean).join(' + ')
 
-      setMessage(`✓ Žreb opravljen: ${dist.totalGroups} skupin (${parts})`)
+      setMessage(`✓ ${drawMethod === 'seeded' ? 'Nosilni žreb' : 'Žreb'} opravljen: ${dist.totalGroups} skupin (${parts})`)
       load()
     } catch (err) {
       setMessage('Napaka pri žrebu: ' + (err as Error).message)
@@ -1138,11 +1212,72 @@ export default function TournamentEdit() {
                 </button>
               )}
             </div>
-            <button onClick={handleDraw} disabled={drawLoading || confirmed.length === 0 || !dist.isValid}
+            {/* Način žreba: naključni ali nosilni po rang lestvici */}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-blue-700 font-medium">Način žreba:</span>
+              {([['random', 'Naključni'], ['seeded', 'Nosilni (rang lestvica)']] as const).map(([m, label]) => (
+                <button key={m} onClick={() => setDrawMethod(m)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${drawMethod === m
+                    ? 'bg-bocce-green text-white border-bocce-green'
+                    : 'bg-white text-gray-600 border-blue-300 hover:bg-blue-50'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={handleDraw} disabled={drawLoading || confirmed.length === 0 || !dist.isValid || (drawMethod === 'seeded' && rangLoading)}
               className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors disabled:opacity-50">
-              {drawLoading ? 'Žrebam...' : groups.length > 0 ? '↺ Ponovi žreb' : 'Naredi žreb'}
+              {drawLoading ? 'Žrebam...' : drawMethod === 'seeded' && rangLoading ? 'Nalagam rang…' : groups.length > 0 ? '↺ Ponovi žreb' : 'Naredi žreb'}
             </button>
           </div>
+
+          {/* Nosilci (bobni) — pregled + ročni rang tujih igralcev */}
+          {drawMethod === 'seeded' && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-gray-700">Nosilci po rang lestvici (bobni)</p>
+                {rangLoading && <span className="text-xs text-gray-400 italic">nalagam rang…</span>}
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                Nosilna vrednost = {isPair ? 'vsota rang točk para' : 'rang točke igralca'}. Bobnov je {dist.groups5 > 0 ? 5 : dist.groups4 > 0 ? 4 : 3}
+                {' '}(največ ekip v skupini). Za tuje/neuvrščene igralce (⚠) vpiši rang točke; vrednost se shrani in prepiše izračun.
+              </p>
+              {(() => {
+                // Bobni: velikosti skupin urejene 5→4→3; meje bobnov kumulativno po nivojih.
+                const gsizes = [
+                  ...Array(dist.groups5).fill(5), ...Array(dist.groups4).fill(4), ...Array(dist.groups3).fill(3),
+                ] as number[]
+                const maxSize = gsizes.reduce((m, s) => Math.max(m, s), 0)
+                const potBounds: number[] = []  // kumulativna zgornja meja indeksa za vsak boben
+                let acc = 0
+                for (let lvl = 0; lvl < maxSize; lvl++) { acc += gsizes.filter(s => s > lvl).length; potBounds.push(acc) }
+                const potOf = (i: number) => { for (let p = 0; p < potBounds.length; p++) if (i < potBounds[p]) return p + 1; return potBounds.length }
+                const ranked = confirmed
+                  .map(r => ({ r, s: teamSeed(r) }))
+                  .sort((a, b) => b.s.value - a.s.value || a.r.id.localeCompare(b.r.id))
+                return (
+                  <div className="space-y-1 max-h-[420px] overflow-y-auto">
+                    {ranked.map(({ r, s }, i) => (
+                      <div key={r.id} className="flex items-center gap-2 text-sm border-b border-gray-50 py-0.5">
+                        <span className="w-6 text-xs text-gray-400 text-right">{i + 1}.</span>
+                        <span className="w-14 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-center flex-shrink-0">Boben {potOf(i)}</span>
+                        <span className="flex-1 min-w-0 truncate text-gray-700">
+                          {teamDisplayName(r)}{s.needsManual && !s.manual && <span className="ml-1 text-amber-500" title="Tuji/neuvrščen igralec — vpiši rang">⚠</span>}
+                        </span>
+                        <input
+                          type="number" step="any"
+                          defaultValue={r.seed_points ?? ''}
+                          placeholder={s.manual ? '' : String(s.value)}
+                          onBlur={e => { if (e.target.value !== String(r.seed_points ?? '')) saveSeedPoints(r.id, e.target.value) }}
+                          title="Ročna nosilna vrednost (prazno = izračun iz rang lestvice)"
+                          className={`w-24 border rounded px-2 py-1 text-xs text-right bg-white ${s.manual ? 'border-bocce-green' : s.needsManual ? 'border-amber-300' : 'border-gray-200'}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
 
           {swapSourceId && (
             <div className="mb-4 px-4 py-2 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-800 flex items-center justify-between">

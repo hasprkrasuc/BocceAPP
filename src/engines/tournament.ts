@@ -493,3 +493,49 @@ export function suggestGroupDistribution(numTeams: number, forceGroups?: number)
     isValid,
   }
 }
+
+// ────────────────────────────────────────────────────────────────
+// NOSILNI ŽREB SKUPIN PO BOBNIH (rang lestvica) — državna prvenstva
+// ────────────────────────────────────────────────────────────────
+export interface SeededDrawTeam {
+  id: string
+  /** Nosilna vrednost (za dvojice vsota rang točk para); višja = močnejši. */
+  seed: number
+}
+
+/**
+ * Nosilni žreb skupin po bobnih. Ekipe razvrsti po nosilni vrednosti (`seed`)
+ * padajoče in jih razdeli v bobne po NIVOJIH mest v skupini: boben 1 = najboljših
+ * G ekip (po ena v vsako skupino), boben 2 = naslednjih G, … Pri mešanih
+ * velikostih boben k napolni le skupine, ki imajo k-to mesto (npr. 5. boben le
+ * skupine po 5). Znotraj bobna razporedi ekipe po skupinah z injektirano
+ * permutacijo `shuffle(n)` → [0..n-1] (naključni žreb; pri testu determinističen).
+ *
+ * Vrne za vsako skupino (v vrstnem redu `groupSizes`) urejen seznam ID-jev,
+ * kjer indeks 0 = najvišji nosilec (boben 1) — primerno za `seed` v skupini.
+ * Deterministično razen podanega `shuffle`; enaki `seed` se razvrstijo po `id`.
+ */
+export function seededPotDraw(
+  teams: SeededDrawTeam[],
+  groupSizes: number[],
+  shuffle: (n: number) => number[],
+): string[][] {
+  const sorted = [...teams].sort(
+    (a, b) => (b.seed - a.seed) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  )
+  const groups: string[][] = groupSizes.map(() => [])
+  const maxSize = groupSizes.reduce((m, s) => Math.max(m, s), 0)
+  let idx = 0
+  for (let level = 0; level < maxSize; level++) {
+    // Skupine, ki imajo (level+1)-to mesto → dobijo ekipo iz tega bobna.
+    const eligible = groupSizes
+      .map((s, gi) => ({ s, gi }))
+      .filter(x => x.s > level)
+      .map(x => x.gi)
+    const perm = shuffle(eligible.length)
+    for (let p = 0; p < eligible.length && idx < sorted.length; p++) {
+      groups[eligible[perm[p]]].push(sorted[idx++].id)
+    }
+  }
+  return groups
+}

@@ -113,6 +113,8 @@ export interface TournamentRegistration {
   player2_name: string | null
   status: RegistrationStatus
   registered_at: string
+  /** Ročna nosilna vrednost za žreb skupin (DP); prepiše izračun iz rang lestvice. NULL = izračunaj. */
+  seed_points?: number | null
   player1?: UserProfile
   player2?: UserProfile
   guest1?: GuestPlayer
