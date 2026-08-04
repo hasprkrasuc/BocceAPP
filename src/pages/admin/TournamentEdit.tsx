@@ -9,8 +9,25 @@ import { pairsFromSeededTeams, KO_STAGE_ORDER } from '../../engines/knockout'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
+import { USER_PUBLIC_COLS } from '../../lib/userColumns'
 
 type Tab = 'registrations' | 'draw' | 'knockout'
+
+/**
+ * Vgnezdena polja prijave. `users` je NUJNO naštet po stolpcih — branje vseh
+ * stolpcev vrne 403 "permission denied for table users", ker je SELECT za
+ * vlogo authenticated omejen na USER_PUBLIC_COLS
+ * (migracija 20260729_02_users_pii_authenticated).
+ *
+ * Prej je bil ta niz zapisan dvakrat, v obeh poizvedbah spodaj, in obakrat je
+ * bral vse stolpce — zato se prijave na turnir od 29. 7. 2026 niso prikazale.
+ * Zdaj je na enem mestu, da kopiji ne moreta več narazen.
+ */
+const PRIJAVA_SELECT =
+  `*, player1:users!tournament_registrations_player1_id_fkey(${USER_PUBLIC_COLS})`
+  + `, player2:users!tournament_registrations_player2_id_fkey(${USER_PUBLIC_COLS})`
+  + `, guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*)`
+  + `, guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)`
 
 function toRangCat(cat: string): RangCategory | null {
   return cat === 'men' || cat === 'women' || cat === 'u18' ? cat : null
@@ -89,20 +106,31 @@ export default function TournamentEdit() {
       const { data: groupIds } = await supabase.from('tournament_groups').select('id').eq('tournament_id', id)
       const ids = groupIds?.map(x => x.id) ?? []
 
-      const [{ data: t, error: tErr }, { data: r }, { data: g }, { data: gt }, { data: km }] = await Promise.all([
+      const [
+        { data: t, error: tErr },
+        { data: r, error: rErr },
+        { data: g, error: gErr },
+        { data: gt, error: gtErr },
+        { data: km, error: kmErr },
+      ] = await Promise.all([
         supabase.from('tournaments').select('*').eq('id', id).single(),
         supabase.from('tournament_registrations')
-          .select('*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)')
+          .select(PRIJAVA_SELECT)
           .eq('tournament_id', id).order('registered_at'),
         supabase.from('tournament_groups').select('*').eq('tournament_id', id).order('group_number'),
         ids.length > 0
-          ? supabase.from('group_teams').select('*, registration:tournament_registrations(*, player1:users!tournament_registrations_player1_id_fkey(*), player2:users!tournament_registrations_player2_id_fkey(*), guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*), guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*))').in('group_id', ids)
-          : Promise.resolve({ data: [] }),
+          ? supabase.from('group_teams').select(`*, registration:tournament_registrations(${PRIJAVA_SELECT})`).in('group_id', ids)
+          : Promise.resolve({ data: [], error: null }),
         supabase.from('matches')
           .select('id, stage, match_number, team_a_id, team_b_id, winner_id, status')
           .eq('tournament_id', id).neq('stage', 'group'),
       ])
-      if (tErr) throw tErr
+      // Preverimo napako VSAKE poizvedbe, ne le prve. Rezultati se berejo kot
+      // `(r ?? [])`, zato se zavrnjena poizvedba sicer pokaže kot prazen
+      // seznam brez sporočila — kar je od 29. 7. do 4. 8. 2026 skrivalo, da
+      // prijav na turnir sploh ni bilo mogoče prebrati (403 na users).
+      const napaka = tErr ?? rErr ?? gErr ?? gtErr ?? kmErr
+      if (napaka) throw napaka
       setTournament(t as Tournament)
       setRegistrations((r ?? []) as TournamentRegistration[])
       setGroups((g ?? []) as TournamentGroup[])
