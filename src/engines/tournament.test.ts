@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildGroupSchedule, applyScore, teamDisplayName, suggestGroupDistribution,
-  computePropagation, GROUP_TEMPLATES, type PropagationRow,
+  computePropagation, GROUP_TEMPLATES, seededPotDraw, type PropagationRow,
 } from './tournament'
 import type { TournamentRegistration } from '../types'
 
@@ -351,5 +351,55 @@ describe('teamDisplayName', () => {
       player2_id: null, player2_guest_id: null, player2_name: null,
     } as unknown as TournamentRegistration
     expect(teamDisplayName(reg)).toBe('Novak')
+  })
+})
+
+describe('seededPotDraw', () => {
+  const identity = (n: number) => Array.from({ length: n }, (_, i) => i)
+  // Nosilna vrednost = 100−rang (rang 1 = najmočnejši), da preverimo razvrstitev.
+  const teamsRanked = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `t${i + 1}`, seed: n - i }))
+
+  it('32 ekip, 8 skupin po 4: vsaka skupina dobi po eno ekipo iz vsakega bobna', () => {
+    const teams = teamsRanked(32)
+    const groups = seededPotDraw(teams, Array(8).fill(4), identity)
+    expect(groups).toHaveLength(8)
+    expect(groups.every(g => g.length === 4)).toBe(true)
+    // Vsi uporabljeni natanko enkrat
+    const all = groups.flat()
+    expect(all).toHaveLength(32)
+    expect(new Set(all).size).toBe(32)
+    // rang (1 = najmočnejši) po id-ju: t1=rang1 … t32=rang32 (seed pada z id); bobni po 8
+    const rankOf = (id: string) => Number(id.slice(1))
+    for (const g of groups) {
+      const pots = g.map(id => Math.floor((rankOf(id) - 1) / 8)) // boben 0..3
+      expect(new Set(pots).size).toBe(4) // po ena ekipa iz vsakega od 4 bobnov
+    }
+    // Znotraj skupine je najvišji nosilec (boben 1) na indeksu 0
+    for (const g of groups) expect(Math.floor((rankOf(g[0]) - 1) / 8)).toBe(0)
+  })
+
+  it('identiteta: najmočnejših 8 (boben 1) pristane vsak v svoji skupini', () => {
+    const groups = seededPotDraw(teamsRanked(32), Array(8).fill(4), identity)
+    const top8 = new Set(Array.from({ length: 8 }, (_, i) => `t${i + 1}`))
+    const groupsWithTop = groups.filter(g => g.some(id => top8.has(id)))
+    expect(groupsWithTop).toHaveLength(8) // vsaka skupina ima natanko enega iz bobna 1
+  })
+
+  it('mešane velikosti (1×5 + 2×4): 5. boben napolni le skupino po 5', () => {
+    const teams = teamsRanked(13)
+    const groups = seededPotDraw(teams, [5, 4, 4], identity)
+    expect(groups.map(g => g.length)).toEqual([5, 4, 4])
+    const all = groups.flat()
+    expect(new Set(all).size).toBe(13)
+    // Najslabša ekipa (rang 13 = t13) je v 5. bobnu → le v skupini po 5, na zadnjem mestu
+    expect(groups[0]).toContain('t13')
+    expect(groups[0][4]).toBe('t13')
+  })
+
+  it('enak seed se razvrsti deterministično po id', () => {
+    const teams = [{ id: 'b', seed: 5 }, { id: 'a', seed: 5 }, { id: 'c', seed: 5 }, { id: 'd', seed: 5 }]
+    const g1 = seededPotDraw(teams, [2, 2], identity)
+    const g2 = seededPotDraw(teams, [2, 2], identity)
+    expect(g1).toEqual(g2)
   })
 })
