@@ -852,7 +852,12 @@ export default function TournamentEdit() {
   const confirmed = registrations.filter(r => r.status === 'confirmed')
   const pending = registrations.filter(r => r.status === 'pending')
   const rejected = registrations.filter(r => r.status === 'rejected')
+  // Za ŽREB skupin: predogled po (morebiti ročno vpisanem) številu skupin.
   const dist: GroupDistribution = suggestGroupDistribution(confirmed.length, manualGroups || undefined)
+  // Za IZLOČILNI del: dejansko že izžrebane skupine določajo konfiguracijo
+  // (predkolo/direktno). Sicer bi zavihek napačno bral manualGroups (predogled
+  // žreba) in npr. pri 24 skupinah ne bi ponudil predkolnega (1/32) razporeda.
+  const koDist: GroupDistribution = suggestGroupDistribution(confirmed.length, groups.length || undefined)
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1299,7 +1304,7 @@ export default function TournamentEdit() {
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                         isExtra ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-700'
                       }`}>
-                        {size} ekipe{isExtra && dist.extraStage ? ` · ${stageLabel(dist.extraStage)}` : ' · direktno'}
+                        {size} ekipe{isExtra && koDist.extraStage ? ` · ${stageLabel(koDist.extraStage)}` : ' · direktno'}
                       </span>
                     </div>
                     <div className="space-y-1">
@@ -1336,11 +1341,11 @@ export default function TournamentEdit() {
         <div>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 space-y-3">
             <p className="text-sm text-amber-800 font-medium">Izločilni del</p>
-            {dist.extraStage ? (
+            {koDist.extraStage ? (
               <>
                 <p className="text-xs text-amber-700">
-                  Skupini po 4/5 → direktno v <strong>{stageLabel(dist.directStage)}</strong> ·
-                  Skupini po 3 → najprej <strong>{stageLabel(dist.extraStage)}</strong>, nato {stageLabel(dist.directStage)}
+                  Skupini po 4/5 → direktno v <strong>{stageLabel(koDist.directStage)}</strong> ·
+                  Skupini po 3 → najprej <strong>{stageLabel(koDist.extraStage)}</strong>, nato {stageLabel(koDist.directStage)}
                 </p>
                 {koPreEditable ? (
                   <>
@@ -1360,8 +1365,8 @@ export default function TournamentEdit() {
                       return (
                         <div className="space-y-1.5 bg-white rounded-lg p-3 border border-amber-100">
                           <p className="text-xs text-gray-500">
-                            Vsaka vrstica = ena tekma <strong>{stageLabel(dist.directStage)}</strong>: direktna ekipa (bye) proti
-                            zmagovalcu predtekme <strong>{stageLabel(dist.extraStage)}</strong>. Vsaka ekipa natanko enkrat.
+                            Vsaka vrstica = ena tekma <strong>{stageLabel(koDist.directStage)}</strong>: direktna ekipa (bye) proti
+                            zmagovalcu predtekme <strong>{stageLabel(koDist.extraStage)}</strong>. Vsaka ekipa natanko enkrat.
                           </p>
                           {koPreSlots.map((slot, si) => {
                             const setSlot = (patch: Partial<KoPreSlot>) =>
@@ -1400,7 +1405,7 @@ export default function TournamentEdit() {
             ) : (
               <>
                 <p className="text-xs text-amber-700">
-                  Vse skupini → direktno v <strong>{stageLabel(dist.directStage)}</strong> · napredovalcev: <strong>{koQualifiers.length}</strong>
+                  Vse skupini → direktno v <strong>{stageLabel(koDist.directStage)}</strong> · napredovalcev: <strong>{koQualifiers.length}</strong>
                 </p>
                 {/* Način sestave parov */}
                 <div className="flex flex-wrap gap-2">
