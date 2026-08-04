@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -16,22 +16,42 @@ import PlayerDetail from './pages/PlayerDetail'
 import { Statistics, Archive } from './pages/StatsAndArchive'
 import { LeagueRanking } from './pages/LeagueRanking'
 import Calendar from './pages/Calendar'
-import AdminDashboard from './pages/admin/AdminDashboard'
-import TournamentAdmin from './pages/admin/TournamentAdmin'
-import TournamentEdit from './pages/admin/TournamentEdit'
-import LeagueAdmin from './pages/admin/LeagueAdmin'
-import DoubleRegAdmin from './pages/admin/DoubleRegAdmin'
-import ClubAdmin from './pages/admin/ClubAdmin'
-import UserAdmin from './pages/admin/UserAdmin'
-import LeagueMatchScoresheet from './pages/admin/LeagueMatchScoresheet'
-import LeagueMatchScoresheetDemo from './pages/admin/LeagueMatchScoresheetDemo'
 import Series from './pages/Series'
-import SeriesAdmin from './pages/admin/SeriesAdmin'
-import SeriesEdit from './pages/admin/SeriesEdit'
-import PlayerImport from './pages/admin/PlayerImport'
-import GuestAdmin from './pages/admin/GuestAdmin'
+
+// ── Strani iz pages/admin/ se naložijo šele ob obisku ───────────────
+//
+// Prej so bile uvožene statično in so pristale v glavnem svežnju, torej jih
+// je prenesel VSAK obiskovalec — tudi neprijavljen gledalec lestvice, ki
+// administracije ne bo nikoli odprl. Skupaj merijo ~244 kB izvorne kode.
+//
+// LeagueMatchScoresheet je tu posebnost: leži v admin/, a visi na JAVNI poti
+// /liga/tekma/:fixtureId. Lena je vseeno, ker je ne potrebuje domača stran —
+// pomembno pa je, da ostane samostojna in ne pristane v admin svežnju, sicer
+// bi jo javna pot vlekla skupaj z administracijo.
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
+const TournamentAdmin = lazy(() => import('./pages/admin/TournamentAdmin'))
+const TournamentEdit = lazy(() => import('./pages/admin/TournamentEdit'))
+const LeagueAdmin = lazy(() => import('./pages/admin/LeagueAdmin'))
+const DoubleRegAdmin = lazy(() => import('./pages/admin/DoubleRegAdmin'))
+const ClubAdmin = lazy(() => import('./pages/admin/ClubAdmin'))
+const UserAdmin = lazy(() => import('./pages/admin/UserAdmin'))
+const LeagueMatchScoresheet = lazy(() => import('./pages/admin/LeagueMatchScoresheet'))
+const LeagueMatchScoresheetDemo = lazy(() => import('./pages/admin/LeagueMatchScoresheetDemo'))
+const SeriesAdmin = lazy(() => import('./pages/admin/SeriesAdmin'))
+const SeriesEdit = lazy(() => import('./pages/admin/SeriesEdit'))
+const PlayerImport = lazy(() => import('./pages/admin/PlayerImport'))
+const GuestAdmin = lazy(() => import('./pages/admin/GuestAdmin'))
 
 const queryClient = new QueryClient()
+
+/** Prikaže se med prenosom leno naložene strani. */
+function NalaganjeStrani() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh] text-gray-400 text-sm">
+      Nalagam…
+    </div>
+  )
+}
 
 // Zapisnik je zdaj javna stran (glej /liga/tekma/:fixtureId) — stare povezave na
 // /admin/liga/tekma/:fixtureId preusmerimo, da ne pokvarimo zaznamkov.
@@ -69,6 +89,7 @@ export default function App() {
         <AuthProvider>
           <RequirePasswordChange>
           <Layout>
+            <Suspense fallback={<NalaganjeStrani />}>
             <Routes>
               {/* Public */}
               <Route path="/" element={<Home />} />
@@ -120,6 +141,7 @@ export default function App() {
                 </div>
               } />
             </Routes>
+            </Suspense>
           </Layout>
           </RequirePasswordChange>
         </AuthProvider>
