@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import { bracketSize, seedOrder, firstStageForSize } from './knockout'
 import { buildKnockoutBracket, buildBracketFromFirstRound, pairsFromSeededTeams } from './knockout'
-import { knockoutPropagation, preRoundFirstRoundPairs, type KoMatchRow } from './knockout'
+import { knockoutPropagation, preRoundFirstRoundPairs, crossPairs, type KoMatchRow } from './knockout'
 import { seedRegistrations, type SeedableReg } from './knockout'
 
 describe('buildBracketFromFirstRound', () => {
@@ -95,6 +95,31 @@ describe('buildBracketFromFirstRound', () => {
     expect(r32.every(r =>
       [r.team_a_id, r.team_b_id].filter(t => t && direct.includes(t)).length === 1
     )).toBe(true)
+  })
+
+  test('crossPairs (8 skupin): W_i proti R_(9−i), prvi+drugi iste skupine le v finalu', () => {
+    const W = Array.from({ length: 8 }, (_, i) => `W${i + 1}`)
+    const R = Array.from({ length: 8 }, (_, i) => `R${i + 1}`)
+    const pairs = crossPairs(W, R)
+    // Točno razporeditev, kot jo je opisal uporabnik.
+    expect(pairs).toEqual([
+      ['W1', 'R8'], ['W2', 'R7'], ['W3', 'R6'], ['W4', 'R5'],
+      ['W5', 'R4'], ['W6', 'R3'], ['W7', 'R2'], ['W8', 'R1'],
+    ])
+    // Zgradi mrežo (r16) in preveri, da sta W_i in R_i v NASPROTNIH polovicah.
+    const planned = buildBracketFromFirstRound(pairs, { thirdPlace: false })
+    const r16 = planned.filter(m => m.stage === 'r16').sort((a, b) => a.matchNumber - b.matchNumber)
+    // Zgornja polovica = tekme 1–4, spodnja = 5–8 (buildBracketFromFirstRound veže zaporedno).
+    const topTeams = new Set(r16.slice(0, 4).flatMap(m => [m.teamA, m.teamB]))
+    const botTeams = new Set(r16.slice(4, 8).flatMap(m => [m.teamA, m.teamB]))
+    for (let i = 1; i <= 8; i++) {
+      const wTop = topTeams.has(`W${i}`), rTop = topTeams.has(`R${i}`)
+      const wBot = botTeams.has(`W${i}`), rBot = botTeams.has(`R${i}`)
+      // W_i in R_i sta v RAZLIČNIH polovicah → srečata se lahko šele v finalu.
+      expect(wTop && rTop).toBe(false)
+      expect(wBot && rBot).toBe(false)
+      expect((wTop && rBot) || (wBot && rTop)).toBe(true)
+    }
   })
 
   test('ROČNA razporeditev predkola: slot k → direktna ekipa proti zmagovalcu predtekme v isti tekmi 1/16', () => {

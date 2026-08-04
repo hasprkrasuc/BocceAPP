@@ -5,7 +5,7 @@ import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel 
 import { isPairDiscipline } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
 import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
-import { pairsFromSeededTeams, preRoundFirstRoundPairs, KO_STAGE_ORDER } from '../../engines/knockout'
+import { pairsFromSeededTeams, preRoundFirstRoundPairs, crossPairs, KO_STAGE_ORDER } from '../../engines/knockout'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
@@ -599,12 +599,13 @@ export default function TournamentEdit() {
     return quals
   }
 
-  /** Samodejni nosilni pari: zmagovalci = nosilci 1..G, drugouvrščeni = G+1..2G (obratno). */
+  /** Samodejno križanje po skupinah: prvi iz skupine i proti drugemu iz skupine
+   *  (G+1−i); prvi in drugi iz iste skupine se srečata šele v finalu. */
   function autoSeedPairs(quals: KoQualifier[]): Array<[string | null, string | null]> {
     const byGroup = (a: KoQualifier, b: KoQualifier) => a.groupNumber - b.groupNumber
     const winners = quals.filter(q => q.position === 1).sort(byGroup).map(q => q.teamId)
     const runners = quals.filter(q => q.position === 2).sort(byGroup).map(q => q.teamId)
-    return pairsFromSeededTeams([...winners, ...runners.reverse()])
+    return crossPairs(winners, runners)
   }
 
   /** Razdeli napredovalce na direktne (skupine 4/5) in dodatne (skupine 3),
@@ -619,21 +620,30 @@ export default function TournamentEdit() {
     return { direct: ord(quals.filter(q => !isExtra(q.groupNumber))), extra: ord(quals.filter(q => isExtra(q.groupNumber))) }
   }
 
-  /** Privzeti ročni razpored predkola iz SAMODEJNE mreže: za vsako tekmo naslednjega
-   *  kroga izlušči direktno ekipo (bye) in predtekmo (dve dodatni). `editable` pove,
-   *  ali je ta konfiguracija sploh primerna za ročni razpored (vsaka tekma naslednjega
-   *  kroga = natanko 1 bye + 1 predtekma; velja za standardna števila skupin). */
+  /**
+   * Privzeti razpored predkola s KRIŽANJEM po skupinah (za samodejni razpored in
+   * za začetno stanje ročnega urejevalnika). Za vsako tekmo naslednjega kroga (M
+   * tekem) sestavi: direktno ekipo (bye) in predtekmo dveh dodatnih ekip. Direktni
+   * zmagovalci gredo v zgornjo polovico, drugouvrščeni v spodnjo (zrcalno), tako da
+   * sta prvi in drugi iste direktne skupine v nasprotnih polovicah. Predtekme
+   * križajo dodatne zmagovalce z drugouvrščenimi zrcalne skupine — enako načelo.
+   *
+   * `editable` = ali struktura sploh dopušča ta model (vsaka tekma naslednjega
+   * kroga = natanko 1 direktna + 1 predtekma): #direktnih = M, #dodatnih = 2M, M sod.
+   */
   function defaultPreSlots(quals: KoQualifier[]): { slots: KoPreSlot[]; editable: boolean } {
     const { direct, extra } = splitQualifiers(quals)
-    const pairs = pairsFromSeededTeams([...direct.map(q => q.teamId), ...extra.map(q => q.teamId)])
+    const dW = direct.filter(q => q.position === 1).map(q => q.teamId)  // direktni zmagovalci, po skupini
+    const dR = direct.filter(q => q.position === 2).map(q => q.teamId)  // direktni drugouvrščeni
+    const eW = extra.filter(q => q.position === 1).map(q => q.teamId)   // dodatni zmagovalci
+    const eR = extra.filter(q => q.position === 2).map(q => q.teamId)   // dodatni drugouvrščeni
+    const M = direct.length  // število tekem naslednjega kroga (vsaka direktna ekipa = 1 bye)
+    const editable = M >= 2 && M % 2 === 0 && extra.length === 2 * M && dW.length === dR.length
     const slots: KoPreSlot[] = []
-    let editable = pairs.length >= 2 && pairs.length % 2 === 0
-    for (let k = 0; 2 * k + 1 < pairs.length; k++) {
-      const a = pairs[2 * k], b = pairs[2 * k + 1]
-      const aIsBye = (a[0] == null) !== (a[1] == null)   // natanko ena stran zasedena
-      const bIsReal = b[0] != null && b[1] != null       // predtekma dveh ekip
-      if (!aIsBye || !bIsReal) editable = false
-      slots.push({ direct: a[0] ?? a[1] ?? '', extraA: b?.[0] ?? '', extraB: b?.[1] ?? '' })
+    for (let k = 0; k < M; k++) {
+      // Zgornja polovica (k<M/2) = direktni zmagovalci; spodnja = drugouvrščeni (zrcalno).
+      const directTeam = k < dW.length ? dW[k] : (dR[M - 1 - k] ?? '')
+      slots.push({ direct: directTeam ?? '', extraA: eW[k] ?? '', extraB: eR[M - 1 - k] ?? '' })
     }
     return { slots, editable }
   }
@@ -744,9 +754,12 @@ export default function TournamentEdit() {
       }
       pairs = preRoundFirstRoundPairs(koPreSlots)
     } else {
-      // Samodejno: direktni = najvišji nosilci (bye), dodatni = nižji (predkolo).
-      const seeded = [...direct.map(q => q.teamId), ...extra.map(q => q.teamId)]
-      pairs = pairsFromSeededTeams(seeded)
+      // Samodejno: križanje po skupinah (direktni bye + predtekma dodatnih), če
+      // struktura dopušča; sicer nosilni razpored (bye najvišjim nosilcem).
+      const { slots, editable } = defaultPreSlots(quals)
+      pairs = editable
+        ? preRoundFirstRoundPairs(slots)
+        : pairsFromSeededTeams([...direct.map(q => q.teamId), ...extra.map(q => q.teamId)])
     }
 
     await insertKnockoutBracket(id!, pairs, { thirdPlace: koThirdPlace })
