@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import { bergerFixtures, MAX_BERGER_TEAMS } from '../../engines/berger'
 import { phase2Fixtures, validateDraw, type Phase2Team } from '../../engines/leagueGroups'
 import { calculateStandings, type MatchResultWithDisc } from '../../engines/league'
@@ -110,8 +111,13 @@ export default function LeagueAdmin() {
     loadTeams(); loadFixtures(); loadDisciplines()
   }, [selectedSeason])
   useEffect(() => {
-    supabase.from('users').select('id, full_name, club').order('full_name')
-      .then(({ data }) => setPlayers((data ?? []) as Pick<UserProfile, 'id' | 'full_name' | 'club'>[]))
+    // Igralcev je vec kot 1000, PostgREST pa toliko vrne na poizvedbo. Brez
+    // stranjenja sta spustna menija (vodja ekipe in dodajanje igralca) tiho
+    // izpuscala zadnjih nekaj sto igralcev po abecedi.
+    fetchAllRows<Pick<UserProfile, 'id' | 'full_name' | 'club'>>((od, doVkljucno) =>
+      supabase.from('users').select('id, full_name, club').order('full_name').range(od, doVkljucno))
+      .then(setPlayers)
+      .catch(e => setMessage(`⚠ Seznama igralcev ni bilo mogoče naložiti: ${(e as Error).message}`))
   }, [])
 
   async function loadDisciplines() {
