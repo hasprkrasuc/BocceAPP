@@ -655,7 +655,7 @@ export function LeagueDetail() {
             <div key={team.id} className="bg-white border border-gray-200 rounded-xl p-4">
               <h3 className="font-semibold text-gray-800 mb-2">{team.club_name}</h3>
               {team.captain && (
-                <p className="text-xs text-gray-500 mb-2">Kapitan: {team.captain.full_name}</p>
+                <p className="text-xs text-gray-500 mb-2">Vodja ekipe: {team.captain.full_name}</p>
               )}
               {team.league_team_players && team.league_team_players.length > 0 && (
                 <div className="space-y-1">

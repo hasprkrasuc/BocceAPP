@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import { bergerFixtures, MAX_BERGER_TEAMS } from '../../engines/berger'
 import { phase2Fixtures, validateDraw, type Phase2Team } from '../../engines/leagueGroups'
 import { calculateStandings, type MatchResultWithDisc } from '../../engines/league'
@@ -110,8 +111,13 @@ export default function LeagueAdmin() {
     loadTeams(); loadFixtures(); loadDisciplines()
   }, [selectedSeason])
   useEffect(() => {
-    supabase.from('users').select('id, full_name, club').order('full_name')
-      .then(({ data }) => setPlayers((data ?? []) as Pick<UserProfile, 'id' | 'full_name' | 'club'>[]))
+    // Igralcev je vec kot 1000, PostgREST pa toliko vrne na poizvedbo. Brez
+    // stranjenja sta spustna menija (vodja ekipe in dodajanje igralca) tiho
+    // izpuscala zadnjih nekaj sto igralcev po abecedi.
+    fetchAllRows<Pick<UserProfile, 'id' | 'full_name' | 'club'>>((od, doVkljucno) =>
+      supabase.from('users').select('id, full_name, club').order('full_name').range(od, doVkljucno))
+      .then(setPlayers)
+      .catch(e => setMessage(`⚠ Seznama igralcev ni bilo mogoče naložiti: ${(e as Error).message}`))
   }, [])
 
   async function loadDisciplines() {
@@ -759,7 +765,7 @@ export default function LeagueAdmin() {
                     placeholder="LJU" maxLength={5} />
                 </div>
                 <div className="flex-1 min-w-[160px]">
-                  <label className="block text-xs text-gray-600 mb-1">Kapitan</label>
+                  <label className="block text-xs text-gray-600 mb-1">Vodja ekipe</label>
                   <select value={teamForm.captain_id} onChange={setTeamField('captain_id')}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                     <option value="">Brez</option>
@@ -798,7 +804,7 @@ export default function LeagueAdmin() {
                         </label>
                         <span className="font-semibold text-gray-800">{team.club_name}</span>
                         {team.short_name && <span className="ml-1 text-xs text-gray-400">({team.short_name})</span>}
-                        {team.captain && <span className="ml-2 text-xs text-gray-500">Kapitan: {team.captain.full_name}</span>}
+                        {team.captain && <span className="ml-2 text-xs text-gray-500">Vodja ekipe: {team.captain.full_name}</span>}
                       </div>
                       <button onClick={() => removeTeam(team.id)} className="text-xs text-red-400 hover:text-red-600">Izbriši</button>
                     </div>
