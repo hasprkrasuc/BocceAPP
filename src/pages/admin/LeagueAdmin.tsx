@@ -534,6 +534,36 @@ export default function LeagueAdmin() {
     loadSeasons()
   }
 
+  /**
+   * Sprememba sistema sezone (raven round robin ↔ skupine).
+   *
+   * Doslej sistema po ustvarjanju sezone ni bilo mogoče spremeniti — obrazec ga
+   * je ponujal le ob ustvarjanju, zato je bilo treba v bazo.
+   *
+   * Dovoljeno samo, dokler sezona nima razporejenih tekem: oba sistema tvorita
+   * razpored po svoji logiki in menjava bi obstoječega razveljavila.
+   */
+  async function updateSeasonFormat(format: LeagueSeasonFormat) {
+    if (!selectedSeason || format === (selectedSeason.format ?? 'flat')) return
+
+    // Štejemo v bazi, ne v stanju komponente: tekme je lahko medtem dodal kdo
+    // drug, mi pa bi se odločali po zastarelem seznamu.
+    const { count, error } = await supabase.from('league_fixtures')
+      .select('id', { count: 'exact', head: true }).eq('season_id', selectedSeason.id)
+    if (error) { setMessage(`⚠ Ni bilo mogoče preveriti tekem: ${error.message}`); return }
+    if (count) {
+      setMessage(`⚠ Sistema ni mogoče spremeniti: sezona ima ${count} razporejenih tekem. Najprej izbriši razpored.`)
+      return
+    }
+
+    const { error: uErr } = await supabase.from('league_seasons').update({ format }).eq('id', selectedSeason.id)
+    if (uErr) { setMessage(`⚠ Sistema ni bilo mogoče shraniti: ${uErr.message}`); return }
+
+    setSelectedSeason({ ...selectedSeason, format })
+    setMessage(`✓ Sistem sezone spremenjen v »${FORMAT_LABELS[format]}«`)
+    loadSeasons()
+  }
+
   async function saveScore(fixtureId: string, homeScore: string, awayScore: string) {
     await supabase.from('league_fixtures').update({
       home_score: Number(homeScore), away_score: Number(awayScore), status: 'completed',
@@ -703,9 +733,23 @@ export default function LeagueAdmin() {
               <span className="ml-3 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                 {selectedSeason.status === 'draft' ? 'Osnutek' : selectedSeason.status === 'active' ? 'Aktivna' : 'Zaključena'}
               </span>
-              <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                {FORMAT_LABELS[selectedSeason.format ?? 'flat']}
-              </span>
+              {fixtures.length === 0 ? (
+                <select
+                  value={selectedSeason.format ?? 'flat'}
+                  onChange={e => updateSeasonFormat(e.target.value as LeagueSeasonFormat)}
+                  title="Sistem je mogoče spremeniti, dokler sezona nima razporejenih tekem"
+                  className="ml-2 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 cursor-pointer focus:ring-2 focus:ring-bocce-green outline-none">
+                  {(Object.entries(FORMAT_LABELS) as [LeagueSeasonFormat, string][]).map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              ) : (
+                <span
+                  title={`Sistema ni mogoče spremeniti: sezona ima ${fixtures.length} razporejenih tekem`}
+                  className="ml-2 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                  {FORMAT_LABELS[selectedSeason.format ?? 'flat']}
+                </span>
+              )}
             </div>
             <div className="flex gap-2">
               {selectedSeason.status === 'draft' && (
