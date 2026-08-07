@@ -2,9 +2,9 @@
 -- dejanski `db reset` na sveži bazi (7. 8. 2026).
 --
 -- Vseh 37 migracij se je na prazni bazi izvedlo BREZ napake — vrstni red torej
--- drži. A nastala baza NI bila enaka produkcijski. Ta datoteka zapre vseh osem
--- razhajanj; po njej sta shemi bit za bit enaki (stolpci, indeksi, funkcije,
--- prožilci, politike, omejitve).
+-- drži. A nastala baza NI bila enaka produkcijski. Ta datoteka zapre vseh devet
+-- razhajanj; po njej sta shemi enaki v stolpcih, indeksih, funkcijah, prožilcih,
+-- politikah, omejitvah in pogledih.
 --
 -- Vse je idempotentno; na produkciji je datoteka NO-OP.
 
