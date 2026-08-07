@@ -20,5 +20,4 @@ alter table public.league_seasons add constraint league_seasons_format_check
   check (format = any (array['flat','groups','split']));
 
 comment on column public.league_seasons.format is
-  'flat = raven round robin; groups = 2x6 + nadaljevalni skupini (12 ekip); '
-  'split = 10 ekip 9 kol, nato skupini 1-5 in 6-10 se po 5 kol (tocke se prenesejo).';
+  'flat = raven round robin; groups = 2x6 + nadaljevalni skupini (12 ekip); split = 10 ekip 9 kol, nato skupini 1-5 in 6-10 se po 5 kol (tocke se prenesejo).';
