@@ -40,8 +40,11 @@ export function youthLevel(category: string | null | undefined): number | null {
  *   'youth' = mladinske lige (U-12/U-14/U-15/U-18, tier null)
  *   'super' = Super liga
  *   'lower' = 1. liga in 2. liga (igrajo ob istem terminu)
+ *   'obz'   = območne lige (igrajo ob SVOJEM terminu, zato so združljive z
+ *             vsemi državnimi ligami; dve območni ekipi med sabo pa ne, ker
+ *             vse območne lige igrajo ob istem terminu)
  */
-export type TerminGroup = 'youth' | 'super' | 'lower'
+export type TerminGroup = 'youth' | 'super' | 'lower' | 'obz'
 export function terminGroup(
   category: string | null | undefined,
   tier: string | null | undefined,
@@ -49,12 +52,14 @@ export function terminGroup(
   if (youthLevel(category) !== null) return 'youth'
   if (tier === 'super_liga') return 'super'
   if (tier === '1_liga' || tier === '2_liga_zahod' || tier === '2_liga_vzhod') return 'lower'
+  if (tier === 'obz') return 'obz'
   return null
 }
 
 /**
  * Ali sta ekipi iz RAZLIČNIH terminskih skupin (dovoljena hkratna registracija)?
- * youth↔super, youth↔lower, super↔lower ✅ · lower↔lower, ista skupina ❌.
+ * youth↔super, youth↔lower, super↔lower, obz↔vse državne ✅ · lower↔lower,
+ * obz↔obz, ista skupina ❌.
  * Dve MLADINSKI ekipi sta združljivi le, če sta RAZLIČNI kategoriji (U-14 + U-18 =
  * igra navzgor); ista mladinska kategorija ❌.
  */
