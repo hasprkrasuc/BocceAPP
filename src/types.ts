@@ -174,7 +174,7 @@ export interface Match {
   team_b?: GroupTeam
 }
 
-export type LeagueSeasonFormat = 'flat' | 'groups'
+export type LeagueSeasonFormat = 'flat' | 'groups' | 'split'
 
 export interface LeagueSeason {
   id: string
@@ -188,7 +188,12 @@ export interface LeagueSeason {
   win_points: number
   draw_points: number
   loss_points: number
-  /** 'flat' = raven round robin čez vse ekipe (privzeto). 'groups' = 2 skupini po 6 + nadaljevalni skupini. */
+  /**
+   * 'flat'   = raven round robin čez vse ekipe (privzeto)
+   * 'groups' = 2 skupini po 6 + nadaljevalni skupini (12 ekip, kola 1-16)
+   * 'split'  = 10 ekip enokrožno (9 kol), nato razdelitev 1-5 / 6-10 in še 5 kol;
+   *            točke iz 9 kol se prenesejo (OBZ Nova Gorica)
+   */
   format: LeagueSeasonFormat
 }
 

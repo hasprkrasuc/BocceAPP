@@ -5,7 +5,8 @@ import { useRealtimeTable, useJitteredCallback, mergeRowById } from '../lib/useR
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import LeagueTable from '../components/LeagueTable'
-import { calculateStandings, calculateGroupStandings, getFixturesByRound } from '../engines/league'
+import { calculateStandings, calculateGroupStandings, calculateSplitStandings, getFixturesByRound } from '../engines/league'
+import { SPLIT_PHASE1_ROUNDS, SPLIT_PHASE2_ROUNDS } from '../engines/leagueSplit'
 import { pickLeagueTreeSeasons, pickObzSeasons, type LeagueTreeSlot } from '../engines/leagueTree'
 import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
@@ -235,6 +236,8 @@ const GROUP_BADGE: Record<string, string> = {
   'B':    'bg-blue-100 text-blue-700',
   '1-6':  'bg-bocce-gold/20 text-yellow-700',
   '7-12': 'bg-gray-100 text-gray-500',
+  '1-5':  'bg-bocce-gold/20 text-yellow-700',
+  '6-10': 'bg-gray-100 text-gray-500',
 }
 
 function WhistleIcon({ className }: { className?: string }) {
@@ -462,6 +465,8 @@ export function LeagueDetail() {
 
   const standings = calculateStandings(teams, fixtures, season, matchResults)
   const groupStandings = calculateGroupStandings(teams, fixtures, season, matchResults)
+  const splitStandings = calculateSplitStandings(teams, fixtures, season, matchResults)
+  const isSplitLeague = season.format === 'split' && splitStandings.hasSplit
   const byRound = getFixturesByRound(fixtures)
   const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b)
 
@@ -514,8 +519,54 @@ export function LeagueDetail() {
         ))}
       </div>
 
-      {tab === 'standings' && !isGroupLeague && (
+      {tab === 'standings' && !isGroupLeague && !isSplitLeague && (
         <LeagueTable standings={standings} highlightTeamId={myTeam?.id} />
+      )}
+
+      {/* Razdelitveni sistem: ena lestvica do razdelitve, nato dve skupini s prenesenimi točkami. */}
+      {tab === 'standings' && isSplitLeague && (
+        <div className="space-y-8">
+          <div>
+            <h2 className="text-base font-bold text-gray-700 mb-1 flex items-center gap-2">
+              <span className="inline-block w-3 h-3 rounded-full bg-bocce-green" />
+              {splitStandings.phase2 ? `Po ${SPLIT_PHASE1_ROUNDS} kolih — pred razdelitvijo` : 'Lestvica'}
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Vseh {teams.length} ekip, vsak z vsakim enkrat ({SPLIT_PHASE1_ROUNDS} kol).
+              {splitStandings.phase2 && ' Po tej lestvici je bila liga razdeljena.'}
+            </p>
+            <LeagueTable standings={splitStandings.phase1} highlightTeamId={myTeam?.id} />
+          </div>
+
+          {splitStandings.phase2 && (
+            <div>
+              <h2 className="text-base font-bold text-gray-700 mb-1 flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-full bg-bocce-gold" />
+                Po razdelitvi
+              </h2>
+              <p className="text-xs text-gray-400 mb-4">
+                Točke iz {SPLIT_PHASE1_ROUNDS} kol se prenesejo. V skupini vsaka ekipa odigra še 4 tekme
+                ({SPLIT_PHASE2_ROUNDS} kol, vsako kolo ena počiva); dom/gost je obrnjen glede na prvi del.
+              </p>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <span className="text-xs font-bold px-1 py-0.5 rounded bg-bocce-gold/20 text-yellow-700">1–5</span>
+                    Za naslov
+                  </h3>
+                  <LeagueTable standings={splitStandings.phase2['1-5']} highlightTeamId={myTeam?.id} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <span className="text-xs font-bold px-1 py-0.5 rounded bg-gray-100 text-gray-500">6–10</span>
+                    Za obstanek
+                  </h3>
+                  <LeagueTable standings={splitStandings.phase2['6-10']} highlightTeamId={myTeam?.id} />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {tab === 'standings' && isGroupLeague && (
@@ -613,9 +664,10 @@ export function LeagueDetail() {
             </>
           ) : (
             <>
-              {/* Regular rounds */}
+              {/* Regular rounds — pri razdelitvenem sistemu kola po razdelitvi nosijo oznako skupine */}
               {rounds.filter(r => r <= season.rounds_count).map(round => (
-                <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} />
+                <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id}
+                  showGroup={isSplitLeague && round > SPLIT_PHASE1_ROUNDS} />
               ))}
 
               {/* Playoff (končnica) */}

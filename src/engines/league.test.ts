@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculateStandings } from './league'
+import { calculateStandings, calculateSplitStandings } from './league'
 import type { LeagueTeam, LeagueFixture, LeagueSeason, LeagueMatchResult, LeagueMatchDisciplineResult } from '../types'
 
 const makeSeason = (overrides?: Partial<LeagueSeason>): LeagueSeason => ({
@@ -99,5 +99,74 @@ describe('calculateStandings — uvrstitev (točke po zmagah + tiebreaki)', () =
     const a = s.find(x => x.team.id === 'a')!
     expect(a.played).toBe(1)
     expect(a.pointsFor).toBe(10)
+  })
+})
+
+// ────────────────────────────────────────────────────────────────
+// RAZDELITVENI SISTEM (OBZ Nova Gorica): 10 ekip, 9 kol + 5 kol v skupinah
+// ────────────────────────────────────────────────────────────────
+describe('calculateSplitStandings — prenos točk iz faze 1 v skupini', () => {
+  const teams = Array.from({ length: 10 }, (_, i) => makeTeam(`t${i + 1}`, `Klub ${i + 1}`))
+  const labeled = (f: LeagueFixture, label: string): LeagueFixture => ({ ...f, group_label: label })
+
+  // Faza 1 (group_label prazen): t1 premaga t10 IN t2; t2 premaga t3.
+  const p1 = [
+    makeFixture('f1', 't1', 't10', 3, 1, true, 1),
+    makeFixture('f2', 't1', 't2', 3, 2, true, 2),
+    makeFixture('f3', 't2', 't3', 3, 0, true, 3),
+  ]
+  // Faza 2, skupina 1-5: t2 vrne poraz. Dve tekmi sta le razporejeni —
+  // sta tu zato, da so v skupini vseh pet ekip.
+  const p2 = [
+    labeled(makeFixture('g1', 't2', 't1', 3, 1, true, 10), '1-5'),
+    labeled(makeFixture('g2', 't3', 't4', null, null, false, 11), '1-5'),
+    labeled(makeFixture('g3', 't5', 't1', null, null, false, 12), '1-5'),
+  ]
+
+  it('brez tekem faze 1 ni razdelitvenega sistema', () => {
+    const r = calculateSplitStandings(teams, [], makeSeason())
+    expect(r.hasSplit).toBe(false)
+    expect(r.phase2).toBeNull()
+  })
+
+  it('dokler faze 2 ni, je lestvica ena sama (vseh 10 ekip)', () => {
+    const r = calculateSplitStandings(teams, p1, makeSeason())
+    expect(r.hasSplit).toBe(true)
+    expect(r.phase2).toBeNull()
+    expect(r.phase1).toHaveLength(10)
+    expect(r.phase1[0].team.id).toBe('t1')      // dve zmagi
+    expect(r.phase1[0].points).toBe(4)
+  })
+
+  it('ekipa v skupino prinese VSE točke iz 9 kol — tudi proti ekipam iz druge skupine', () => {
+    const r = calculateSplitStandings(teams, [...p1, ...p2], makeSeason())
+    const top = r.phase2!['1-5']
+    const t1 = top.find(s => s.team.id === 't1')!
+
+    // 2 (zmaga nad t10, ki je zdaj v spodnji skupini) + 2 (zmaga nad t2) + 0 (poraz v fazi 2)
+    expect(t1.points).toBe(4)
+    expect(t1.played).toBe(3)
+  })
+
+  it('tekme faze 2 se prištejejo prenesenim, ne nadomestijo', () => {
+    const r = calculateSplitStandings(teams, [...p1, ...p2], makeSeason())
+    const t2 = r.phase2!['1-5'].find(s => s.team.id === 't2')!
+    // 0 (poraz s t1) + 2 (zmaga nad t3) + 2 (zmaga nad t1 v fazi 2)
+    expect(t2.points).toBe(4)
+    expect(t2.played).toBe(3)
+  })
+
+  it('ob izenačenju odloči medsebojni dvoboj — obe srečanji skupaj', () => {
+    const r = calculateSplitStandings(teams, [...p1, ...p2], makeSeason())
+    const top = r.phase2!['1-5']
+    // t1 in t2 imata oba 4 točke; medsebojno t1 3:2 in 1:3 → t2 ima 5 match točk, t1 štiri
+    expect(top[0].team.id).toBe('t2')
+    expect(top[1].team.id).toBe('t1')
+  })
+
+  it('v skupini so vse ekipe, ki v njej nastopajo — tudi brez odigrane tekme', () => {
+    const r = calculateSplitStandings(teams, [...p1, ...p2], makeSeason())
+    expect(r.phase2!['1-5'].map(s => s.team.id).sort()).toEqual(['t1', 't2', 't3', 't4', 't5'])
+    expect(r.phase2!['6-10']).toEqual([])
   })
 })

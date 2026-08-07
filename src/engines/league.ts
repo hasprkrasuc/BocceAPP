@@ -242,6 +242,91 @@ export function calculateGroupStandings(
 }
 
 // ────────────────────────────────────────────────────────────────
+// RAZDELITVENI SISTEM (OBZ Nova Gorica) — 10 ekip, 9 + 5 kol
+//   group_label prazen  → faza 1 (ena lestvica vseh 10)
+//   '1-5' / '6-10'      → skupini faze 2
+//
+// TOČKE SE PRENESEJO. Ekipa v skupino vstopi z vsemi točkami iz 9 kol —
+// tudi tistimi proti ekipam, ki so končale v drugi skupini. Faza 2 jih
+// samo prišteva. Zato lestvica faze 2 NI mini-liga petih, ampak
+// nadaljevanje skupne lestvice z zoženim krogom nasprotnikov.
+//
+// Razpored faze 2 (pari, kola in obrat dom/gost) je v engines/leagueSplit.ts.
+// ────────────────────────────────────────────────────────────────
+export interface SplitStandings {
+  hasSplit: boolean
+  /** Lestvica po 9 kolih — po njej se liga razdeli na 1-5 in 6-10. */
+  phase1: TeamStats[]
+  /** Lestvici skupin; točke iz faze 1 so že vštete. Null, dokler faze 2 ni. */
+  phase2: { '1-5': TeamStats[]; '6-10': TeamStats[] } | null
+}
+
+export function calculateSplitStandings(
+  teams: LeagueTeam[],
+  fixtures: LeagueFixture[],
+  season: Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points'> | null,
+  matchResults?: MatchResultWithDisc[],
+): SplitStandings {
+  const winPts  = season?.win_points  ?? 2
+  const drawPts = season?.draw_points ?? 1
+  const lossPts = season?.loss_points ?? 0
+  const boule = bouleByFixture(matchResults)
+
+  const phase1   = fixtures.filter(f => !f.group_label)
+  const top      = fixtures.filter(f => f.group_label === '1-5')
+  const bottom   = fixtures.filter(f => f.group_label === '6-10')
+
+  if (phase1.length === 0) {
+    return { hasSplit: false, phase1: [], phase2: null }
+  }
+
+  const score = (s: TeamStats) => { s.points = s.won * winPts + s.drawn * drawPts + s.lost * lossPts }
+
+  // Faza 1: vseh 10 ekip, vse tekme prvih 9 kol.
+  const p1: Record<string, TeamStats> = {}
+  for (const team of teams) p1[team.id] = emptyStats(team)
+  const p1Counted: LeagueFixture[] = []
+  for (const f of phase1) {
+    if (f.status !== 'completed') continue
+    const h = p1[f.home_team_id], a = p1[f.away_team_id]
+    if (!h || !a) continue
+    accumulate(h, a, f.home_score ?? 0, f.away_score ?? 0, boule[f.id])
+    p1Counted.push(f)
+  }
+  for (const s of Object.values(p1)) score(s)
+
+  /** Skupina faze 2: prenesene statistike iz faze 1 + tekme skupine. */
+  function groupStats(groupFixtures: LeagueFixture[]): TeamStats[] {
+    const ids = new Set<string>()
+    for (const f of groupFixtures) { ids.add(f.home_team_id); ids.add(f.away_team_id) }
+
+    // Prenos: kopija statistike iz faze 1, ne nova prazna.
+    const s: Record<string, TeamStats> = {}
+    for (const id of ids) if (p1[id]) s[id] = { ...p1[id] }
+
+    for (const f of groupFixtures) {
+      if (f.status !== 'completed') continue
+      const h = s[f.home_team_id], a = s[f.away_team_id]
+      if (!h || !a) continue
+      accumulate(h, a, f.home_score ?? 0, f.away_score ?? 0, boule[f.id])
+    }
+    for (const st of Object.values(s)) score(st)
+
+    // Za izenačene šteje medsebojni dvoboj; rankTiedGroup sam odreže tekme
+    // proti ekipam zunaj skupine, zato lahko podamo obe fazi skupaj.
+    return sortStandings(Object.values(s), [...p1Counted, ...groupFixtures], boule)
+  }
+
+  const hasPhase2 = top.length > 0 || bottom.length > 0
+
+  return {
+    hasSplit: true,
+    phase1: sortStandings(Object.values(p1), p1Counted, boule),
+    phase2: hasPhase2 ? { '1-5': groupStats(top), '6-10': groupStats(bottom) } : null,
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
 // HEAD-TO-HEAD COMPARISON (tiebreaker helper — javno dostopen)
 // ────────────────────────────────────────────────────────────────
 export function headToHead(

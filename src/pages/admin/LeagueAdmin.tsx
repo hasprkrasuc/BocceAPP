@@ -5,13 +5,25 @@ import { USER_PUBLIC_COLS } from '../../lib/userColumns'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { bergerFixtures, MAX_BERGER_TEAMS } from '../../engines/berger'
 import { phase2Fixtures, validateDraw, type Phase2Team } from '../../engines/leagueGroups'
-import { calculateStandings, type MatchResultWithDisc } from '../../engines/league'
+import {
+  splitGroups, splitPhase2Fixtures, validateSplitPhase1,
+  SPLIT_TEAMS, SPLIT_GROUP_SIZE, SPLIT_PHASE1_ROUNDS, SPLIT_PHASE2_ROUNDS,
+  SPLIT_TOP, SPLIT_BOTTOM,
+} from '../../engines/leagueSplit'
+import { calculateStandings, calculateSplitStandings, type MatchResultWithDisc } from '../../engines/league'
 import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueSeasonFormat, LeagueCategory, LeagueTier, LeagueSeasonDiscipline, UserProfile, DisciplineType } from '../../types'
 
 const FORMAT_LABELS: Record<LeagueSeasonFormat, string> = {
   flat: 'Raven round robin',
   groups: 'Skupine 2×6 + nadaljevalni',
+  split: 'Razdelitev 10 (9 kol + 5)',
+}
+
+/** Predlog razdelitve po 9 kolih: po pet ekip v vsaki skupini. */
+interface SplitDraft {
+  top: string[]
+  bottom: string[]
 }
 
 /** Sklop 6 žrebanih številk ene skupine faze 2 ('1-6' uporabi mesta 1-3, '7-12' mesta 4-6). */
@@ -87,6 +99,7 @@ export default function LeagueAdmin() {
   const [teamForm, setTeamForm] = useState<TeamForm>({ club_name: '', short_name: '', captain_id: '' })
   const [scoreEditing, setScoreEditing] = useState<ScoreEditing>({})
   const [phase2Draft, setPhase2Draft] = useState<Phase2Draft | null>(null)
+  const [splitDraft, setSplitDraft] = useState<SplitDraft | null>(null)
   /** Disciplinski rezultati — nujni za pravilno uvrstitev ob izenačenju (razlika iger).
    *  Nalagajo se SAMO za format='groups' (drugje jih ta stran ne potrebuje). */
   const [matchResults, setMatchResults] = useState<MatchResultWithDisc[]>([])
@@ -337,12 +350,18 @@ export default function LeagueAdmin() {
     ? (teams.length !== 12
         ? [`Format "skupine" zahteva natanko 12 ekip (2×6), trenutno ${teams.length}.`]
         : validateDraw(teams.map(t => ({ id: t.id, group_label: t.group_label, draw_number: t.draw_number }))))
-    : []
+    : selectedSeason?.format === 'split' && teams.length !== SPLIT_TEAMS
+      ? [`Razdelitveni sistem zahteva natanko ${SPLIT_TEAMS} ekip, trenutno ${teams.length}.`]
+      : []
 
   async function handleGenerateFixtures() {
     if (!selectedSeason) return
     if (selectedSeason.format === 'groups') {
       await handleGeneratePhase1Groups()
+      return
+    }
+    if (selectedSeason.format === 'split') {
+      await handleGeneratePhase1Split()
       return
     }
     if (teams.length < 2) { setMessage('Premalo ekip za razpored'); return }
@@ -372,6 +391,48 @@ export default function LeagueAdmin() {
     }
     setMessage(`✓ Ustvarjenih ${fixtureList.length} tekem`)
     await loadFixtures()
+    setLoading(false)
+  }
+
+  /**
+   * Faza 1 za format='split': vseh 10 ekip ENOkrožno po Bergerju → 9 kol, 45 tekem.
+   * Enokrožnost ni nastavitev, ampak pogoj sistema: obrat dom/gost v fazi 2 je
+   * enoličen le, če se je par v fazi 1 srečal natanko enkrat.
+   */
+  async function handleGeneratePhase1Split() {
+    if (!selectedSeason) return
+    if (teams.length !== SPLIT_TEAMS) {
+      setMessage(`Razdelitveni sistem zahteva natanko ${SPLIT_TEAMS} ekip, trenutno ${teams.length}.`)
+      return
+    }
+    if (hasSplitPhase2) {
+      setMessage('⚠ Faza 2 že obstaja. Najprej izbriši tekme skupin 1-5 in 6-10, sicer bi regeneracija faze 1 razveljavila razdelitev.')
+      return
+    }
+    let fixtureList
+    try {
+      fixtureList = bergerFixtures(teams, false)
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
+      return
+    }
+    if (!window.confirm(`Ustvari fazo 1 (${SPLIT_TEAMS} ekip, enokrožno, kola 1-${SPLIT_PHASE1_ROUNDS})? To bo izbrisalo obstoječe tekme!`)) return
+
+    setLoading(true)
+    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id)
+    for (const f of fixtureList) {
+      await supabase.from('league_fixtures').insert({
+        season_id: selectedSeason.id,
+        round_number: f.round_number,
+        home_team_id: f.home_team_id,
+        away_team_id: f.away_team_id,
+        status: 'scheduled',
+      })
+    }
+    await supabase.from('league_seasons').update({ rounds_count: SPLIT_PHASE1_ROUNDS }).eq('id', selectedSeason.id)
+    setMessage(`✓ Ustvarjenih ${fixtureList.length} tekem faze 1 (${SPLIT_PHASE1_ROUNDS} kol)`)
+    await loadFixtures()
+    await loadSeasons()
     setLoading(false)
   }
 
@@ -535,6 +596,110 @@ export default function LeagueAdmin() {
     await supabase.from('league_seasons').update({ rounds_count: 16 }).eq('id', selectedSeason.id)
     setMessage(`✓ Ustvarjenih ${fixtures16.length + fixtures712.length} tekem faze 2`)
     setPhase2Draft(null)
+    await loadFixtures()
+    await loadSeasons()
+    setLoading(false)
+  }
+
+  // ─── Razdelitveni sistem: skupini 1-5 / 6-10 — samo format='split' ───
+
+  const splitPhase1Fixtures = fixtures.filter(f => !f.group_label)
+  const hasSplitPhase1 = selectedSeason?.format === 'split' && splitPhase1Fixtures.length > 0
+  const hasSplitPhase2 = fixtures.some(f => f.group_label === SPLIT_TOP || f.group_label === SPLIT_BOTTOM)
+
+  /** Napake, zaradi katerih razdelitve še ni mogoče izpeljati (prazno = pripravljeno). */
+  const splitReadyErrors: string[] = selectedSeason?.format === 'split'
+    ? validateSplitPhase1(teams, splitPhase1Fixtures)
+    : []
+
+  /**
+   * Predlog razdelitve po lestvici po 9 kolih. matchResults so obvezni iz istega
+   * razloga kot pri 12-ekipnem sistemu: ob izenačenju o mestu odloča razlika iger,
+   * in prav to mesto lahko odloči, v katero skupino gre ekipa.
+   */
+  function proposeSplit(): SplitDraft {
+    const lestvica = calculateSplitStandings(teams, splitPhase1Fixtures, selectedSeason, matchResults).phase1
+    const { top, bottom } = splitGroups(lestvica)
+    return { top: top.map(s => s.team.id), bottom: bottom.map(s => s.team.id) }
+  }
+
+  function openSplitProposal() {
+    if (!hasSplitPhase1) { setMessage('Faza 1 še ni generirana.'); return }
+    if (!matchResultsLoaded) {
+      setMessage('⚠ Disciplinski rezultati še niso naloženi — predlog bi lahko bil napačen ob izenačenju. Poskusi znova čez trenutek.')
+      return
+    }
+    const unfinished = splitPhase1Fixtures.filter(f => f.status !== 'completed').length
+    if (unfinished > 0) {
+      if (!window.confirm(`${unfinished} tekem faze 1 še ni odigranih — lestvica ni dokončna. Vseeno izračunam predlog razdelitve?`)) return
+    }
+    try {
+      setSplitDraft(proposeSplit())
+      setMessage('')
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Predloga razdelitve ni bilo mogoče izračunati'}`)
+    }
+  }
+
+  function updateSplitSlot(key: keyof SplitDraft, index: number, teamId: string) {
+    setSplitDraft(d => {
+      if (!d) return d
+      const slot = [...d[key]]
+      slot[index] = teamId
+      return { ...d, [key]: slot }
+    })
+  }
+
+  function validateSplitDraft(d: SplitDraft): string[] {
+    const errors: string[] = []
+    const all = [...d.top, ...d.bottom]
+    const known = new Set(teams.map(t => t.id))
+    if (all.some(id => !id)) errors.push('Vsa mesta morajo biti zapolnjena.')
+    if (d.top.length !== SPLIT_GROUP_SIZE || d.bottom.length !== SPLIT_GROUP_SIZE) {
+      errors.push(`Vsaka skupina mora imeti natanko ${SPLIT_GROUP_SIZE} ekip.`)
+    }
+    if (new Set(all).size !== SPLIT_TEAMS || all.some(id => id && !known.has(id))) {
+      errors.push(`Izbor mora vsebovati vseh ${SPLIT_TEAMS} ekip lige, vsako natanko enkrat.`)
+    }
+    return errors
+  }
+
+  async function confirmGenerateSplit() {
+    if (!selectedSeason || !splitDraft) return
+    const errors = validateSplitDraft(splitDraft)
+    if (errors.length > 0) { setMessage(`⚠ ${errors.join(' ')}`); return }
+    if (hasSplitPhase2 && !window.confirm('Faza 2 že obstaja. Izbriši in ponovno ustvari tekme skupin?')) return
+    const prvo = SPLIT_PHASE1_ROUNDS + 1
+    const zadnje = SPLIT_PHASE1_ROUNDS + SPLIT_PHASE2_ROUNDS
+    if (!window.confirm(`Ustvari razpored faze 2 (kola ${prvo}-${zadnje}) po potrjeni razdelitvi?`)) return
+
+    const toPositions = (ids: string[]) => ids.map((id, i) => ({ id, position: i + 1 }))
+    const meetings = splitPhase1Fixtures.map(f => ({ home_team_id: f.home_team_id, away_team_id: f.away_team_id }))
+
+    let zgoraj, spodaj
+    try {
+      zgoraj = splitPhase2Fixtures(toPositions(splitDraft.top), SPLIT_TOP, prvo, meetings)
+      spodaj = splitPhase2Fixtures(toPositions(splitDraft.bottom), SPLIT_BOTTOM, prvo, meetings)
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri generiranju faze 2'}`)
+      return
+    }
+
+    setLoading(true)
+    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).in('group_label', [SPLIT_TOP, SPLIT_BOTTOM])
+    for (const f of [...zgoraj, ...spodaj]) {
+      await supabase.from('league_fixtures').insert({
+        season_id: selectedSeason.id,
+        round_number: f.round_number,
+        home_team_id: f.home_team_id,
+        away_team_id: f.away_team_id,
+        group_label: f.group_label,
+        status: 'scheduled',
+      })
+    }
+    await supabase.from('league_seasons').update({ rounds_count: zadnje }).eq('id', selectedSeason.id)
+    setMessage(`✓ Ustvarjenih ${zgoraj.length + spodaj.length} tekem faze 2 (dom/gost obrnjen glede na fazo 1)`)
+    setSplitDraft(null)
     await loadFixtures()
     await loadSeasons()
     setLoading(false)
@@ -1053,6 +1218,99 @@ export default function LeagueAdmin() {
                   <p className="text-xs text-gray-400 -mt-4 mb-6">
                     Razpored se sestavi po žrebanih številkah ekip (zavihek Ekipe → polje <span className="font-mono">#</span>).
                   </p>
+                </>
+              ) : selectedSeason.format === 'split' ? (
+                <>
+                  {/* FAZA 1: 10 ekip enokrožno */}
+                  <div className="flex items-center gap-3 mb-2 flex-wrap">
+                    <button onClick={handleGenerateFixtures} disabled={loading || drawErrors.length > 0 || hasSplitPhase2}
+                      title={hasSplitPhase2 ? 'Faza 2 že obstaja — najprej izbriši tekme skupin' : drawErrors.length > 0 ? `Potrebnih je ${SPLIT_TEAMS} ekip` : ''}
+                      className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                      {loading ? 'Generiram...' : hasSplitPhase1 ? '↺ Regeneriraj fazo 1' : 'Generiraj fazo 1'}
+                    </button>
+                    <span className="text-xs text-gray-500">
+                      {SPLIT_TEAMS} ekip · enokrožno · kola 1-{SPLIT_PHASE1_ROUNDS}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Razpored po žrebanih številkah (zavihek Ekipe → polje <span className="font-mono">#</span>).
+                    Faza 1 je <strong>vedno enokrožna</strong> — obrat dom/gost v fazi 2 je enoličen le, če se je par srečal natanko enkrat.
+                    {drawErrors.length > 0 && <span className="text-amber-600"> {drawErrors[0]}</span>}
+                  </p>
+
+                  {/* FAZA 2: razdelitev na 1-5 in 6-10 */}
+                  <div className="flex items-center gap-3 mb-2 flex-wrap">
+                    <button onClick={openSplitProposal} disabled={loading || !hasSplitPhase1 || !matchResultsLoaded}
+                      title={!hasSplitPhase1 ? 'Najprej generiraj fazo 1' : !matchResultsLoaded ? 'Disciplinski rezultati se še nalagajo' : ''}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                      {!matchResultsLoaded && hasSplitPhase1 ? 'Nalagam rezultate…' : hasSplitPhase2 ? '↺ Nov predlog razdelitve' : 'Predlog razdelitve'}
+                    </button>
+                    <span className="text-xs text-gray-500">
+                      Skupini {SPLIT_TOP} in {SPLIT_BOTTOM} · po {SPLIT_PHASE2_ROUNDS} kol · kola {SPLIT_PHASE1_ROUNDS + 1}-{SPLIT_PHASE1_ROUNDS + SPLIT_PHASE2_ROUNDS}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Najboljših {SPLIT_GROUP_SIZE} po {SPLIT_PHASE1_ROUNDS} kolih gre v skupino {SPLIT_TOP}, zadnjih {SPLIT_GROUP_SIZE} v {SPLIT_BOTTOM}.
+                    V skupini vsako kolo ena ekipa počiva. <strong>Točke iz {SPLIT_PHASE1_ROUNDS} kol se prenesejo.</strong>{' '}
+                    Ob izenačenju na meji med skupinama predlog popravi ročno — dokončno odloči žreb.
+                  </p>
+
+                  {splitReadyErrors.length > 0 && hasSplitPhase1 && !hasSplitPhase2 && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 mb-6 text-xs">
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {splitReadyErrors.map((e, i) => <li key={i}>{e}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  {splitDraft && (() => {
+                    const errs = validateSplitDraft(splitDraft)
+                    const ime = (id: string) => teams.find(t => t.id === id)?.club_name ?? '–'
+                    const stolpec = (naslov: string, key: keyof SplitDraft, barva: string) => (
+                      <div>
+                        <div className={`text-sm font-bold mb-2 ${barva}`}>{naslov}</div>
+                        <div className="space-y-2">
+                          {Array.from({ length: SPLIT_GROUP_SIZE }, (_, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <span className="w-6 text-xs text-gray-400 text-right">{key === 'top' ? i + 1 : i + 1 + SPLIT_GROUP_SIZE}.</span>
+                              <select value={splitDraft[key][i] ?? ''} onChange={e => updateSplitSlot(key, i, e.target.value)}
+                                className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                                <option value="">– izberi ekipo –</option>
+                                {teams.map(t => <option key={t.id} value={t.id}>{t.club_name}</option>)}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                    return (
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+                        <h3 className="font-semibold text-gray-800 mb-3">Potrdi razdelitev</h3>
+                        <div className="grid sm:grid-cols-2 gap-4 mb-3">
+                          {stolpec(`Skupina ${SPLIT_TOP}`, 'top', 'text-bocce-green')}
+                          {stolpec(`Skupina ${SPLIT_BOTTOM}`, 'bottom', 'text-gray-600')}
+                        </div>
+                        {errs.length > 0 && (
+                          <ul className="list-disc list-inside text-xs text-amber-700 mb-3 space-y-0.5">
+                            {errs.map((e, i) => <li key={i}>{e}</li>)}
+                          </ul>
+                        )}
+                        <div className="text-xs text-gray-500 mb-3">
+                          {SPLIT_TOP} = {splitDraft.top.map(ime).join(', ')} · {SPLIT_BOTTOM} = {splitDraft.bottom.map(ime).join(', ')}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={confirmGenerateSplit} disabled={loading || errs.length > 0}
+                            className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                            {loading ? 'Ustvarjam...' : 'Potrdi in ustvari fazo 2'}
+                          </button>
+                          <button onClick={() => setSplitDraft(null)}
+                            className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+                            Prekliči
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </>
               ) : (
                 <>
