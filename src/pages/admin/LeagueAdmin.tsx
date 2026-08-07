@@ -73,6 +73,7 @@ interface SeasonForm {
   win_points: number
   draw_points: number
   loss_points: number
+  berger_mirror: boolean
 }
 
 interface TeamForm {
@@ -95,6 +96,7 @@ export default function LeagueAdmin() {
   const [form, setForm] = useState<SeasonForm>({
     name: '', year: new Date().getFullYear(), tier: 'super_liga', obz_name: '',
     category: 'men', format: 'flat', rounds_count: 1, win_points: 2, draw_points: 1, loss_points: 0,
+    berger_mirror: false,
   })
   const [teamForm, setTeamForm] = useState<TeamForm>({ club_name: '', short_name: '', captain_id: '' })
   const [scoreEditing, setScoreEditing] = useState<ScoreEditing>({})
@@ -285,6 +287,7 @@ export default function LeagueAdmin() {
       tier: form.tier, obz_name: form.tier === 'obz' ? form.obz_name : null,
       format: form.format, rounds_count: form.rounds_count, win_points: form.win_points,
       draw_points: form.draw_points, loss_points: form.loss_points,
+      berger_mirror: form.berger_mirror,
       status: 'draft',
     }).select().single()
     if (error) {
@@ -372,7 +375,7 @@ export default function LeagueAdmin() {
     // Razpored se sestavi po Bergerju iz žrebanih številk — preveri veljavnost žreba.
     let fixtureList
     try {
-      fixtureList = bergerFixtures(teams, selectedSeason.rounds_count > 1)
+      fixtureList = bergerFixtures(teams, selectedSeason.rounds_count > 1, selectedSeason.berger_mirror ?? false)
     } catch (err) {
       setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
       return
@@ -411,7 +414,7 @@ export default function LeagueAdmin() {
     }
     let fixtureList
     try {
-      fixtureList = bergerFixtures(teams, false)
+      fixtureList = bergerFixtures(teams, false, selectedSeason.berger_mirror ?? false)
     } catch (err) {
       setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
       return
@@ -459,8 +462,8 @@ export default function LeagueAdmin() {
 
     let fixturesA, fixturesB
     try {
-      fixturesA = bergerFixtures(groupATeams, true)
-      fixturesB = bergerFixtures(groupBTeams, true)
+      fixturesA = bergerFixtures(groupATeams, true, selectedSeason.berger_mirror ?? false)
+      fixturesB = bergerFixtures(groupBTeams, true, selectedSeason.berger_mirror ?? false)
     } catch (err) {
       setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
       return
@@ -850,10 +853,25 @@ export default function LeagueAdmin() {
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Krogi</label>
                 <div className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500">
-                  Nastavi se samodejno (10 po fazi 1, 16 po fazi 2)
+                  {form.format === 'split'
+                    ? 'Nastavi se samodejno (9 po fazi 1, 14 po fazi 2)'
+                    : 'Nastavi se samodejno (10 po fazi 1, 16 po fazi 2)'}
                 </div>
               </div>
             )}
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.berger_mirror}
+                onChange={e => setForm(f => ({ ...f, berger_mirror: e.target.checked }))}
+                className="mt-0.5 accent-bocce-green" />
+              <span className="text-xs text-gray-600">
+                <span className="font-medium">Obrni dom/gost (zrcaljena Bergerjeva tabela)</span>
+                <span className="block text-gray-400 mt-0.5">
+                  Priloga B: v 1. krogu igra doma ekipa z nižjo žrebano številko. Nekatere zveze
+                  (OBZ Nova Gorica) razpored objavljajo obrnjeno. Pari in krogi ostanejo enaki —
+                  obrne se samo stran.
+                </span>
+              </span>
+            </label>
             <div className="flex gap-3">
               {POINTS_FIELDS.map(([k, l]) => (
                 <div key={k} className="flex-1">

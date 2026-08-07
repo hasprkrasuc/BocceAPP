@@ -195,6 +195,12 @@ export interface LeagueSeason {
    *            točke iz 9 kol se prenesejo (OBZ Nova Gorica)
    */
   format: LeagueSeasonFormat
+  /**
+   * true = dom/gost obrnjen glede na Bergerjevo tabelo (Priloga B): v 1. krogu
+   * igra doma ekipa z VIŠJO žrebano številko. Uporablja OBZ Nova Gorica.
+   * Pari in kola ostanejo enaki — obrne se samo stran.
+   */
+  berger_mirror: boolean
 }
 
 export interface LeagueTeam {
