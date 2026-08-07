@@ -162,8 +162,9 @@ preview URL. Migracije se **ne** uveljavijo same — to je ločen ročni korak.
 
 ## Dokumentacija
 
+- [CLAUDE.md](CLAUDE.md) — pravila za agente in ljudi na kratko; zlasti: vsaka sprememba sheme gre skozi migracijo
 - [CONTRIBUTING.md](CONTRIBUTING.md) — pravila, ki jih iz kode ni videti; preberi pred prvim PR
-- [SETUP.md](SETUP.md) — postavitev **novega** Supabase projekta iz nič. Pozor: njegov SQL je iz prvega commita (junij 2026) in je starejši od vseh migracij, zato za obstoječi projekt ne velja
+- [SETUP.md](SETUP.md) — postavitev **novega** Supabase projekta iz nič (preverjeno 7. 8. 2026 na praznem projektu)
 - `docs/superpowers/specs/` in `plans/` — dizajni in načrti večjih posegov
 
 Orodij za slog ni: ESLint, Prettier in CI v projektu ne obstajajo. Kakovost
