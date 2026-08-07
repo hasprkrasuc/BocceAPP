@@ -258,15 +258,26 @@ export default function LeagueAdmin() {
 
   async function createSeason(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    // Brez OBZ bi območna liga na javni strani dobila generično oznako
+    // "Območna liga" (League.tsx: `s.obz_name ?? 'Območna liga'`) in je od
+    // drugih ne bi bilo mogoče ločiti. Po ustvarjanju je ni mogoče popraviti
+    // drugače kot z ročnim SQL, zato ustavimo tu.
+    if (form.tier === 'obz' && !form.obz_name) {
+      setMessage('⚠ Območna liga potrebuje območno zvezo.')
+      return
+    }
     setLoading(true)
     const { data, error } = await supabase.from('league_seasons').insert({
       name: form.name, year: form.year, category: form.category,
-      tier: form.tier, obz_name: form.tier === 'obz' ? form.obz_name || null : null,
+      tier: form.tier, obz_name: form.tier === 'obz' ? form.obz_name : null,
       format: form.format, rounds_count: form.rounds_count, win_points: form.win_points,
       draw_points: form.draw_points, loss_points: form.loss_points,
       status: 'draft',
     }).select().single()
-    if (!error && data) {
+    if (error) {
+      setMessage(`⚠ Sezone ni bilo mogoče ustvariti: ${error.message}`)
+    } else if (data) {
+      setMessage('')
       await seedDisciplines(data.id, form.tier)
       setShowCreate(false)
       await loadSeasons()
@@ -597,7 +608,13 @@ export default function LeagueAdmin() {
       </div>
 
       {message && (
-        <div className="mb-4 px-4 py-3 rounded-lg text-sm bg-green-50 text-green-700 border border-green-200">{message}</div>
+        // Opozorila v tej datoteki se ločijo po predponi ⚠ (17 mest). Doslej so
+        // se vsa izrisala v zeleni škatli, torej kot uspeh — tudi "žreb ni veljaven".
+        <div className={`mb-4 px-4 py-3 rounded-lg text-sm whitespace-pre-line border ${
+          message.startsWith('⚠')
+            ? 'bg-red-50 text-red-700 border-red-200'
+            : 'bg-green-50 text-green-700 border-green-200'
+        }`}>{message}</div>
       )}
 
       {showCreate && (
@@ -627,7 +644,7 @@ export default function LeagueAdmin() {
             {form.tier === 'obz' && (
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Območna zveza *</label>
-                <select value={form.obz_name} onChange={set('obz_name')}
+                <select required value={form.obz_name} onChange={set('obz_name')}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                   <option value="">Izberi OBZ...</option>
                   {OBZ_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
