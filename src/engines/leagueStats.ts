@@ -26,6 +26,7 @@ export const LIGA_KOEF: Record<string, number> = {
   '1_liga':        1.0,
   '2_liga_zahod':  0.8,
   '2_liga_vzhod':  0.8,
+  obz:             0.5,   // = DEFAULT_LIGA_KOEF; izrecno, da je vidno v legendi
 }
 
 export const DEFAULT_LIGA_KOEF = 0.5   // območne/ostale

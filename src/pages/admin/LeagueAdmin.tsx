@@ -44,6 +44,7 @@ const LEAGUE_COLUMNS: Array<{ label: string; match: (s: LeagueSeason) => boolean
   { label: '1. liga člani', match: s => s.tier === '1_liga' && s.category === 'men' },
   { label: '2. liga zahod', match: s => s.tier === '2_liga_zahod' },
   { label: '2. liga vzhod', match: s => s.tier === '2_liga_vzhod' },
+  { label: 'Območne lige', match: s => s.tier === 'obz' },
   { label: 'U18', match: s => s.category === 'u18' },
   { label: 'U14', match: s => s.category === 'u14' },
 ]

@@ -246,6 +246,7 @@ export const DR_TIER_LABELS: Record<string, string> = {
   '1_liga':        '1. liga',
   '2_liga_zahod':  '2. liga zahod',
   '2_liga_vzhod':  '2. liga vzhod',
+  obz:             'Območna liga',
 }
 
 /** Status badge barve */

@@ -6,7 +6,7 @@ import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import LeagueTable from '../components/LeagueTable'
 import { calculateStandings, calculateGroupStandings, getFixturesByRound } from '../engines/league'
-import { pickLeagueTreeSeasons, type LeagueTreeSlot } from '../engines/leagueTree'
+import { pickLeagueTreeSeasons, pickObzSeasons, type LeagueTreeSlot } from '../engines/leagueTree'
 import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueTier, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline } from '../types'
@@ -56,8 +56,23 @@ const SLOT_META: Record<LeagueTreeSlot, { label: string; sub: string; border: st
   u18:             { label: 'U18',                sub: 'mladinci', border: 'border-orange-300',  dot: 'bg-orange-400' },
 }
 
-function LeagueBox({ slot, season }: { slot: LeagueTreeSlot; season: SeasonWithCount | null }) {
-  const m = SLOT_META[slot]
+type BoxMeta = { label: string; sub: string; border: string; dot: string }
+
+/** Podnaslov škatle po kategoriji sezone (za lige brez mesta v drevesu). */
+const CATEGORY_SUB: Record<string, string> = {
+  men: 'moški', women: 'ženske',
+  u18: 'mladinci', u18_women: 'mladinke', u15: 'mladinci', u14: 'mladinci', u12: 'mladinci',
+  mixed: 'mešano',
+}
+
+/** Škatla lige. `slot` uporabi predlogo iz SLOT_META; `meta` jo prepiše (območne lige,
+ *  ki nimajo mesta v drevesu in se označijo z imenom svoje OBZ). */
+function LeagueBox({ slot, meta, season }: {
+  slot?: LeagueTreeSlot
+  meta?: BoxMeta
+  season: SeasonWithCount | null
+}) {
+  const m: BoxMeta = meta ?? SLOT_META[slot!]
   const inner = (
     <>
       <div className="flex items-center gap-2">
@@ -86,8 +101,11 @@ const Connector = () => <div className="w-0.5 h-5 bg-gray-300" />
 const seasonLabel = (s: { name: string; year: number }): string =>
   s.name.match(/\d{4}\/\d{2,4}/)?.[0] ?? String(s.year)
 
-/** Ligaško drevo za eno sezono: moška piramida + ženska liga + mladinske lige. */
-function LeagueTreeView({ tree }: { tree: Record<LeagueTreeSlot, SeasonWithCount | null> }) {
+/** Ligaško drevo za eno sezono: moška piramida + ženska liga + mladinske + območne lige. */
+function LeagueTreeView({ tree, obz }: {
+  tree: Record<LeagueTreeSlot, SeasonWithCount | null>
+  obz: SeasonWithCount[]
+}) {
   return (
     <>
       {/* Moška piramida (levo) + ženska liga (desno) */}
@@ -117,6 +135,27 @@ function LeagueTreeView({ tree }: { tree: Record<LeagueTreeSlot, SeasonWithCount
           <LeagueBox slot="u18" season={tree.u18} />
         </div>
       </div>
+
+      {/* Območne lige — več vzporednih, ena na območno zvezo; zato niso mesto v drevesu. */}
+      {obz.length > 0 && (
+        <div className="mt-10 pt-8 border-t border-dashed border-gray-200">
+          <h2 className="text-sm font-bold text-gray-500 tracking-wide mb-3">OBMOČNE LIGE</h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {obz.map(s => (
+              <LeagueBox
+                key={s.id}
+                meta={{
+                  label: s.obz_name ?? 'Območna liga',
+                  sub: CATEGORY_SUB[s.category] ?? 'moški',
+                  border: 'border-gray-300',
+                  dot: 'bg-gray-400',
+                }}
+                season={s}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -140,7 +179,10 @@ export function LeagueList() {
   // Skupine sezon po oznaki (npr. 2025/26), najnovejša prva; za vsako svoje drevo.
   const groups = [...new Set(seasons.map(seasonLabel))]
     .sort((a, b) => b.localeCompare(a))
-    .map(label => ({ label, tree: pickLeagueTreeSeasons(seasons.filter(s => seasonLabel(s) === label)) }))
+    .map(label => {
+      const inSeason = seasons.filter(s => seasonLabel(s) === label)
+      return { label, tree: pickLeagueTreeSeasons(inSeason), obz: pickObzSeasons(inSeason) }
+    })
 
   const toggle = (label: string) => setOpen(prev => {
     const next = new Set(prev)
@@ -159,7 +201,7 @@ export function LeagueList() {
         <p className="text-gray-400 italic">Ni razpisanih lig.</p>
       ) : (
         <div className="space-y-3">
-          {groups.map(({ label, tree }) => {
+          {groups.map(({ label, tree, obz }) => {
             const isOpen = open.has(label)
             return (
               <div key={label} className="border border-gray-200 rounded-2xl overflow-hidden bg-white">
@@ -173,7 +215,7 @@ export function LeagueList() {
                 </button>
                 {isOpen && (
                   <div className="px-5 pb-8 pt-4 border-t border-gray-100">
-                    <LeagueTreeView tree={tree} />
+                    <LeagueTreeView tree={tree} obz={obz} />
                   </div>
                 )}
               </div>

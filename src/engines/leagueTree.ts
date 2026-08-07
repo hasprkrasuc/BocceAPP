@@ -6,6 +6,13 @@
  * Ločevanje 1. lige moških in članic poteka po `category`, mladinci po `category`.
  */
 
+/**
+ * Mesta v ligaškem drevesu. Vsako mesto dobi NATANKO ENO sezono.
+ *
+ * NE dodajaj 'obz'. Območnih lig je hkrati več (ena na območno zvezo), zato bi
+ * pravilo "ena sezona na mesto" prikazalo samo prvo, ostale pa bi izginile.
+ * Obravnava jih `pickObzSeasons()` spodaj.
+ */
 export type LeagueTreeSlot =
   | 'super_liga'
   | '1_liga'
@@ -38,6 +45,24 @@ const SLOT_MATCH: Record<LeagueTreeSlot, (s: MinSeason) => boolean> = {
 }
 
 const activeRank = (status: string) => (status === 'active' ? 1 : 0)
+
+/**
+ * Območne lige (tier='obz') NISO mesto v drevesu: hkrati jih je lahko več, ena
+ * na območno zvezo (OBZ Postojna, OBZ Ljubljana …). Zato jih ne izbiramo po
+ * načelu "ena sezona na mesto", ampak vrnemo vse — urejene po imenu OBZ.
+ * Brez tega bi območne lige na javni strani povsem izginile, ker se ta izrisuje
+ * izključno iz LEAGUE_TREE_SLOTS.
+ */
+export function pickObzSeasons<T extends MinSeason & { obz_name?: string | null; name?: string }>(
+  seasons: T[],
+): T[] {
+  return seasons
+    .filter(s => s.tier === 'obz')
+    .sort((a, b) =>
+      (a.obz_name ?? a.name ?? '').localeCompare(b.obz_name ?? b.name ?? '', 'sl') ||
+      a.id.localeCompare(b.id),
+    )
+}
 
 /** Za vsako raven drevesa vrne izbrano sezono (ali null, če je ni). */
 export function pickLeagueTreeSeasons<T extends MinSeason>(

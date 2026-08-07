@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { pickLeagueTreeSeasons, LEAGUE_TREE_SLOTS } from './leagueTree'
+import { pickLeagueTreeSeasons, pickObzSeasons, LEAGUE_TREE_SLOTS } from './leagueTree'
 
 type S = { id: string; tier: string | null; category: string; year: number; status: string }
 
@@ -64,5 +64,47 @@ describe('pickLeagueTreeSeasons', () => {
     expect(LEAGUE_TREE_SLOTS).toEqual([
       'super_liga', '1_liga', '2_liga_vzhod', '2_liga_zahod', '1_liga_zenske', 'u14', 'u18',
     ])
+  })
+})
+
+describe('pickObzSeasons (območne lige)', () => {
+  type O = S & { obz_name?: string | null; name?: string }
+  const mkObz = (o: Partial<O> & { id: string }): O => ({
+    tier: 'obz', category: 'men', year: 2026, status: 'draft', ...o,
+  })
+
+  test('vrne VSE območne lige, ne le ene — teh je lahko 10 hkrati', () => {
+    const seasons: O[] = [
+      mkObz({ id: 'a', obz_name: 'OBZ Postojna' }),
+      mkObz({ id: 'b', obz_name: 'OBZ Ljubljana' }),
+      mkObz({ id: 'c', obz_name: 'OBZ Sežana' }),
+    ]
+    expect(pickObzSeasons(seasons).map(s => s.id).sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  test('uredi po imenu OBZ (slovensko)', () => {
+    const seasons: O[] = [
+      mkObz({ id: 'p', obz_name: 'OBZ Postojna' }),
+      mkObz({ id: 'l', obz_name: 'OBZ Ljubljana' }),
+    ]
+    expect(pickObzSeasons(seasons).map(s => s.obz_name)).toEqual(['OBZ Ljubljana', 'OBZ Postojna'])
+  })
+
+  test('ne pobere sezon drugih ravni', () => {
+    const seasons: O[] = [
+      mkObz({ id: 'obz1', obz_name: 'OBZ Maribor' }),
+      { id: 'sl', tier: 'super_liga', category: 'men', year: 2026, status: 'active' },
+      { id: 'u14', tier: null, category: 'u14', year: 2026, status: 'active' },
+    ]
+    expect(pickObzSeasons(seasons).map(s => s.id)).toEqual(['obz1'])
+  })
+
+  test('REGRESIJA: območne lige niso v drevesu, zato bi brez pickObzSeasons izginile', () => {
+    const seasons: O[] = [mkObz({ id: 'obz1', obz_name: 'OBZ Nova Gorica' })]
+    // Drevo je ne izbere na nobeni ravni ...
+    const tree = pickLeagueTreeSeasons(seasons)
+    expect(Object.values(tree).every(v => v === null)).toBe(true)
+    // ... zato jo mora postreči pickObzSeasons.
+    expect(pickObzSeasons(seasons)).toHaveLength(1)
   })
 })
