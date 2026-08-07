@@ -117,7 +117,7 @@ je nameščen, a se za poizvedbe ne uporablja — ne uvajaj ga mimogrede.
 
 ```bash
 npm test -- --run      # brez --run se zažene v načinu opazovanja in se ne konča
-npm run typecheck      # POZOR: na main že javi 17 napak v 8 datotekah
+npm run typecheck      # POZOR: na main že javi 26 napak v 11 datotekah (7. 8. 2026)
 ```
 
 `npm run build` **tipov ne preverja** — zelen deploy ne pove ničesar o

@@ -87,9 +87,10 @@ Dvoje, kar preseneti:
 - **`npm run build` tipov ne preverja.** Build uspe tudi ob tipskih napakah,
   zato zelen deploy ne pove ničesar o TypeScriptu.
 
-> `npm run typecheck` trenutno javi **17 napak** v 8 datotekah (`PlayerDetail`,
-> `Profile`, `LeagueMatchScoresheet` in 5 testnih). To ni regresija — takšno je
-> stanje na `main`; pomembno je le, da tvoja sprememba tega števila ne poveča.
+> `npm run typecheck` javi **26 napak** v 11 datotekah (`PlayerDetail`, `Profile`,
+> `LeagueMatchScoresheet`, `TournamentEdit` in 7 testnih; merjeno 7. 8. 2026).
+> To ni regresija — takšno je stanje na `main`; pomembno je le, da tvoja
+> sprememba tega števila ne poveča.
 > Del napak izvira iz tega, da `tsconfig.json` nima `types: ["node"]`, testi pa
 > uvažajo `node:fs`. `npm run typecheck:api` je čist.
 
