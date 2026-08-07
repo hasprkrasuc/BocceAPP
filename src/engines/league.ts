@@ -251,6 +251,12 @@ export function calculateGroupStandings(
 // samo prišteva. Zato lestvica faze 2 NI mini-liga petih, ampak
 // nadaljevanje skupne lestvice z zoženim krogom nasprotnikov.
 //
+// SKUPINI DASTA KONČNA MESTA: '1-5' da mesta 1-5, '6-10' mesta 6-10.
+// Lestvici sta ločeni in se NE združita nazaj. Ekipa iz spodnje skupine
+// zato ostane šesta, tudi če ima na koncu več točk od pete — to ni
+// napaka v izračunu, ampak pravilo tekmovanja (razdelitev je dokončna).
+// Test to pripne; če kdo lestvici kdaj združi, mora najprej vprašati zvezo.
+//
 // Razpored faze 2 (pari, kola in obrat dom/gost) je v engines/leagueSplit.ts.
 // ────────────────────────────────────────────────────────────────
 export interface SplitStandings {

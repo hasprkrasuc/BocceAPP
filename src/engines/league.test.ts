@@ -170,3 +170,39 @@ describe('calculateSplitStandings — prenos točk iz faze 1 v skupini', () => {
     expect(r.phase2!['6-10']).toEqual([])
   })
 })
+
+describe('calculateSplitStandings — razdelitev je dokončna', () => {
+  const teams = Array.from({ length: 10 }, (_, i) => makeTeam(`t${i + 1}`, `Klub ${i + 1}`))
+  const labeled = (f: LeagueFixture, label: string): LeagueFixture => ({ ...f, group_label: label })
+
+  // Faza 1: t6 (spodnja skupina) nabere veliko točk, t1 (zgornja) nobene.
+  const p1 = [
+    makeFixture('a1', 't6', 't7', 13, 0, true, 1),
+    makeFixture('a2', 't6', 't8', 13, 0, true, 2),
+    makeFixture('a3', 't6', 't9', 13, 0, true, 3),
+    makeFixture('a4', 't2', 't1', 13, 0, true, 4),
+  ]
+  const p2 = [
+    labeled(makeFixture('b1', 't1', 't2', null, null, false, 10), '1-5'),
+    labeled(makeFixture('b2', 't3', 't4', null, null, false, 11), '1-5'),
+    labeled(makeFixture('b3', 't5', 't1', null, null, false, 12), '1-5'),
+    labeled(makeFixture('b4', 't6', 't7', null, null, false, 10), '6-10'),
+    labeled(makeFixture('b5', 't8', 't9', null, null, false, 11), '6-10'),
+    labeled(makeFixture('b6', 't10', 't6', null, null, false, 12), '6-10'),
+  ]
+
+  it('ekipa iz 6-10 z več točkami od ekipe iz 1-5 ostane v spodnji skupini', () => {
+    const r = calculateSplitStandings(teams, [...p1, ...p2], makeSeason())
+    const zgoraj = r.phase2!['1-5']
+    const spodaj = r.phase2!['6-10']
+
+    const t6 = spodaj.find(s => s.team.id === 't6')!
+    const t1 = zgoraj.find(s => s.team.id === 't1')!
+    expect(t6.points).toBeGreaterThan(t1.points)   // 6 točk proti 0 …
+
+    // … pa vseeno ni v zgornji skupini: skupini se ne združita
+    expect(zgoraj.map(s => s.team.id)).not.toContain('t6')
+    const vObeh = zgoraj.map(s => s.team.id).filter(id => spodaj.some(s => s.team.id === id))
+    expect(vObeh).toEqual([])
+  })
+})
