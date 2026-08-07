@@ -78,6 +78,24 @@ describe('teamsCompatible — terminske skupine', () => {
   it('različni mladinski kategoriji (U-14 ↔ U-18) = DA (igra navzgor)', () => {
     expect(teamsCompatible(u14, youth)).toBe(true)  // youth=u18
   })
+
+  // Območne lige igrajo ob SVOJEM terminu, zato so združljive z vsemi državnimi
+  // ligami; med sabo pa ne, ker vse območne igrajo ob istem terminu.
+  const obz =  { category: 'men', tier: 'obz' }
+  const obz2 = { category: 'men', tier: 'obz' }
+  it('obz ↔ vse državne lige = združljivo', () => {
+    expect(teamsCompatible(obz, sup)).toBe(true)
+    expect(teamsCompatible(obz, l1)).toBe(true)
+    expect(teamsCompatible(obz, l2)).toBe(true)
+    expect(teamsCompatible(obz, youth)).toBe(true)
+  })
+  it('obz ↔ obz = NI (vse območne lige igrajo ob istem terminu)', () => {
+    expect(teamsCompatible(obz, obz2)).toBe(false)
+  })
+  it('smer ni pomembna (simetrija)', () => {
+    expect(teamsCompatible(sup, obz)).toBe(true)
+    expect(teamsCompatible(l1, obz)).toBe(true)
+  })
 })
 
 describe('eligibleSecondaryTeams — igra navzgor (U-14 → U-18)', () => {
