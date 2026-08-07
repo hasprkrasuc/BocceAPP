@@ -77,9 +77,15 @@ const BERGER_TABLES: Record<number, number[][][]> = {
  * @param teamCount  število ekip (2..12); pri lihem se uporabi tabela N+1 in
  *                   najvišja številka pomeni "prosto" (bye).
  * @param doubleRound  če true, doda še povratni del z zamenjanim dom/gost.
+ * @param mirror  če true, se dom/gost obrne glede na Prilogo B — v 1. krogu
+ *                igra doma ekipa z VIŠJO žrebano številko. Pari in kola ostanejo
+ *                enaki, spremeni se samo stran. Nekatere zveze (OBZ Nova Gorica)
+ *                razpored objavljajo v tem zapisu; ker za dani nabor parov in
+ *                kol obstaja natanko ena dodelitev žrebanih številk, zrcaljenja
+ *                ni mogoče nadomestiti z drugačnim žrebom.
  * @returns seznam iger; številke so žrebane številke ekip (1..teamCount).
  */
-export function bergerSchedule(teamCount: number, doubleRound = false): BergerGame[] {
+export function bergerSchedule(teamCount: number, doubleRound = false, mirror = false): BergerGame[] {
   if (!Number.isInteger(teamCount) || teamCount < 2) {
     throw new Error(`Bergerjev razpored: potrebni sta vsaj 2 ekipi (podano ${teamCount}).`)
   }
@@ -96,7 +102,9 @@ export function bergerSchedule(teamCount: number, doubleRound = false): BergerGa
     for (const [home, away] of round) {
       // pri lihem številu: igre proti "prosti" (najvišji) številki preskočimo
       if (home > teamCount || away > teamCount) continue
-      single.push({ round: idx + 1, home, away })
+      single.push(mirror
+        ? { round: idx + 1, home: away, away: home }
+        : { round: idx + 1, home, away })
     }
   })
 
@@ -128,7 +136,7 @@ interface DrawnTeam {
  *
  * @throws če žrebane številke niso zaporedne 1..N brez ponovitev in vrzeli.
  */
-export function bergerFixtures(teams: DrawnTeam[], doubleRound = false): BergerFixture[] {
+export function bergerFixtures(teams: DrawnTeam[], doubleRound = false, mirror = false): BergerFixture[] {
   const n = teams.length
   const numbers = teams.map(t => t.draw_number)
   if (numbers.some(num => num == null)) {
@@ -147,7 +155,7 @@ export function bergerFixtures(teams: DrawnTeam[], doubleRound = false): BergerF
   const idByNumber = new Map<number, string>()
   for (const t of teams) idByNumber.set(t.draw_number as number, t.id)
 
-  return bergerSchedule(n, doubleRound).map(g => ({
+  return bergerSchedule(n, doubleRound, mirror).map(g => ({
     round_number: g.round,
     home_team_id: idByNumber.get(g.home)!,
     away_team_id: idByNumber.get(g.away)!,
