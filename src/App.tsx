@@ -87,6 +87,11 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        {/* Zunanji lovilec je zadnja obramba: notranji (v Layoutu) ne more
+            ujeti napake iz AuthProvider ali RequirePasswordChange, ker sta
+            NAD njim. Brez tega bi napaka v prijavi ali preusmeritvi gesla
+            spet dala bel ekran. */}
+        <ErrorBoundary>
         <AuthProvider>
           <RequirePasswordChange>
           <Layout>
@@ -151,6 +156,7 @@ export default function App() {
           </Layout>
           </RequirePasswordChange>
         </AuthProvider>
+        </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>
   )
