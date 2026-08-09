@@ -217,3 +217,57 @@ describe('bergerSchedule — meje', () => {
     expect(() => bergerSchedule(MAX_BERGER_TEAMS + 1, false)).toThrow(/Bergerjev/i)
   })
 })
+
+// ────────────────────────────────────────────────────────────────
+// ŠTEVILO KOL ≠ ŠTEVILO KROGOV
+//
+// league_seasons.rounds_count je število KOL rednega dela; po njem se odreže
+// končnica. Obrazec sezone je vanj nekoč pisal število KROGOV (1 ali 2), kar
+// je Super Ligo 2026/27 (9 ekip, dvokrožno) pustilo z rounds_count=2: nastalo
+// je pravilnih 18 kol in 72 tekem, a lestvica je štela samo prvi dve koli,
+// kola 3-18 pa so se prikazala kot polfinale in finale.
+//
+// Admin zato rounds_count izračuna iz razporeda (max round_number). Ti testi
+// pripnejo, koliko kol razpored dejansko da — če se to razide, pade tu in ne
+// šele na javni lestvici.
+// ────────────────────────────────────────────────────────────────
+describe('bergerSchedule — število kol, iz katerega admin izpelje rounds_count', () => {
+  const kol = (igre: { round: number }[]) => Math.max(...igre.map(g => g.round))
+
+  test('9 ekip dvokrožno da 18 kol in 72 tekem (Super Liga 2026/27)', () => {
+    const igre = bergerSchedule(9, true)
+    expect(kol(igre)).toBe(18)
+    expect(igre.length).toBe(72)          // 9 × 8
+    expect(new Set(igre.map(g => g.round)).size).toBe(18)
+  })
+
+  test('število kol ni število krogov — 2 krogoma ustreza 18 kol, ne 2', () => {
+    const dvokrozno = bergerSchedule(9, true)
+    expect(kol(dvokrozno)).not.toBe(2)
+    expect(kol(dvokrozno)).toBe(2 * kol(bergerSchedule(9, false)))
+  })
+
+  test.each([
+    [4, 3, 6], [6, 5, 10], [8, 7, 14], [10, 9, 18], [12, 11, 22],
+    [5, 5, 10], [7, 7, 14], [9, 9, 18], [11, 11, 22],
+  ])('%i ekip: enokrožno %i kol, dvokrožno %i kol', (ekip, eno, dvo) => {
+    expect(kol(bergerSchedule(ekip, false))).toBe(eno)
+    expect(kol(bergerSchedule(ekip, true))).toBe(dvo)
+  })
+
+  test('pri lihem številu ekip vsako kolo ena počiva, zato kol ostane N', () => {
+    const igre = bergerSchedule(9, false)
+    expect(kol(igre)).toBe(9)
+    for (let r = 1; r <= 9; r++) {
+      const vKolu = igre.filter(g => g.round === r)
+      expect(vKolu.length).toBe(4)                     // 4 tekme, ena ekipa prosta
+      const igrajo = new Set(vKolu.flatMap(g => [g.home, g.away]))
+      expect(igrajo.size).toBe(8)
+    }
+  })
+
+  test('zrcaljenje na število kol ne vpliva', () => {
+    expect(kol(bergerSchedule(9, true, true))).toBe(kol(bergerSchedule(9, true, false)))
+    expect(bergerSchedule(9, true, true).length).toBe(bergerSchedule(9, true, false).length)
+  })
+})

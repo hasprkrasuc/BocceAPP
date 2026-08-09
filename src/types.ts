@@ -184,7 +184,20 @@ export interface LeagueSeason {
   status: LeagueSeasonStatus
   tier: LeagueTier
   obz_name: string | null
+  /**
+   * Število KOL rednega dela (ne krogov!). Po tej meji se loči redni del od
+   * končnice: `calculateStandings` izloči tekme s `round_number > rounds_count`,
+   * `League.tsx` jih prikaže kot polfinale/finale. Vpiše ga generator razporeda
+   * po tem, ko razpored nastane — ne obrazec.
+   */
   rounds_count: number
+  /**
+   * Samo `format='flat'`: true = dvokrožno (dom + gost), false = enokrožno.
+   * Ločeno od `rounds_count`; ta je bil nekoč oboje hkrati, zaradi česar je
+   * dvokrožna liga z 18 koli veljala za dvokolno z downstream končnico.
+   * Pri `groups` je faza 1 dvokrožna po pravilih, pri `split` enokrožna.
+   */
+  double_round: boolean
   win_points: number
   draw_points: number
   loss_points: number
