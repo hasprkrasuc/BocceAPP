@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, Link } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ProtectedRoute, AdminRoute, LeagueAdminRoute } from './components/ProtectedRoute'
@@ -18,6 +18,7 @@ import { Statistics, Archive } from './pages/StatsAndArchive'
 import { LeagueRanking } from './pages/LeagueRanking'
 import Calendar from './pages/Calendar'
 import Series from './pages/Series'
+import Zasebnost from './pages/Zasebnost'
 
 // ── Strani iz pages/admin/ se naložijo šele ob obisku ───────────────
 //
@@ -77,7 +78,13 @@ function Layout({ children }: { children: React.ReactNode }) {
       <Navbar />
       <main>{children}</main>
       <footer className="mt-16 border-t border-gray-200 py-6 text-center text-xs text-gray-400">
-        BalinarApp © {new Date().getFullYear()}
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <span>BalinarApp © {new Date().getFullYear()}</span>
+          <span aria-hidden="true">·</span>
+          <Link to="/zasebnost" className="hover:text-bocce-green hover:underline">
+            Zasebnost in piškotki
+          </Link>
+        </div>
       </footer>
     </div>
   )
@@ -118,6 +125,7 @@ export default function App() {
               <Route path="/koledar" element={<Calendar />} />
               <Route path="/serije" element={<Series />} />
               <Route path="/serija/:id" element={<Series />} />
+              <Route path="/zasebnost" element={<Zasebnost />} />
               <Route path="/liga/tekma/:fixtureId" element={<LeagueMatchScoresheet />} />
 
               {/* Auth */}

@@ -10,6 +10,7 @@ import {
 } from '../engines/doubleRegistration'
 import { ROLE_LABELS } from '../lib/roles'
 import AccountLoginSection from '../components/AccountLoginSection'
+import { sestaviIzvoz, imeDatoteke } from '../lib/mojiPodatki'
 
 interface JudgeFixture extends LeagueFixture {
   home_team?: { club_name: string }
@@ -30,6 +31,7 @@ export default function Profile() {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [izvazam, setIzvazam] = useState(false)
   const [error, setError] = useState('')
   const [chiefFixtures, setChiefFixtures] = useState<JudgeFixture[]>([])
   const [judgeFixtures, setJudgeFixtures] = useState<JudgeFixture[]>([])
@@ -148,6 +150,43 @@ export default function Profile() {
     setSaving(false)
   }
 
+  /**
+   * Prenese vse, kar aplikacija hrani o prijavljenem uporabniku (GDPR, 15. in
+   * 20. člen). Bere iz `users_sensitive`, ker profil v pomnilniku ne vsebuje
+   * vseh polj — vpogled mora pokazati tudi tista, ki jih vmesnik ne prikazuje,
+   * na primer EMŠO in naslov.
+   */
+  async function prenesiMojePodatke() {
+    if (!user) return
+    setIzvazam(true)
+    try {
+      const [{ data: osebni }, { data: ekipe }, { data: sodniske }, { data: prijave }] = await Promise.all([
+        supabase.from('users_sensitive').select('*').eq('id', user.id).single(),
+        supabase.from('league_team_players').select('*, league_team:league_teams(club_name, season_id)').eq('player_id', user.id),
+        supabase.from('league_fixtures').select('id, round_number, scheduled_date, venue').eq('chief_judge_id', user.id),
+        supabase.from('tournament_registrations').select('*').or(`player1_id.eq.${user.id},player2_id.eq.${user.id}`),
+      ])
+
+      const cas = new Date()
+      const vsebina = sestaviIzvoz({
+        profil: osebni ?? {},
+        ekipe: ekipe ?? [],
+        sodniske_tekme: sodniske ?? [],
+        prijave_na_turnirje: prijave ?? [],
+      }, cas)
+
+      const url = URL.createObjectURL(new Blob([vsebina], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = imeDatoteke(osebni?.full_name ?? profile?.full_name, cas)
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(`Podatkov ni bilo mogoče pripraviti: ${(err as Error).message}`)
+    }
+    setIzvazam(false)
+  }
+
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-2">Moj profil</h1>
@@ -201,6 +240,28 @@ export default function Profile() {
         </div>
       )}
       <AccountLoginSection />
+
+      {/* Pravice posameznika (GDPR) */}
+      <div className="mt-6 bg-white border border-gray-200 rounded-2xl p-6">
+        <h2 className="text-lg font-bold text-gray-800 mb-1">Moji osebni podatki</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Prenesi vse, kar aplikacija hrani o tebi — tudi podatke, ki jih ta stran ne
+          prikazuje. Datoteka je v obliki JSON, primerni za nadaljnjo uporabo.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={prenesiMojePodatke} disabled={izvazam}
+            className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors disabled:opacity-50">
+            {izvazam ? 'Pripravljam…' : '↓ Prenesi svoje podatke'}
+          </button>
+          <Link to="/zasebnost" className="text-sm text-bocce-green hover:underline">
+            Zasebnost in piškotki
+          </Link>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">
+          Za popravek podatka, ki ga tu ne moreš urediti, ali za izbris se obrni na zvezo —
+          kontakt je na strani o zasebnosti.
+        </p>
+      </div>
 
       {(chiefFixtures.length > 0 || judgeFixtures.length > 0) && (
         <div className="mt-6">

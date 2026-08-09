@@ -169,6 +169,15 @@ export function Signup() {
             className="w-full bg-bocce-green text-white py-2.5 rounded-lg font-semibold hover:bg-bocce-green-light transition-colors disabled:opacity-50">
             {loading ? 'Ustvarjam račun...' : sl.auth.register}
           </button>
+
+          {/* Obvestilo po 13. členu mora biti dostopno TAM, kjer se podatki zbirajo,
+              ne le skrito v nogi. */}
+          <p className="text-xs text-gray-400 text-center leading-relaxed">
+            Z registracijo se seznanjaš s tem, kako ravnamo z osebnimi podatki —{' '}
+            <Link to="/zasebnost" className="text-bocce-green hover:underline">
+              zasebnost in piškotki
+            </Link>.
+          </p>
         </form>
 
         <p className="text-center text-sm text-gray-500 mt-4">
