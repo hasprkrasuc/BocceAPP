@@ -675,9 +675,18 @@ export function LeagueDetail() {
                 const playoffRounds = rounds.filter(r => r > season.rounds_count)
                 if (playoffRounds.length === 0) return null
 
-                // Rounds with >1 fixture = semifinal; rounds with 1 fixture = final
-                const semiRounds = playoffRounds.filter(r => byRound[r].length > 1)
-                const finalRounds = playoffRounds.filter(r => byRound[r].length === 1)
+                // Nov razpored končnice nosi oznako faze ('SF1', 'SF2', 'F').
+                // Starejše sezone je nimajo — tam ostane prejšnje ugibanje po
+                // številu tekem v kolu. Ugibanje pri seriji na dve dobljeni ni
+                // zanesljivo: če ena polfinalna dvojica konča z 2:0, ostane v
+                // tistem kolu ena sama tekma in bi izpadla kot finale.
+                const jeKoncnicaOznaka = (l?: string | null) => l === 'SF1' || l === 'SF2' || l === 'F'
+                const imaOznake = playoffRounds.some(r => byRound[r].some(f => jeKoncnicaOznaka(f.group_label)))
+                const jeFinale = (r: number) => imaOznake
+                  ? byRound[r].some(f => f.group_label === 'F')
+                  : byRound[r].length === 1
+                const semiRounds = playoffRounds.filter(r => !jeFinale(r))
+                const finalRounds = playoffRounds.filter(r => jeFinale(r))
 
                 const renderPlayoffRound = (round: number, gameIdx: number) => {
                   const gameLabel = gameIdx === 0 ? '1. tekma' : gameIdx === 1 ? '2. tekma' : 'Odločilna tekma'
