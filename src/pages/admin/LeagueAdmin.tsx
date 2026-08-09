@@ -12,6 +12,8 @@ import {
 } from '../../engines/leagueSplit'
 import { calculateStandings, calculateSplitStandings, type MatchResultWithDisc } from '../../engines/league'
 import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplines'
+import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../lib/matchDate'
+import { useAuth } from '../../contexts/AuthContext'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueSeasonFormat, LeagueCategory, LeagueTier, LeagueSeasonDiscipline, UserProfile, DisciplineType } from '../../types'
 
 const FORMAT_LABELS: Record<LeagueSeasonFormat, string> = {
@@ -86,6 +88,7 @@ interface TeamForm {
 type ScoreEditing = Record<string, { home: string; away: string }>
 
 export default function LeagueAdmin() {
+  const { isAdmin, managedSeasonIds } = useAuth()
   const [seasons, setSeasons] = useState<LeagueSeason[]>([])
   const [selectedSeason, setSelectedSeason] = useState<LeagueSeason | null>(null)
   const [teams, setTeams] = useState<LeagueTeam[]>([])
@@ -103,6 +106,10 @@ export default function LeagueAdmin() {
   const [scoreEditing, setScoreEditing] = useState<ScoreEditing>({})
   const [phase2Draft, setPhase2Draft] = useState<Phase2Draft | null>(null)
   const [splitDraft, setSplitDraft] = useState<SplitDraft | null>(null)
+  /** Vnos termina po kolih, dokler ni potrjen (ključ = številka kola). */
+  const [roundDateDraft, setRoundDateDraft] = useState<Record<string, string>>({})
+  const [leagueAdmins, setLeagueAdmins] = useState<{ user_id: string }[]>([])
+  const [newLeagueAdminId, setNewLeagueAdminId] = useState('')
   /** Disciplinski rezultati — nujni za pravilno uvrstitev ob izenačenju (razlika iger).
    *  Nalagajo se SAMO za format='groups' (drugje jih ta stran ne potrebuje). */
   const [matchResults, setMatchResults] = useState<MatchResultWithDisc[]>([])
@@ -125,7 +132,7 @@ export default function LeagueAdmin() {
     setMatchResults([])
     setMatchResultsLoaded(false)
     setPhase2Draft(null)
-    loadTeams(); loadFixtures(); loadDisciplines()
+    loadTeams(); loadFixtures(); loadDisciplines(); loadLeagueAdmins()
   }, [selectedSeason])
   useEffect(() => {
     // Igralcev je vec kot 1000, PostgREST pa toliko vrne na poizvedbo. Brez
@@ -202,7 +209,10 @@ export default function LeagueAdmin() {
 
   async function loadSeasons() {
     const { data } = await supabase.from('league_seasons').select('*').order('year', { ascending: false })
-    const s = (data ?? []) as LeagueSeason[]
+    const vse = (data ?? []) as LeagueSeason[]
+    // Ligaški admin vidi samo svoje lige. Branje sezon je javno, zato je to
+    // pospravljanje zaslona, ne varovalo — pisanje omejijo RLS politike.
+    const s = isAdmin ? vse : vse.filter(x => managedSeasonIds.includes(x.id))
     setSeasons(s)
     if (s.length > 0 && !selectedSeason) setSelectedSeason(s[0])
     // Osveži tudi izbrano sezono: generator po vpisu tekem popravi rounds_count,
@@ -742,6 +752,86 @@ export default function LeagueAdmin() {
     await loadSeasons()
   }
 
+  // ─── Termin celega kola z enim klikom ───
+  //
+  // Termin se piše dobesedno, tako kot ga vrne <input type="datetime-local">
+  // ("YYYY-MM-DDTHH:mm"), brez pretvorbe prek Date. Tako je po vsej aplikaciji
+  // (lib/matchDate.ts, zapisnik tekme): kar admin vtipka, se tako shrani in tako
+  // prikaže. Pretvorba prek Date bi vse obstoječe termine premaknila za uro ali dve.
+
+  const commonRoundDate = (fs: LeagueFixture[]) => skupniTerminKola(fs.map(f => f.scheduled_date))
+  const roundDateSummary = (fs: LeagueFixture[]) =>
+    `${fs.length} ${fs.length === 1 ? 'tekma' : fs.length === 2 ? 'tekmi' : 'tekme'} · ${povzetekTerminovKola(fs.map(f => f.scheduled_date))}`
+
+  /** Vpiše (ali počisti) termin vsem tekmam kola naenkrat. */
+  async function setRoundSchedule(round: number, rFixtures: LeagueFixture[], vrednost: string) {
+    if (!selectedSeason) return
+    const brisanje = vrednost === ''
+    // Opozori le, kadar bi se povozili RAZLIČNI obstoječi termini — če kolo že
+    // ima enoten termin ali ga nima nobena tekma, potrjevanje samo moti.
+    const obstojeci = rFixtures.filter(f => toDateTimeLocal(f.scheduled_date))
+    const razlicni = new Set(obstojeci.map(f => toDateTimeLocal(f.scheduled_date)))
+    const povozi = razlicni.size > 1 || (razlicni.size === 1 && !brisanje && ![...razlicni][0].startsWith(vrednost))
+    if (povozi && !window.confirm(
+      `${round}. kolo: ${obstojeci.length} tekem že ima termin (${razlicni.size} različnih). ` +
+      `${brisanje ? 'Odstranim termin vsem?' : 'Povozim vse z novim?'}`
+    )) return
+
+    setLoading(true)
+    const ids = rFixtures.map(f => f.id)
+    const { error } = await supabase.from('league_fixtures')
+      .update({ scheduled_date: brisanje ? null : vrednost })
+      .in('id', ids)
+    if (error) {
+      setMessage(`⚠ Termina ni bilo mogoče shraniti: ${error.message}`)
+    } else {
+      setMessage(brisanje
+        ? `✓ ${round}. kolo: termin odstranjen pri ${ids.length} tekmah`
+        : `✓ ${round}. kolo: termin nastavljen pri ${ids.length} tekmah`)
+      setRoundDateDraft(d => { const n = { ...d }; delete n[String(round)]; return n })
+    }
+    await loadFixtures()
+    setLoading(false)
+  }
+
+  // ─── Admini posamezne lige (samo globalni admin) ───
+  //
+  // Tabelo league_season_admins sme spreminjati le is_admin(); ligaski admin
+  // vidi le svoje vrstice. Zato si ligaski admin dostopa do tuje lige ne more
+  // odpreti sam -- zapore v tem zaslonu so udobje, mejo drzi RLS.
+
+  async function loadLeagueAdmins() {
+    if (!selectedSeason) { setLeagueAdmins([]); return }
+    const { data } = await supabase.from('league_season_admins')
+      .select('user_id').eq('season_id', selectedSeason.id)
+    setLeagueAdmins(data ?? [])
+  }
+
+  async function addLeagueAdmin() {
+    if (!selectedSeason || !newLeagueAdminId) return
+    setLoading(true)
+    const { error } = await supabase.from('league_season_admins')
+      .insert({ season_id: selectedSeason.id, user_id: newLeagueAdminId })
+    setMessage(error
+      ? `⚠ Admina ni bilo mogoče dodati: ${error.message}`
+      : '✓ Admin lige dodan')
+    setNewLeagueAdminId('')
+    await loadLeagueAdmins()
+    setLoading(false)
+  }
+
+  async function removeLeagueAdmin(userId: string) {
+    if (!selectedSeason) return
+    const ime = players.find(p => p.id === userId)?.full_name ?? userId
+    if (!window.confirm(`Odvzamem ${ime} pravico urejanja te lige?`)) return
+    setLoading(true)
+    const { error } = await supabase.from('league_season_admins')
+      .delete().eq('season_id', selectedSeason.id).eq('user_id', userId)
+    setMessage(error ? `⚠ ${error.message}` : '✓ Pravica odvzeta')
+    await loadLeagueAdmins()
+    setLoading(false)
+  }
+
   async function updateSeasonStatus(status: LeagueSeasonStatus) {
     if (!selectedSeason) return
     await supabase.from('league_seasons').update({ status }).eq('id', selectedSeason.id)
@@ -801,12 +891,16 @@ export default function LeagueAdmin() {
       <div className="flex items-start justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Upravljanje lige</h1>
-          <p className="text-sm text-gray-500">Državno ekipno prvenstvo</p>
+          <p className="text-sm text-gray-500">
+            {isAdmin ? 'Državno ekipno prvenstvo' : `Vaše lige (${seasons.length})`}
+          </p>
         </div>
-        <button onClick={() => setShowCreate(true)}
-          className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors">
-          + Nova sezona
-        </button>
+        {isAdmin && (
+          <button onClick={() => setShowCreate(true)}
+            className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors">
+            + Nova sezona
+          </button>
+        )}
       </div>
 
       {message && (
@@ -1005,6 +1099,43 @@ export default function LeagueAdmin() {
               )}
             </div>
           </div>
+
+          {/* Admini te lige — ureja jih lahko samo globalni admin. */}
+          {isAdmin && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+              <h3 className="text-sm font-semibold text-gray-700 mb-1">Admini te lige</h3>
+              <p className="text-xs text-gray-400 mb-3">
+                Ligaški admin ureja ekipe, razpored, termine, zapisnike in discipline <strong>samo te sezone</strong>.
+                Sezone ne more ustvariti ali izbrisati, drugih lig ne vidi in adminov ne more dodajati.
+              </p>
+              <div className="flex gap-2 flex-wrap items-center mb-3">
+                <select value={newLeagueAdminId} onChange={e => setNewLeagueAdminId(e.target.value)}
+                  className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                  <option value="">– izberi uporabnika –</option>
+                  {players
+                    .filter(p => !leagueAdmins.some(a => a.user_id === p.id))
+                    .map(p => <option key={p.id} value={p.id}>{p.full_name ?? p.id}{p.club ? ` · ${p.club}` : ''}</option>)}
+                </select>
+                <button onClick={addLeagueAdmin} disabled={loading || !newLeagueAdminId}
+                  className="bg-bocce-green text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                  Dodaj
+                </button>
+              </div>
+              {leagueAdmins.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">Ta liga nima svojega admina — ureja jo lahko le globalni admin.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {leagueAdmins.map(a => (
+                    <span key={a.user_id} className="inline-flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 text-xs">
+                      {players.find(p => p.id === a.user_id)?.full_name ?? a.user_id}
+                      <button onClick={() => removeLeagueAdmin(a.user_id)} disabled={loading}
+                        title="Odvzemi pravico" className="text-gray-400 hover:text-red-600 font-bold">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-1 mb-6 border-b border-gray-200">
             {[
@@ -1473,7 +1604,31 @@ export default function LeagueAdmin() {
 
               {Object.entries(byRound).sort(([a], [b]) => Number(a) - Number(b)).map(([round, rFixtures]) => (
                 <div key={round} className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">{round}. kolo</h3>
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">{round}. kolo</h3>
+                    <span className="text-xs text-gray-400">{roundDateSummary(rFixtures)}</span>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <input type="datetime-local"
+                        value={roundDateDraft[round] ?? commonRoundDate(rFixtures)}
+                        onChange={e => setRoundDateDraft(d => ({ ...d, [round]: e.target.value }))}
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-bocce-green outline-none" />
+                      <button
+                        onClick={() => setRoundSchedule(Number(round), rFixtures, roundDateDraft[round] ?? commonRoundDate(rFixtures))}
+                        disabled={loading || !(roundDateDraft[round] ?? commonRoundDate(rFixtures))}
+                        title={`Vpiši ta datum in uro vsem ${rFixtures.length} tekmam ${round}. kola`}
+                        className="bg-bocce-green text-white px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-bocce-green-light disabled:opacity-40">
+                        Nastavi celemu kolu
+                      </button>
+                      {rFixtures.some(f => f.scheduled_date) && (
+                        <button onClick={() => setRoundSchedule(Number(round), rFixtures, '')}
+                          disabled={loading}
+                          title="Odstrani datum vsem tekmam tega kola"
+                          className="border border-gray-300 text-gray-500 px-2 py-1 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
+                          Počisti
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     {rFixtures.map(f => {
                       const editing = scoreEditing[f.id]

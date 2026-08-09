@@ -9,18 +9,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  /** Sezone, katerih admin je prijavljeni uporabnik (prazno pri globalnem adminu). */
+  const [managedSeasonIds, setManagedSeasonIds] = useState<string[]>([])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) { fetchProfile(session.user.id); fetchManagedSeasons(session.user.id) }
       else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setLoading(false) }
+      if (session?.user) { fetchProfile(session.user.id); fetchManagedSeasons(session.user.id) }
+      else { setProfile(null); setManagedSeasonIds([]); setLoading(false) }
     })
 
     return () => subscription.unsubscribe()
@@ -34,6 +36,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data } = await supabase.from('users_sensitive').select('*').eq('id', userId).single()
     setProfile(data)
     setLoading(false)
+  }
+
+  /**
+   * Sezone, ki jih uporabnik ureja kot ligaški admin. Politika na
+   * league_season_admins vrne samo lastne vrstice, zato filter po uporabniku
+   * ni varnostni ukrep, ampak le manj prenesenih vrstic.
+   */
+  async function fetchManagedSeasons(userId: string) {
+    const { data } = await supabase.from('league_season_admins').select('season_id').eq('user_id', userId)
+    setManagedSeasonIds((data ?? []).map(r => r.season_id as string))
   }
 
   async function signIn(email: string, password: string) {
@@ -69,10 +81,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
   const isSuperAdmin = profile?.role === 'super_admin'
+  /** Ureja vsaj eno ligo, ni pa nujno globalni admin. */
+  const isLeagueAdmin = managedSeasonIds.length > 0
 
   return (
     <AuthContext.Provider value={{
-      user, profile, loading, isAdmin, isSuperAdmin,
+      user, profile, loading, isAdmin, isSuperAdmin, isLeagueAdmin, managedSeasonIds,
       signIn, signUp, signOut, updateProfile,
       refreshProfile: () => { if (user) fetchProfile(user.id) },
     }}>

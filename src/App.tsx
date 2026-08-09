@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { ProtectedRoute, AdminRoute } from './components/ProtectedRoute'
+import { ProtectedRoute, AdminRoute, LeagueAdminRoute } from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
 import ChangePassword from './pages/ChangePassword'
 
@@ -121,7 +121,7 @@ export default function App() {
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
               <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
-              <Route path="/admin/liga" element={<AdminRoute><LeagueAdmin /></AdminRoute>} />
+              <Route path="/admin/liga" element={<LeagueAdminRoute><LeagueAdmin /></LeagueAdminRoute>} />
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />
               <Route path="/admin/liga/tekma/:fixtureId" element={<OldScoresheetRedirect />} />
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />
