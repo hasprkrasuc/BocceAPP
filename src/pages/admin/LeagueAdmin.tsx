@@ -14,6 +14,7 @@ import { calculateStandings, calculateSplitStandings, type MatchResultWithDisc }
 import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../lib/matchDate'
 import { useAuth } from '../../contexts/AuthContext'
+import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
 import {
   polfinale, finale, zmagovalecSerije, prvoKoloPolfinala, prvoKoloFinala,
   KONCNICA_FAZE, type KoncnicaFaza,
@@ -407,10 +408,11 @@ export default function LeagueAdmin() {
       return
     }
     const kol = Math.max(...fixtureList.map(f => f.round_number))
+    const zamenjave = opozoriloOZamenjavah(fixtures.filter(f => !f.group_label), fixtureList)
     if (!window.confirm(
       `Ustvari Bergerjev razpored za ${teams.length} ekip — ` +
       `${selectedSeason.double_round ? 'dvokrožno' : 'enokrožno'}, ${kol} kol, ${fixtureList.length} tekem? ` +
-      'To bo izbrisalo obstoječe tekme!'
+      'To bo izbrisalo obstoječe tekme!' + (zamenjave ? `\n\n${zamenjave}` : '')
     )) return
     setLoading(true)
     await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id)
@@ -455,7 +457,11 @@ export default function LeagueAdmin() {
       setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
       return
     }
-    if (!window.confirm(`Ustvari fazo 1 (${SPLIT_TEAMS} ekip, enokrožno, kola 1-${SPLIT_PHASE1_ROUNDS})? To bo izbrisalo obstoječe tekme!`)) return
+    const zamenjaveSplit = opozoriloOZamenjavah(fixtures.filter(f => !f.group_label), fixtureList)
+    if (!window.confirm(
+      `Ustvari fazo 1 (${SPLIT_TEAMS} ekip, enokrožno, kola 1-${SPLIT_PHASE1_ROUNDS})? To bo izbrisalo obstoječe tekme!` +
+      (zamenjaveSplit ? `\n\n${zamenjaveSplit}` : '')
+    )) return
 
     setLoading(true)
     await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id)
@@ -505,7 +511,14 @@ export default function LeagueAdmin() {
       return
     }
 
-    if (!window.confirm('Ustvari fazo 1 (skupini A in B, 2×6 ekip, dvokrožno, kola 1-10)? To bo izbrisalo obstoječe tekme faze 1!')) return
+    const zamenjaveSkupin = opozoriloOZamenjavah(
+      fixtures.filter(f => f.group_label === 'A' || f.group_label === 'B'),
+      [...fixturesA, ...fixturesB],
+    )
+    if (!window.confirm(
+      'Ustvari fazo 1 (skupini A in B, 2×6 ekip, dvokrožno, kola 1-10)? To bo izbrisalo obstoječe tekme faze 1!' +
+      (zamenjaveSkupin ? `\n\n${zamenjaveSkupin}` : '')
+    )) return
     setLoading(true)
     await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).in('group_label', ['A', 'B'])
     const allFixtures = [
@@ -921,6 +934,47 @@ export default function LeagueAdmin() {
       })
     }
     setMessage('✓ Finale ustvarjen')
+    await loadFixtures()
+    setLoading(false)
+  }
+
+  // ─── Zamenjava domačina pri posamezni tekmi ───
+  //
+  // Zasedeno igrišče je reden pojav in zveze ga rešujejo tako, da pri eni
+  // tekmi zamenjajo domačina (npr. 2. liga vzhod 2026/27, Budničar/Hoče v 5.
+  // in 10. kolu). Doslej je bila edina pot skozi bazo, regeneriranje razporeda
+  // pa je tako zamenjavo tiho povozilo.
+  //
+  // NE dovolimo zamenjave, ko tekma že ima izid ali zapisnik: zapisnik ima
+  // domačo in gostujočo stran s svojimi igralci in disciplinami, zamenjava
+  // same tekme pa bi ju pustila zamenjani. Preobrniti cel zapisnik je nekaj
+  // drugega kot obrniti eno vrstico, zato raje ustavimo z razlago.
+
+  /** Razlog, zakaj zamenjava ni mogoča, ali null, če je. */
+  function zakajNiZamenjave(f: LeagueFixture): string | null {
+    if (f.status === 'completed' || f.home_score !== null || f.away_score !== null) {
+      return 'Tekma ima izid — najprej ga izbriši, sicer bi se strani zapisnika obrnile.'
+    }
+    if (matchResults.some(r => r.fixture_id === f.id)) {
+      return 'Tekma ima zapisnik — najprej ga izbriši, sicer bi se strani zapisnika obrnile.'
+    }
+    return null
+  }
+
+  async function zamenjajDomacina(f: LeagueFixture) {
+    const zadrzek = zakajNiZamenjave(f)
+    if (zadrzek) { setMessage(`⚠ ${zadrzek}`); return }
+    const doma = f.home_team?.club_name ?? 'domači'
+    const gost = f.away_team?.club_name ?? 'gost'
+    if (!window.confirm(`${f.round_number}. kolo: odslej igra doma ${gost} (namesto ${doma}). Zamenjam?`)) return
+
+    setLoading(true)
+    const { error } = await supabase.from('league_fixtures')
+      .update({ home_team_id: f.away_team_id, away_team_id: f.home_team_id })
+      .eq('id', f.id)
+    setMessage(error
+      ? `⚠ Zamenjava ni uspela: ${error.message}`
+      : `✓ ${f.round_number}. kolo: ${gost} : ${doma}${f.venue ? ' — preveri še kraj, ostal je nespremenjen.' : ''}`)
     await loadFixtures()
     setLoading(false)
   }
@@ -1828,6 +1882,16 @@ export default function LeagueAdmin() {
                             )}
                           </div>
                           <span className="flex-1 text-left text-sm font-medium text-gray-800">{f.away_team?.club_name}</span>
+                          {(() => {
+                            const zadrzek = zakajNiZamenjave(f)
+                            return (
+                              <button onClick={() => zamenjajDomacina(f)} disabled={loading || !!zadrzek}
+                                title={zadrzek ?? `Zamenjaj domačina: ${f.away_team?.club_name} bi igral doma proti ${f.home_team?.club_name}`}
+                                className="text-xs border border-gray-300 text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-30 whitespace-nowrap">
+                                ⇄ Zamenjaj
+                              </button>
+                            )
+                          })()}
                           <Link to={`/liga/tekma/${f.id}`}
                             className="text-xs bg-bocce-green text-white px-3 py-1.5 rounded-lg hover:bg-bocce-green-light whitespace-nowrap">
                             Zapisnik
