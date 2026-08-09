@@ -8,9 +8,11 @@
  * kode in baze, ne domneva. Če se to kdaj spremeni (dodana analitika, nov
  * javni stolpec), je treba popraviti tudi to stran.
  *
- * Pravna dejstva, ki jih iz kode ni mogoče izpeljati — upravljavec, pravna
- * podlaga, roki hrambe — so označena z <Dopolni>. Dokler niso izpolnjena,
- * stran opozori nase, da ne ustvarja videza dokončnosti.
+ * Kar še manjka, je označeno z <Dopolni>. Trije taki podatki so ostali in vsi
+ * trije zahtevajo odločitev zveze, ne kode:
+ *   - e-naslov za vprašanja o osebnih podatkih,
+ *   - koliko časa po prenehanju članstva se podatki še hranijo,
+ *   - razdelitev vlog med obema upravljavcema (26. člen).
  */
 
 import { Link } from 'react-router-dom'
@@ -42,8 +44,8 @@ export default function Zasebnost() {
       </p>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-sm text-amber-900">
-        <strong>Osnutek.</strong> Rumeno označena mesta mora dopolniti zveza — brez njih
-        obvestilo ni popolno. Vse ostalo opisuje dejansko stanje aplikacije.
+        <strong>Manjkajo še trije podatki</strong> — označeni so rumeno. Vse ostalo je
+        dokončno in opisuje dejansko stanje aplikacije.
       </div>
 
       <Razdelek naslov="Piškotkov ne uporabljamo">
@@ -88,19 +90,28 @@ export default function Zasebnost() {
       </Razdelek>
 
       <Razdelek naslov="Kdo obdeluje vaše podatke">
+        <p>Upravljavca sta dva:</p>
+        <ul className="list-disc list-inside space-y-1">
+          <li><strong>Balinarska zveza Slovenije</strong></li>
+          <li><strong>Gašper Kraševec s.p.</strong></li>
+        </ul>
         <p>
-          Upravljavec je <Dopolni>[polno ime pravne osebe, naslov, matična številka]</Dopolni>.
+          Za vprašanja o osebnih podatkih so na voljo <strong>Simon Maljevac</strong>,{' '}
+          <strong>Gašper Kraševec</strong> in <strong>Samo Vehovec</strong>; pišete jim
+          lahko na <Dopolni>[e-naslov za vprašanja o osebnih podatkih]</Dopolni>.
         </p>
         <p>
-          Za vprašanja o osebnih podatkih pišite na <Dopolni>[e-naslov]</Dopolni>.
-          {' '}<Dopolni>[Ali je imenovana pooblaščena oseba za varstvo podatkov — če da, kontakt.]</Dopolni>
+          <Dopolni>[Kdo od upravljavcev za kaj odgovarja — dogovor po 26. členu Splošne
+          uredbe.]</Dopolni>
         </p>
       </Razdelek>
 
       <Razdelek naslov="Katere podatke hranimo in zakaj">
         <p>
-          Podatke prejmemo ob včlanitvi oziroma registraciji pri klubu, del pa jih nastane
-          med tekmovanjem (izidi, uvrstitve, sodniške zadolžitve).
+          Podatke prejmemo iz evidence Balinarske zveze Slovenije (
+          <span className="font-mono text-xs">evidence.bzs.si</span>), kamor jih ob včlanitvi
+          odda klub. Del podatkov nastane med tekmovanjem — izidi, uvrstitve in sodniške
+          zadolžitve.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
@@ -123,8 +134,13 @@ export default function Zasebnost() {
                 <td className="px-3 py-2 text-gray-500">vi in skrbnik</td>
               </tr>
               <tr>
-                <td className="px-3 py-2">Datum rojstva, EMŠO, naslov, telefon, državljanstvo</td>
-                <td className="px-3 py-2">registracija pri zvezi in preverjanje istovetnosti ob uvozu evidence</td>
+                <td className="px-3 py-2">EMŠO</td>
+                <td className="px-3 py-2">zahteva zveze pri registraciji; hkrati edini zanesljiv način, da ločimo osebe z enakim imenom in priimkom</td>
+                <td className="px-3 py-2 text-gray-500">vi in skrbnik</td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2">Datum rojstva, naslov, telefon, državljanstvo</td>
+                <td className="px-3 py-2">registracija pri zvezi</td>
                 <td className="px-3 py-2 text-gray-500">vi in skrbnik</td>
               </tr>
               <tr>
@@ -139,30 +155,36 @@ export default function Zasebnost() {
           <strong>Javno vidno je samo prvo in zadnje.</strong> EMŠO, naslova, e-naslova,
           telefona in polnega datuma rojstva ne prikazujemo nikjer — ti podatki so na
           ravni baze zaprti tako, da jih tudi drug prijavljen uporabnik ne more prebrati.
+          Vidite jih le vi in skrbnik zveze.
         </p>
         <p>
-          Pravna podlaga za obdelavo je <Dopolni>[npr. članska pogodba in vodenje
-          tekmovanj; dopolni po posvetu s pravnikom]</Dopolni>.
+          Pravna podlaga za obdelavo je <strong>člansko razmerje in vodenje tekmovanj</strong>.
+          Obdelava torej ne temelji na vaši privolitvi, zato je tudi ne morete preklicati;
+          lahko pa uveljavljate pravice, naštete spodaj.
         </p>
       </Razdelek>
 
       <Razdelek naslov="Mladoletni">
         <p>
-          V tekmovanjih U14 in U18 nastopajo mladoletne osebe. Njihovi podatki so
-          zaščiteni enako kot vsi ostali; javno se prikazujeta ime in klub ter letnica
-          rojstva, tako kot pri članih.
+          V tekmovanjih U14 in U18 nastopajo mladoletne osebe. Ob registraciji mladoletnega
+          člana mora biti podana <strong>privolitev staršev oziroma skrbnikov</strong>.
         </p>
         <p>
-          <Dopolni>[Kako se pridobi soglasje staršev pri mlajših od 15 let in kdo ga
-          hrani.]</Dopolni>
+          Te privolitve se zbirajo in hranijo v evidenci Balinarske zveze Slovenije na{' '}
+          <span className="font-mono text-xs">evidence.bzs.si</span>, ne v tej aplikaciji.
+          BalinarApp podatke od tam prejme.
+        </p>
+        <p>
+          Podatki mladoletnih so zaščiteni enako kot vsi ostali; javno se prikazujeta ime
+          in klub ter letnica rojstva, tako kot pri članih.
         </p>
       </Razdelek>
 
       <Razdelek naslov="Kje so podatki in komu jih zaupamo">
         <p>
-          Podatki so shranjeni pri <strong>Supabase</strong> v podatkovnem središču v
-          <strong> Frankfurtu (Evropska unija)</strong>, aplikacijo pa poganja
-          <strong> Vercel</strong>. Oba nastopata kot obdelovalca in podatkov ne
+          Podatki so shranjeni pri <strong>Supabase</strong> v podatkovnem središču v{' '}
+          <strong>Frankfurtu (Evropska unija)</strong>, aplikacijo pa poganja{' '}
+          <strong>Vercel</strong>. Oba nastopata kot obdelovalca in podatkov ne
           uporabljata za svoje namene.
         </p>
         <p>Podatkov ne prodajamo in jih ne posredujemo tretjim osebam za trženje.</p>
@@ -170,8 +192,13 @@ export default function Zasebnost() {
 
       <Razdelek naslov="Kako dolgo jih hranimo">
         <p>
-          <Dopolni>[Rok hrambe po prenehanju članstva — posebej za osebne podatke in
-          posebej za tekmovalne rezultate, ki so del zgodovine tekmovanj.]</Dopolni>
+          Osebne podatke hranimo, dokler traja članstvo, in po njegovem prenehanju še{' '}
+          <Dopolni>[koliko časa]</Dopolni>. Nato jih izbrišemo ali nepovratno anonimiziramo.
+        </p>
+        <p>
+          <strong>Tekmovalni rezultati ostanejo.</strong> Uvrstitve, izidi in zapisniki
+          tekem so del zgodovine tekmovanj in se hranijo trajno; pri njih ostane zapisano
+          ime, s katerim ste nastopili, brez ostalih osebnih podatkov.
         </p>
       </Razdelek>
 
