@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   serija, polfinale, finale, zmagovalecSerije, serijaOdlocena,
   prvoKoloPolfinala, prvoKoloFinala,
+  turnirPolfinala, turnirZakljucek, zmagovalecTekme, porazenecTekme,
   type IzidTekme,
 } from './koncnica'
 
@@ -200,5 +201,81 @@ describe('ujemanje s Super ligo 2025/26', () => {
       nerazporejena('QAP', 'Trata'),
     ]
     expect(zmagovalecSerije(serija1)).toBe('QAP')
+  })
+})
+
+// ────────────────────────────────────────────────────────────────
+// ZAKLJUČNI TURNIR NAJBOLJŠIH ŠTIRIH (U18, U14)
+// ────────────────────────────────────────────────────────────────
+describe('zaključni turnir — polfinala, finale, tekma za 3. mesto', () => {
+  const pf = turnirPolfinala(TOP4, 11)
+
+  it('dve polfinalni tekmi v istem kolu (en dan, eno igrišče)', () => {
+    expect(pf).toHaveLength(2)
+    expect(pf.every(t => t.round_number === 11)).toBe(true)
+    expect(pf.every(t => t.tekma === 1)).toBe(true)   // ena tekma, ne serija
+  })
+
+  it('pari 1.–4. in 2.–3., bolje uvrščeni zapisan kot domači', () => {
+    const sf1 = pf.find(t => t.group_label === 'SF1')!
+    const sf2 = pf.find(t => t.group_label === 'SF2')!
+    expect([sf1.home_team_id, sf1.away_team_id]).toEqual(['prvi', 'cetrti'])
+    expect([sf2.home_team_id, sf2.away_team_id]).toEqual(['drugi', 'tretji'])
+  })
+
+  it('zavrne neveljavno četverico enako kot končnica', () => {
+    expect(() => turnirPolfinala([{ id: 'a', position: 1 }], 11)).toThrow(/natanko 4 ekipe/)
+  })
+
+  it('zaključek: finale iz zmagovalcev, za 3. mesto iz poražencev', () => {
+    // prvi premaga četrtega, tretji preseneti drugega
+    const z = turnirZakljucek(
+      odigrana('prvi', 'cetrti', 13, 9),
+      odigrana('drugi', 'tretji', 8, 13),
+      TOP4, 12,
+    )
+    const f = z.find(t => t.group_label === 'F')!
+    const m3 = z.find(t => t.group_label === '3M')!
+    expect(new Set([f.home_team_id, f.away_team_id])).toEqual(new Set(['prvi', 'tretji']))
+    expect(new Set([m3.home_team_id, m3.away_team_id])).toEqual(new Set(['drugi', 'cetrti']))
+  })
+
+  it('v obeh tekmah zaključka je domači bolje uvrščeni iz rednega dela', () => {
+    const z = turnirZakljucek(
+      odigrana('prvi', 'cetrti', 9, 13),     // četrti izloči prvega
+      odigrana('drugi', 'tretji', 13, 9),
+      TOP4, 12,
+    )
+    // finale: drugi (2.) proti četrtemu (4.) → doma drugi
+    expect(z.find(t => t.group_label === 'F')!.home_team_id).toBe('drugi')
+    // za 3. mesto: prvi (1.) proti tretjemu (3.) → doma prvi
+    expect(z.find(t => t.group_label === '3M')!.home_team_id).toBe('prvi')
+  })
+
+  it('obe tekmi zaključka sta v istem kolu', () => {
+    const z = turnirZakljucek(odigrana('prvi', 'cetrti', 13, 9), odigrana('drugi', 'tretji', 13, 9), TOP4, 12)
+    expect(z.every(t => t.round_number === 12)).toBe(true)
+    expect(z).toHaveLength(2)
+  })
+
+  it('neodigran polfinale ustavi zaključek', () => {
+    expect(() => turnirZakljucek(
+      nerazporejena('prvi', 'cetrti'), odigrana('drugi', 'tretji', 13, 9), TOP4, 12,
+    )).toThrow(/odigrana in odločena/)
+  })
+
+  it('neodločen polfinale ustavi zaključek — program ne ugiba, kdo gre naprej', () => {
+    expect(() => turnirZakljucek(
+      odigrana('prvi', 'cetrti', 13, 13), odigrana('drugi', 'tretji', 13, 9), TOP4, 12,
+    )).toThrow(/odigrana in odločena/)
+  })
+
+  it('zmagovalecTekme in porazenecTekme', () => {
+    expect(zmagovalecTekme(odigrana('a', 'b', 13, 9))).toBe('a')
+    expect(porazenecTekme(odigrana('a', 'b', 13, 9))).toBe('b')
+    expect(zmagovalecTekme(odigrana('a', 'b', 9, 13))).toBe('b')
+    expect(porazenecTekme(odigrana('a', 'b', 9, 13))).toBe('a')
+    expect(zmagovalecTekme(odigrana('a', 'b', 13, 13))).toBeNull()
+    expect(porazenecTekme(nerazporejena('a', 'b'))).toBeNull()
   })
 })

@@ -238,6 +238,10 @@ const GROUP_BADGE: Record<string, string> = {
   '7-12': 'bg-gray-100 text-gray-500',
   '1-5':  'bg-bocce-gold/20 text-yellow-700',
   '6-10': 'bg-gray-100 text-gray-500',
+  'SF1':  'bg-blue-100 text-blue-700',
+  'SF2':  'bg-blue-100 text-blue-700',
+  'F':    'bg-bocce-gold/20 text-yellow-700',
+  '3M':   'bg-gray-100 text-gray-500',
 }
 
 function WhistleIcon({ className }: { className?: string }) {
@@ -680,19 +684,23 @@ export function LeagueDetail() {
                 // številu tekem v kolu. Ugibanje pri seriji na dve dobljeni ni
                 // zanesljivo: če ena polfinalna dvojica konča z 2:0, ostane v
                 // tistem kolu ena sama tekma in bi izpadla kot finale.
-                const jeKoncnicaOznaka = (l?: string | null) => l === 'SF1' || l === 'SF2' || l === 'F'
+                const jeKoncnicaOznaka = (l?: string | null) => l === 'SF1' || l === 'SF2' || l === 'F' || l === '3M'
                 const imaOznake = playoffRounds.some(r => byRound[r].some(f => jeKoncnicaOznaka(f.group_label)))
+                // Finalno kolo je tisto s finalom ali tekmo za 3. mesto — pri
+                // mladinskem turnirju sta obe v istem kolu.
                 const jeFinale = (r: number) => imaOznake
-                  ? byRound[r].some(f => f.group_label === 'F')
+                  ? byRound[r].some(f => f.group_label === 'F' || f.group_label === '3M')
                   : byRound[r].length === 1
                 const semiRounds = playoffRounds.filter(r => !jeFinale(r))
                 const finalRounds = playoffRounds.filter(r => jeFinale(r))
 
-                const renderPlayoffRound = (round: number, gameIdx: number) => {
-                  const gameLabel = gameIdx === 0 ? '1. tekma' : gameIdx === 1 ? '2. tekma' : 'Odločilna tekma'
+                const renderPlayoffRound = (round: number, gameIdx: number, jeSerija = true) => {
+                  // Oznaka "1. tekma / 2. tekma / Odločilna" ima smisel le pri seriji
+                  // na dve dobljeni; pri enodnevnem turnirju je vsak dvoboj ena tekma.
+                  const gameLabel = !jeSerija ? '' : gameIdx === 0 ? '1. tekma' : gameIdx === 1 ? '2. tekma' : 'Odločilna tekma'
                   return (
                     <div key={round}>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{gameLabel}</h3>
+                      {gameLabel && <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{gameLabel}</h3>}
                       <div className="space-y-2">
                         {byRound[round].map(f => {
                           const notPlayed = f.status !== 'completed' && !f.scheduled_date
@@ -712,7 +720,7 @@ export function LeagueDetail() {
                               </div>
                             )
                           }
-                          return <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} />
+                          return <FixtureRow key={f.id} f={f} myTeamId={myTeam?.id} showGroup={imaOznake} />
                         })}
                       </div>
                     </div>
@@ -728,7 +736,7 @@ export function LeagueDetail() {
                           Polfinale
                         </h2>
                         <div className="space-y-4">
-                          {semiRounds.map((round, idx) => renderPlayoffRound(round, idx))}
+                          {semiRounds.map((round, idx) => renderPlayoffRound(round, idx, semiRounds.length > 1))}
                         </div>
                       </div>
                     )}
@@ -737,10 +745,12 @@ export function LeagueDetail() {
                       <div>
                         <h2 className="text-base font-bold text-gray-700 mb-4 flex items-center gap-2">
                           <span className="inline-block w-3 h-3 rounded-full bg-bocce-gold" />
-                          Finale
+                          {playoffRounds.some(r => byRound[r].some(f => f.group_label === '3M'))
+                            ? 'Finale in tekma za 3. mesto'
+                            : 'Finale'}
                         </h2>
                         <div className="space-y-4">
-                          {finalRounds.map((round, idx) => renderPlayoffRound(round, idx))}
+                          {finalRounds.map((round, idx) => renderPlayoffRound(round, idx, finalRounds.length > 1))}
                         </div>
                       </div>
                     )}

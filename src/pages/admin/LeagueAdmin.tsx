@@ -17,6 +17,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
 import {
   polfinale, finale, zmagovalecSerije, prvoKoloPolfinala, prvoKoloFinala,
+  turnirPolfinala, turnirZakljucek,
   KONCNICA_FAZE, type KoncnicaFaza,
 } from '../../engines/koncnica'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueSeasonFormat, LeagueCategory, LeagueTier, LeagueSeasonDiscipline, UserProfile, DisciplineType } from '../../types'
@@ -854,9 +855,13 @@ export default function LeagueAdmin() {
   // ─── Končnica na dve dobljeni tekmi (samo Super liga) ───
 
   const jeSuperLiga = selectedSeason?.tier === 'super_liga' && selectedSeason?.format === 'flat'
+  /** Mladinski ligi končata z enodnevnim turnirjem najboljših štirih, ne s serijami. */
+  const jeMladinska = (selectedSeason?.category === 'u18' || selectedSeason?.category === 'u14')
+    && selectedSeason?.format === 'flat'
   const koncnicaTekme = fixtures.filter(f => f.group_label === 'SF1' || f.group_label === 'SF2' || f.group_label === 'F')
   const imaPolfinale = koncnicaTekme.some(f => f.group_label !== 'F')
   const imaFinale = koncnicaTekme.some(f => f.group_label === 'F')
+  const imaTurnirZakljucek = koncnicaTekme.some(f => f.group_label === '3M')
   const rednePreostale = selectedSeason
     ? fixtures.filter(f => !f.group_label && f.round_number <= selectedSeason.rounds_count && f.status !== 'completed').length
     : 0
@@ -975,6 +980,70 @@ export default function LeagueAdmin() {
     setMessage(error
       ? `⚠ Zamenjava ni uspela: ${error.message}`
       : `✓ ${f.round_number}. kolo: ${gost} : ${doma}${f.venue ? ' — preveri še kraj, ostal je nespremenjen.' : ''}`)
+    await loadFixtures()
+    setLoading(false)
+  }
+
+  /** Polfinala zaključnega turnirja (U18, U14): dve tekmi, isti dan. */
+  async function ustvariTurnirPolfinala() {
+    if (!selectedSeason || !koncnicaDraft) return
+    if (new Set(koncnicaDraft).size !== 4 || koncnicaDraft.some(id => !id)) {
+      setMessage('⚠ Izbrane morajo biti štiri različne ekipe.'); return
+    }
+    if (imaPolfinale && !window.confirm('Polfinala že obstajata. Izbrišem in ustvarim znova? Vpisani izidi turnirja se izgubijo.')) return
+
+    let tekme
+    try {
+      tekme = turnirPolfinala(koncnicaDraft.map((id, i) => ({ id, position: i + 1 })), selectedSeason.rounds_count + 1)
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri turnirju'}`); return
+    }
+
+    setLoading(true)
+    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).in('group_label', ['SF1', 'SF2', 'F', '3M'])
+    for (const t of tekme) {
+      await supabase.from('league_fixtures').insert({
+        season_id: selectedSeason.id, round_number: t.round_number,
+        home_team_id: t.home_team_id, away_team_id: t.away_team_id,
+        group_label: t.group_label, status: 'scheduled',
+      })
+    }
+    setMessage('✓ Polfinala ustvarjena. Kraj in uro vpiši z gumbom pri kolu — turnir je na enem igrišču, zato je domačin le zapis.')
+    setKoncnicaDraft(null)
+    await loadFixtures()
+    setLoading(false)
+  }
+
+  /** Finale in tekma za 3. mesto iz odigranih polfinalov. */
+  async function ustvariTurnirZakljucek() {
+    if (!selectedSeason) return
+    const izid = (faza: KoncnicaFaza) => {
+      const f = koncnicaTekme.find(x => x.group_label === faza)
+      return f && { home_team_id: f.home_team_id, away_team_id: f.away_team_id, home_score: f.home_score, away_score: f.away_score, status: f.status }
+    }
+    const sf1 = izid('SF1'), sf2 = izid('SF2')
+    if (!sf1 || !sf2) { setMessage('⚠ Najprej ustvari polfinala.'); return }
+    const lestvica = calculateStandings(teams, fixtures, selectedSeason, matchResults)
+    const top4 = lestvica.slice(0, 4).map((s, i) => ({ id: s.team.id, position: i + 1 }))
+    if (imaTurnirZakljucek && !window.confirm('Finale in tekma za 3. mesto že obstajata. Izbrišem in ustvarim znova?')) return
+
+    let tekme
+    try {
+      tekme = turnirZakljucek(sf1, sf2, top4, selectedSeason.rounds_count + 2)
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri zaključku turnirja'}`); return
+    }
+
+    setLoading(true)
+    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).in('group_label', ['F', '3M'])
+    for (const t of tekme) {
+      await supabase.from('league_fixtures').insert({
+        season_id: selectedSeason.id, round_number: t.round_number,
+        home_team_id: t.home_team_id, away_team_id: t.away_team_id,
+        group_label: t.group_label, status: 'scheduled',
+      })
+    }
+    setMessage('✓ Finale in tekma za 3. mesto ustvarjena')
     await loadFixtures()
     setLoading(false)
   }
@@ -1561,6 +1630,63 @@ export default function LeagueAdmin() {
                     Razpored se sestavi po žrebanih številkah ekip (zavihek Ekipe → polje <span className="font-mono">#</span>).
                     Število kol ni nastavitev — izračuna se iz razporeda ob generiranju.
                   </p>
+
+                  {/* ZAKLJUČNI TURNIR — U18 in U14 */}
+                  {jeMladinska && fixtures.length > 0 && (
+                    <div className="border-t border-gray-200 pt-5 mb-6">
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
+                        <button onClick={odpriKoncnicoPredlog} disabled={loading || !matchResultsLoaded}
+                          className="bg-bocce-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                          {!matchResultsLoaded ? 'Nalagam rezultate…' : imaPolfinale ? '↺ Nov predlog četverice' : 'Zaključni turnir — predlog četverice'}
+                        </button>
+                        {imaPolfinale && (
+                          <button onClick={ustvariTurnirZakljucek} disabled={loading}
+                            className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                            {imaTurnirZakljucek ? '↺ Regeneriraj finale in za 3. mesto' : 'Ustvari finale in za 3. mesto'}
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 mb-3">
+                        Najboljše štiri po {selectedSeason.rounds_count} kolih · polfinala 1.–4. in 2.–3., nato finale in tekma za 3. mesto ·
+                        vsaka tekma je ena sama · en dan na enem igrišču, zato je domačin le zapis — <strong>kraj vpiši ročno</strong>.
+                        {rednePreostale > 0 && <span className="text-amber-600"> Rednega dela še ni konec ({rednePreostale} tekem).</span>}
+                      </p>
+
+                      {koncnicaDraft && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <h3 className="font-semibold text-gray-800 mb-2 text-sm">Potrdi četverico</h3>
+                          <div className="grid sm:grid-cols-2 gap-2 mb-3">
+                            {koncnicaDraft.map((id, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <span className="w-5 text-xs text-gray-400 text-right">{i + 1}.</span>
+                                <select value={id}
+                                  onChange={e => setKoncnicaDraft(d => d ? d.map((x, j) => j === i ? e.target.value : x) : d)}
+                                  className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                                  <option value="">– izberi –</option>
+                                  {teams.map(t => <option key={t.id} value={t.id}>{t.club_name}</option>)}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 mb-3">
+                            {KONCNICA_FAZE.SF1}: {teams.find(t => t.id === koncnicaDraft[0])?.club_name ?? '?'} – {teams.find(t => t.id === koncnicaDraft[3])?.club_name ?? '?'}
+                            {' · '}
+                            {KONCNICA_FAZE.SF2}: {teams.find(t => t.id === koncnicaDraft[1])?.club_name ?? '?'} – {teams.find(t => t.id === koncnicaDraft[2])?.club_name ?? '?'}
+                          </p>
+                          <div className="flex gap-2">
+                            <button onClick={ustvariTurnirPolfinala} disabled={loading || new Set(koncnicaDraft).size !== 4 || koncnicaDraft.some(x => !x)}
+                              className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                              Potrdi in ustvari polfinala
+                            </button>
+                            <button onClick={() => setKoncnicaDraft(null)}
+                              className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+                              Prekliči
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* KONČNICA — samo Super liga */}
                   {jeSuperLiga && fixtures.length > 0 && (
