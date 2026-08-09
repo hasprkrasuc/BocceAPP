@@ -12,6 +12,12 @@ import {
 } from '../../engines/leagueSplit'
 import { calculateStandings, calculateSplitStandings, type MatchResultWithDisc } from '../../engines/league'
 import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplines'
+import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../lib/matchDate'
+import { useAuth } from '../../contexts/AuthContext'
+import {
+  polfinale, finale, zmagovalecSerije, prvoKoloPolfinala, prvoKoloFinala,
+  KONCNICA_FAZE, type KoncnicaFaza,
+} from '../../engines/koncnica'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueSeasonFormat, LeagueCategory, LeagueTier, LeagueSeasonDiscipline, UserProfile, DisciplineType } from '../../types'
 
 const FORMAT_LABELS: Record<LeagueSeasonFormat, string> = {
@@ -86,6 +92,7 @@ interface TeamForm {
 type ScoreEditing = Record<string, { home: string; away: string }>
 
 export default function LeagueAdmin() {
+  const { isAdmin, managedSeasonIds } = useAuth()
   const [seasons, setSeasons] = useState<LeagueSeason[]>([])
   const [selectedSeason, setSelectedSeason] = useState<LeagueSeason | null>(null)
   const [teams, setTeams] = useState<LeagueTeam[]>([])
@@ -103,6 +110,12 @@ export default function LeagueAdmin() {
   const [scoreEditing, setScoreEditing] = useState<ScoreEditing>({})
   const [phase2Draft, setPhase2Draft] = useState<Phase2Draft | null>(null)
   const [splitDraft, setSplitDraft] = useState<SplitDraft | null>(null)
+  /** Vnos termina po kolih, dokler ni potrjen (ključ = številka kola). */
+  const [roundDateDraft, setRoundDateDraft] = useState<Record<string, string>>({})
+  const [leagueAdmins, setLeagueAdmins] = useState<{ user_id: string }[]>([])
+  const [newLeagueAdminId, setNewLeagueAdminId] = useState('')
+  /** Predlog najboljših štirih za končnico (id-ji po mestih 1..4). */
+  const [koncnicaDraft, setKoncnicaDraft] = useState<string[] | null>(null)
   /** Disciplinski rezultati — nujni za pravilno uvrstitev ob izenačenju (razlika iger).
    *  Nalagajo se SAMO za format='groups' (drugje jih ta stran ne potrebuje). */
   const [matchResults, setMatchResults] = useState<MatchResultWithDisc[]>([])
@@ -125,7 +138,7 @@ export default function LeagueAdmin() {
     setMatchResults([])
     setMatchResultsLoaded(false)
     setPhase2Draft(null)
-    loadTeams(); loadFixtures(); loadDisciplines()
+    loadTeams(); loadFixtures(); loadDisciplines(); loadLeagueAdmins()
   }, [selectedSeason])
   useEffect(() => {
     // Igralcev je vec kot 1000, PostgREST pa toliko vrne na poizvedbo. Brez
@@ -202,7 +215,10 @@ export default function LeagueAdmin() {
 
   async function loadSeasons() {
     const { data } = await supabase.from('league_seasons').select('*').order('year', { ascending: false })
-    const s = (data ?? []) as LeagueSeason[]
+    const vse = (data ?? []) as LeagueSeason[]
+    // Ligaški admin vidi samo svoje lige. Branje sezon je javno, zato je to
+    // pospravljanje zaslona, ne varovalo — pisanje omejijo RLS politike.
+    const s = isAdmin ? vse : vse.filter(x => managedSeasonIds.includes(x.id))
     setSeasons(s)
     if (s.length > 0 && !selectedSeason) setSelectedSeason(s[0])
     // Osveži tudi izbrano sezono: generator po vpisu tekem popravi rounds_count,
@@ -742,6 +758,173 @@ export default function LeagueAdmin() {
     await loadSeasons()
   }
 
+  // ─── Termin celega kola z enim klikom ───
+  //
+  // Termin se piše dobesedno, tako kot ga vrne <input type="datetime-local">
+  // ("YYYY-MM-DDTHH:mm"), brez pretvorbe prek Date. Tako je po vsej aplikaciji
+  // (lib/matchDate.ts, zapisnik tekme): kar admin vtipka, se tako shrani in tako
+  // prikaže. Pretvorba prek Date bi vse obstoječe termine premaknila za uro ali dve.
+
+  const commonRoundDate = (fs: LeagueFixture[]) => skupniTerminKola(fs.map(f => f.scheduled_date))
+  const roundDateSummary = (fs: LeagueFixture[]) =>
+    `${fs.length} ${fs.length === 1 ? 'tekma' : fs.length === 2 ? 'tekmi' : 'tekme'} · ${povzetekTerminovKola(fs.map(f => f.scheduled_date))}`
+
+  /** Vpiše (ali počisti) termin vsem tekmam kola naenkrat. */
+  async function setRoundSchedule(round: number, rFixtures: LeagueFixture[], vrednost: string) {
+    if (!selectedSeason) return
+    const brisanje = vrednost === ''
+    // Opozori le, kadar bi se povozili RAZLIČNI obstoječi termini — če kolo že
+    // ima enoten termin ali ga nima nobena tekma, potrjevanje samo moti.
+    const obstojeci = rFixtures.filter(f => toDateTimeLocal(f.scheduled_date))
+    const razlicni = new Set(obstojeci.map(f => toDateTimeLocal(f.scheduled_date)))
+    const povozi = razlicni.size > 1 || (razlicni.size === 1 && !brisanje && ![...razlicni][0].startsWith(vrednost))
+    if (povozi && !window.confirm(
+      `${round}. kolo: ${obstojeci.length} tekem že ima termin (${razlicni.size} različnih). ` +
+      `${brisanje ? 'Odstranim termin vsem?' : 'Povozim vse z novim?'}`
+    )) return
+
+    setLoading(true)
+    const ids = rFixtures.map(f => f.id)
+    const { error } = await supabase.from('league_fixtures')
+      .update({ scheduled_date: brisanje ? null : vrednost })
+      .in('id', ids)
+    if (error) {
+      setMessage(`⚠ Termina ni bilo mogoče shraniti: ${error.message}`)
+    } else {
+      setMessage(brisanje
+        ? `✓ ${round}. kolo: termin odstranjen pri ${ids.length} tekmah`
+        : `✓ ${round}. kolo: termin nastavljen pri ${ids.length} tekmah`)
+      setRoundDateDraft(d => { const n = { ...d }; delete n[String(round)]; return n })
+    }
+    await loadFixtures()
+    setLoading(false)
+  }
+
+  // ─── Admini posamezne lige (samo globalni admin) ───
+  //
+  // Tabelo league_season_admins sme spreminjati le is_admin(); ligaski admin
+  // vidi le svoje vrstice. Zato si ligaski admin dostopa do tuje lige ne more
+  // odpreti sam -- zapore v tem zaslonu so udobje, mejo drzi RLS.
+
+  async function loadLeagueAdmins() {
+    if (!selectedSeason) { setLeagueAdmins([]); return }
+    const { data } = await supabase.from('league_season_admins')
+      .select('user_id').eq('season_id', selectedSeason.id)
+    setLeagueAdmins(data ?? [])
+  }
+
+  async function addLeagueAdmin() {
+    if (!selectedSeason || !newLeagueAdminId) return
+    setLoading(true)
+    const { error } = await supabase.from('league_season_admins')
+      .insert({ season_id: selectedSeason.id, user_id: newLeagueAdminId })
+    setMessage(error
+      ? `⚠ Admina ni bilo mogoče dodati: ${error.message}`
+      : '✓ Admin lige dodan')
+    setNewLeagueAdminId('')
+    await loadLeagueAdmins()
+    setLoading(false)
+  }
+
+  async function removeLeagueAdmin(userId: string) {
+    if (!selectedSeason) return
+    const ime = players.find(p => p.id === userId)?.full_name ?? userId
+    if (!window.confirm(`Odvzamem ${ime} pravico urejanja te lige?`)) return
+    setLoading(true)
+    const { error } = await supabase.from('league_season_admins')
+      .delete().eq('season_id', selectedSeason.id).eq('user_id', userId)
+    setMessage(error ? `⚠ ${error.message}` : '✓ Pravica odvzeta')
+    await loadLeagueAdmins()
+    setLoading(false)
+  }
+
+  // ─── Končnica na dve dobljeni tekmi (samo Super liga) ───
+
+  const jeSuperLiga = selectedSeason?.tier === 'super_liga' && selectedSeason?.format === 'flat'
+  const koncnicaTekme = fixtures.filter(f => f.group_label === 'SF1' || f.group_label === 'SF2' || f.group_label === 'F')
+  const imaPolfinale = koncnicaTekme.some(f => f.group_label !== 'F')
+  const imaFinale = koncnicaTekme.some(f => f.group_label === 'F')
+  const rednePreostale = selectedSeason
+    ? fixtures.filter(f => !f.group_label && f.round_number <= selectedSeason.rounds_count && f.status !== 'completed').length
+    : 0
+
+  /** Zmagovalca polfinalov, če sta serijI odločeni. */
+  function zmagovalciPolfinalov(): { SF1: string | null; SF2: string | null } {
+    const serija = (faza: KoncnicaFaza) => koncnicaTekme.filter(f => f.group_label === faza)
+      .map(f => ({ home_team_id: f.home_team_id, away_team_id: f.away_team_id, home_score: f.home_score, away_score: f.away_score, status: f.status }))
+    return { SF1: zmagovalecSerije(serija('SF1')), SF2: zmagovalecSerije(serija('SF2')) }
+  }
+
+  function odpriKoncnicoPredlog() {
+    if (!selectedSeason) return
+    if (!matchResultsLoaded) { setMessage('⚠ Disciplinski rezultati še niso naloženi — vrstni red bi bil lahko napačen ob izenačenju.'); return }
+    if (rednePreostale > 0 &&
+        !window.confirm(`${rednePreostale} tekem rednega dela še ni odigranih — lestvica ni dokončna. Vseeno predlagam četverico?`)) return
+    const lestvica = calculateStandings(teams, fixtures, selectedSeason, matchResults)
+    if (lestvica.length < 4) { setMessage('⚠ Za končnico so potrebne vsaj 4 ekipe.'); return }
+    setKoncnicaDraft(lestvica.slice(0, 4).map(s => s.team.id))
+    setMessage('')
+  }
+
+  async function ustvariPolfinale() {
+    if (!selectedSeason || !koncnicaDraft) return
+    if (new Set(koncnicaDraft).size !== 4 || koncnicaDraft.some(id => !id)) {
+      setMessage('⚠ Izbrane morajo biti štiri različne ekipe.'); return
+    }
+    if (imaPolfinale && !window.confirm('Polfinale že obstaja. Izbrišem in ustvarim znova? Vpisani izidi končnice se izgubijo.')) return
+
+    let tekme
+    try {
+      tekme = polfinale(koncnicaDraft.map((id, i) => ({ id, position: i + 1 })), prvoKoloPolfinala(selectedSeason.rounds_count))
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri končnici'}`); return
+    }
+
+    setLoading(true)
+    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).in('group_label', ['SF1', 'SF2'])
+    for (const t of tekme) {
+      await supabase.from('league_fixtures').insert({
+        season_id: selectedSeason.id, round_number: t.round_number,
+        home_team_id: t.home_team_id, away_team_id: t.away_team_id,
+        group_label: t.group_label, status: 'scheduled',
+      })
+    }
+    setMessage('✓ Polfinale ustvarjen — 2 seriji po 3 tekme. Tretja se odigra le, če je potrebna.')
+    setKoncnicaDraft(null)
+    await loadFixtures()
+    setLoading(false)
+  }
+
+  async function ustvariFinale() {
+    if (!selectedSeason || !koncnicaDraft && !imaPolfinale) return
+    const { SF1, SF2 } = zmagovalciPolfinalov()
+    if (!SF1 || !SF2) { setMessage('⚠ Oba polfinala morata biti odločena (dve dobljeni tekmi).'); return }
+    // Uvrstitve iz rednega dela — prednost domačega v finalu gre po njej.
+    const lestvica = calculateStandings(teams, fixtures, selectedSeason, matchResults)
+    const top4 = lestvica.slice(0, 4).map((s, i) => ({ id: s.team.id, position: i + 1 }))
+    if (imaFinale && !window.confirm('Finale že obstaja. Izbrišem in ustvarim znova?')) return
+
+    let tekme
+    try {
+      tekme = finale(SF1, SF2, top4, prvoKoloFinala(selectedSeason.rounds_count))
+    } catch (err) {
+      setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri finalu'}`); return
+    }
+
+    setLoading(true)
+    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).eq('group_label', 'F')
+    for (const t of tekme) {
+      await supabase.from('league_fixtures').insert({
+        season_id: selectedSeason.id, round_number: t.round_number,
+        home_team_id: t.home_team_id, away_team_id: t.away_team_id,
+        group_label: t.group_label, status: 'scheduled',
+      })
+    }
+    setMessage('✓ Finale ustvarjen')
+    await loadFixtures()
+    setLoading(false)
+  }
+
   async function updateSeasonStatus(status: LeagueSeasonStatus) {
     if (!selectedSeason) return
     await supabase.from('league_seasons').update({ status }).eq('id', selectedSeason.id)
@@ -801,12 +984,16 @@ export default function LeagueAdmin() {
       <div className="flex items-start justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Upravljanje lige</h1>
-          <p className="text-sm text-gray-500">Državno ekipno prvenstvo</p>
+          <p className="text-sm text-gray-500">
+            {isAdmin ? 'Državno ekipno prvenstvo' : `Vaše lige (${seasons.length})`}
+          </p>
         </div>
-        <button onClick={() => setShowCreate(true)}
-          className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors">
-          + Nova sezona
-        </button>
+        {isAdmin && (
+          <button onClick={() => setShowCreate(true)}
+            className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors">
+            + Nova sezona
+          </button>
+        )}
       </div>
 
       {message && (
@@ -1005,6 +1192,43 @@ export default function LeagueAdmin() {
               )}
             </div>
           </div>
+
+          {/* Admini te lige — ureja jih lahko samo globalni admin. */}
+          {isAdmin && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+              <h3 className="text-sm font-semibold text-gray-700 mb-1">Admini te lige</h3>
+              <p className="text-xs text-gray-400 mb-3">
+                Ligaški admin ureja ekipe, razpored, termine, zapisnike in discipline <strong>samo te sezone</strong>.
+                Sezone ne more ustvariti ali izbrisati, drugih lig ne vidi in adminov ne more dodajati.
+              </p>
+              <div className="flex gap-2 flex-wrap items-center mb-3">
+                <select value={newLeagueAdminId} onChange={e => setNewLeagueAdminId(e.target.value)}
+                  className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                  <option value="">– izberi uporabnika –</option>
+                  {players
+                    .filter(p => !leagueAdmins.some(a => a.user_id === p.id))
+                    .map(p => <option key={p.id} value={p.id}>{p.full_name ?? p.id}{p.club ? ` · ${p.club}` : ''}</option>)}
+                </select>
+                <button onClick={addLeagueAdmin} disabled={loading || !newLeagueAdminId}
+                  className="bg-bocce-green text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                  Dodaj
+                </button>
+              </div>
+              {leagueAdmins.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">Ta liga nima svojega admina — ureja jo lahko le globalni admin.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {leagueAdmins.map(a => (
+                    <span key={a.user_id} className="inline-flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 text-xs">
+                      {players.find(p => p.id === a.user_id)?.full_name ?? a.user_id}
+                      <button onClick={() => removeLeagueAdmin(a.user_id)} disabled={loading}
+                        title="Odvzemi pravico" className="text-gray-400 hover:text-red-600 font-bold">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-1 mb-6 border-b border-gray-200">
             {[
@@ -1283,6 +1507,75 @@ export default function LeagueAdmin() {
                     Razpored se sestavi po žrebanih številkah ekip (zavihek Ekipe → polje <span className="font-mono">#</span>).
                     Število kol ni nastavitev — izračuna se iz razporeda ob generiranju.
                   </p>
+
+                  {/* KONČNICA — samo Super liga */}
+                  {jeSuperLiga && fixtures.length > 0 && (
+                    <div className="border-t border-gray-200 pt-5 mb-6">
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
+                        <button onClick={odpriKoncnicoPredlog} disabled={loading || !matchResultsLoaded}
+                          className="bg-bocce-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                          {!matchResultsLoaded ? 'Nalagam rezultate…' : imaPolfinale ? '↺ Nov predlog četverice' : 'Končnica — predlog četverice'}
+                        </button>
+                        {imaPolfinale && (() => {
+                          const { SF1, SF2 } = zmagovalciPolfinalov()
+                          const ime = (id: string | null) => teams.find(t => t.id === id)?.club_name
+                          return (
+                            <>
+                              <button onClick={ustvariFinale} disabled={loading || !SF1 || !SF2}
+                                title={!SF1 || !SF2 ? 'Oba polfinala morata biti odločena' : ''}
+                                className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                                {imaFinale ? '↺ Regeneriraj finale' : 'Generiraj finale'}
+                              </button>
+                              <span className="text-xs text-gray-500">
+                                {SF1 && SF2
+                                  ? `Finalista: ${ime(SF1)} in ${ime(SF2)}`
+                                  : `Polfinale v teku${SF1 ? ` · ${ime(SF1)} naprej` : ''}${SF2 ? ` · ${ime(SF2)} naprej` : ''}`}
+                              </span>
+                            </>
+                          )
+                        })()}
+                      </div>
+                      <p className="text-xs text-gray-400 mb-3">
+                        Najboljše štiri po {selectedSeason.rounds_count} kolih · pari 1.–4. in 2.–3. · na dve dobljeni tekmi ·
+                        1. tekma pri višje uvrščenem, 2. pri nižje, 3. spet pri višje · za 3. mesto se ne igra.
+                        {rednePreostale > 0 && <span className="text-amber-600"> Rednega dela še ni konec ({rednePreostale} tekem).</span>}
+                      </p>
+
+                      {koncnicaDraft && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <h3 className="font-semibold text-gray-800 mb-2 text-sm">Potrdi četverico</h3>
+                          <div className="grid sm:grid-cols-2 gap-2 mb-3">
+                            {koncnicaDraft.map((id, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <span className="w-5 text-xs text-gray-400 text-right">{i + 1}.</span>
+                                <select value={id}
+                                  onChange={e => setKoncnicaDraft(d => d ? d.map((x, j) => j === i ? e.target.value : x) : d)}
+                                  className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                                  <option value="">– izberi –</option>
+                                  {teams.map(t => <option key={t.id} value={t.id}>{t.club_name}</option>)}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 mb-3">
+                            {KONCNICA_FAZE.SF1}: {teams.find(t => t.id === koncnicaDraft[0])?.club_name ?? '?'} – {teams.find(t => t.id === koncnicaDraft[3])?.club_name ?? '?'}
+                            {' · '}
+                            {KONCNICA_FAZE.SF2}: {teams.find(t => t.id === koncnicaDraft[1])?.club_name ?? '?'} – {teams.find(t => t.id === koncnicaDraft[2])?.club_name ?? '?'}
+                          </p>
+                          <div className="flex gap-2">
+                            <button onClick={ustvariPolfinale} disabled={loading || new Set(koncnicaDraft).size !== 4 || koncnicaDraft.some(x => !x)}
+                              className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
+                              Potrdi in ustvari polfinale
+                            </button>
+                            <button onClick={() => setKoncnicaDraft(null)}
+                              className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+                              Prekliči
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : selectedSeason.format === 'split' ? (
                 <>
@@ -1473,7 +1766,31 @@ export default function LeagueAdmin() {
 
               {Object.entries(byRound).sort(([a], [b]) => Number(a) - Number(b)).map(([round, rFixtures]) => (
                 <div key={round} className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">{round}. kolo</h3>
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">{round}. kolo</h3>
+                    <span className="text-xs text-gray-400">{roundDateSummary(rFixtures)}</span>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <input type="datetime-local"
+                        value={roundDateDraft[round] ?? commonRoundDate(rFixtures)}
+                        onChange={e => setRoundDateDraft(d => ({ ...d, [round]: e.target.value }))}
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-bocce-green outline-none" />
+                      <button
+                        onClick={() => setRoundSchedule(Number(round), rFixtures, roundDateDraft[round] ?? commonRoundDate(rFixtures))}
+                        disabled={loading || !(roundDateDraft[round] ?? commonRoundDate(rFixtures))}
+                        title={`Vpiši ta datum in uro vsem ${rFixtures.length} tekmam ${round}. kola`}
+                        className="bg-bocce-green text-white px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-bocce-green-light disabled:opacity-40">
+                        Nastavi celemu kolu
+                      </button>
+                      {rFixtures.some(f => f.scheduled_date) && (
+                        <button onClick={() => setRoundSchedule(Number(round), rFixtures, '')}
+                          disabled={loading}
+                          title="Odstrani datum vsem tekmam tega kola"
+                          className="border border-gray-300 text-gray-500 px-2 py-1 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
+                          Počisti
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     {rFixtures.map(f => {
                       const editing = scoreEditing[f.id]

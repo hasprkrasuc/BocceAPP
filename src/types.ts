@@ -418,6 +418,10 @@ export interface AuthContextValue {
   loading: boolean
   isAdmin: boolean
   isSuperAdmin: boolean
+  /** Ureja vsaj eno ligo kot ligaški admin (ni nujno globalni admin). */
+  isLeagueAdmin: boolean
+  /** Sezone, katerih admin je; globalni admin ima lahko prazno. */
+  managedSeasonIds: string[]
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, fullName: string, club: string) => Promise<void>
   signOut: () => Promise<void>

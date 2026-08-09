@@ -22,3 +22,41 @@ export function formatMatchDateTime(s?: string | null): string {
   if (!d) return ''
   return t ? `${d} ob ${t}` : d
 }
+
+/**
+ * Vrednost za `<input type="datetime-local">` iz shranjenega termina.
+ * Reže dobesedno iz niza — enako kot matchDatePart/matchTimePart in kot
+ * zapisnik tekme. Časovnega zamika NE upošteva namenoma: kar admin vtipka,
+ * se tako shrani in tako prikaže. Če bi tu pretvarjali prek Date, bi se vsi
+ * obstoječi termini premaknili za eno ali dve uri.
+ */
+export function toDateTimeLocal(s?: string | null): string {
+  if (!s) return ''
+  const v = String(s).slice(0, 16)
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v.replace(' ', 'T'))
+    ? v.replace(' ', 'T')
+    : ''
+}
+
+/**
+ * Skupni termin kola: vrednost, če jo imajo vse tekme enako, sicer prazno.
+ * Prazno pomeni "kolo nima enotnega termina" — ali ga nima nobena tekma ali
+ * pa so razpršene po različnih dnevih.
+ */
+export function skupniTerminKola(termini: (string | null | undefined)[]): string {
+  if (termini.length === 0) return ''
+  const prvi = toDateTimeLocal(termini[0])
+  if (!prvi) return ''
+  return termini.every(t => toDateTimeLocal(t) === prvi) ? prvi : ''
+}
+
+/** Kratek povzetek terminov kola za admin ("5 tekem · 4. 9. 2026 ob 18:00"). */
+export function povzetekTerminovKola(termini: (string | null | undefined)[]): string {
+  const brez = termini.filter(t => !toDateTimeLocal(t)).length
+  const skupni = skupniTerminKola(termini)
+  if (skupni) return formatMatchDateTime(skupni)
+  if (brez === termini.length) return 'brez termina'
+  const razlicni = new Set(termini.map(t => matchDatePart(t)).filter(Boolean))
+  const opis = razlicni.size === 1 ? [...razlicni][0] : `${razlicni.size} različnih datumov`
+  return brez > 0 ? `${opis} · ${brez} brez termina` : opis
+}
