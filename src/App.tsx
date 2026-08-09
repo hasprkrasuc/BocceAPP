@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ProtectedRoute, AdminRoute, LeagueAdminRoute } from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
+import ErrorBoundary from './components/ErrorBoundary'
 import ChangePassword from './pages/ChangePassword'
 
 import Home from './pages/Home'
@@ -89,6 +90,10 @@ export default function App() {
         <AuthProvider>
           <RequirePasswordChange>
           <Layout>
+            {/* Lovilec je ZNOTRAJ Layouta, da ob napaki ostane navigacija in
+                se uporabnik lahko premakne drugam. Zunaj Suspensa je zato, ker
+                mora ujeti tudi zavrnjen leni uvoz, ki ga Suspense vrže naprej. */}
+            <ErrorBoundary>
             <Suspense fallback={<NalaganjeStrani />}>
             <Routes>
               {/* Public */}
@@ -142,6 +147,7 @@ export default function App() {
               } />
             </Routes>
             </Suspense>
+            </ErrorBoundary>
           </Layout>
           </RequirePasswordChange>
         </AuthProvider>
