@@ -74,6 +74,7 @@ interface SeasonForm {
   draw_points: number
   loss_points: number
   berger_mirror: boolean
+  double_round: boolean
 }
 
 interface TeamForm {
@@ -96,7 +97,7 @@ export default function LeagueAdmin() {
   const [form, setForm] = useState<SeasonForm>({
     name: '', year: new Date().getFullYear(), tier: 'super_liga', obz_name: '',
     category: 'men', format: 'flat', rounds_count: 1, win_points: 2, draw_points: 1, loss_points: 0,
-    berger_mirror: false,
+    berger_mirror: false, double_round: false,
   })
   const [teamForm, setTeamForm] = useState<TeamForm>({ club_name: '', short_name: '', captain_id: '' })
   const [scoreEditing, setScoreEditing] = useState<ScoreEditing>({})
@@ -204,6 +205,12 @@ export default function LeagueAdmin() {
     const s = (data ?? []) as LeagueSeason[]
     setSeasons(s)
     if (s.length > 0 && !selectedSeason) setSelectedSeason(s[0])
+    // Osveži tudi izbrano sezono: generator po vpisu tekem popravi rounds_count,
+    // brez tega bi glava in prikaz končnice še naprej brala staro vrednost.
+    else if (selectedSeason) {
+      const svez = s.find(x => x.id === selectedSeason.id)
+      if (svez) setSelectedSeason(svez)
+    }
   }
 
   async function loadTeams() {
@@ -287,7 +294,7 @@ export default function LeagueAdmin() {
       tier: form.tier, obz_name: form.tier === 'obz' ? form.obz_name : null,
       format: form.format, rounds_count: form.rounds_count, win_points: form.win_points,
       draw_points: form.draw_points, loss_points: form.loss_points,
-      berger_mirror: form.berger_mirror,
+      berger_mirror: form.berger_mirror, double_round: form.double_round,
       status: 'draft',
     }).select().single()
     if (error) {
@@ -373,14 +380,22 @@ export default function LeagueAdmin() {
       return
     }
     // Razpored se sestavi po Bergerju iz žrebanih številk — preveri veljavnost žreba.
+    // Enokrožno/dvokrožno bere iz double_round, NE iz rounds_count: ta je po
+    // generiranju število kol, zato bi ga `> 1` prebral kot dvokrožno tudi pri
+    // enokrožni ligi in bi vsaka regeneracija podvojila razpored.
     let fixtureList
     try {
-      fixtureList = bergerFixtures(teams, selectedSeason.rounds_count > 1, selectedSeason.berger_mirror ?? false)
+      fixtureList = bergerFixtures(teams, selectedSeason.double_round ?? false, selectedSeason.berger_mirror ?? false)
     } catch (err) {
       setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
       return
     }
-    if (!window.confirm(`Ustvari Bergerjev razpored za ${teams.length} ekip? To bo izbrisalo obstoječe tekme!`)) return
+    const kol = Math.max(...fixtureList.map(f => f.round_number))
+    if (!window.confirm(
+      `Ustvari Bergerjev razpored za ${teams.length} ekip — ` +
+      `${selectedSeason.double_round ? 'dvokrožno' : 'enokrožno'}, ${kol} kol, ${fixtureList.length} tekem? ` +
+      'To bo izbrisalo obstoječe tekme!'
+    )) return
     setLoading(true)
     await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id)
     for (const f of fixtureList) {
@@ -392,8 +407,13 @@ export default function LeagueAdmin() {
         status: 'scheduled',
       })
     }
-    setMessage(`✓ Ustvarjenih ${fixtureList.length} tekem`)
+    // rounds_count = dejansko število kol rednega dela. Brez tega ostane vrednost
+    // iz obrazca (1 ali 2) in vse nad njo velja za končnico: lestvica bi štela
+    // samo prvi dve koli, ostalo pa bi se prikazalo kot polfinale in finale.
+    await supabase.from('league_seasons').update({ rounds_count: kol }).eq('id', selectedSeason.id)
+    setMessage(`✓ Ustvarjenih ${fixtureList.length} tekem v ${kol} kolih`)
     await loadFixtures()
+    await loadSeasons()
     setLoading(false)
   }
 
@@ -708,6 +728,20 @@ export default function LeagueAdmin() {
     setLoading(false)
   }
 
+  /**
+   * Enokrožno/dvokrožno za obstoječo sezono. Na že vpisane tekme ne vpliva —
+   * velja šele ob naslednjem generiranju, zato to tudi pove.
+   */
+  async function updateDoubleRound(double: boolean) {
+    if (!selectedSeason) return
+    await supabase.from('league_seasons').update({ double_round: double }).eq('id', selectedSeason.id)
+    setSelectedSeason(s => (s ? { ...s, double_round: double } : s))
+    setMessage(fixtures.length > 0
+      ? `✓ Nastavljeno na ${double ? 'dvokrožno' : 'enokrožno'} — obstoječi razpored ostaja, sprememba velja ob regeneraciji.`
+      : `✓ Nastavljeno na ${double ? 'dvokrožno' : 'enokrožno'}`)
+    await loadSeasons()
+  }
+
   async function updateSeasonStatus(status: LeagueSeasonStatus) {
     if (!selectedSeason) return
     await supabase.from('league_seasons').update({ status }).eq('id', selectedSeason.id)
@@ -842,12 +876,16 @@ export default function LeagueAdmin() {
             </div>
             {form.format === 'flat' ? (
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Krogi (1 = enkrat, 2 = dom/gost)</label>
-                <select value={form.rounds_count} onChange={set('rounds_count')}
+                <label className="block text-xs text-gray-600 mb-1">Krogi</label>
+                <select value={form.double_round ? 'da' : 'ne'}
+                  onChange={e => setForm(f => ({ ...f, double_round: e.target.value === 'da' }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
-                  <option value={1}>Enokrožno</option>
-                  <option value={2}>Dvokrožno (dom + gost)</option>
+                  <option value="ne">Enokrožno</option>
+                  <option value="da">Dvokrožno (dom + gost)</option>
                 </select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Število kol se izračuna ob generiranju razporeda.
+                </p>
               </div>
             ) : (
               <div>
@@ -1224,17 +1262,26 @@ export default function LeagueAdmin() {
             <div>
               {selectedSeason.format === 'flat' ? (
                 <>
-                  <div className="flex items-center gap-3 mb-6">
+                  <div className="flex items-center gap-3 mb-6 flex-wrap">
                     <button onClick={handleGenerateFixtures} disabled={loading || teams.length < 2}
                       className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light disabled:opacity-50">
                       {loading ? 'Generiram...' : fixtures.length > 0 ? '↺ Regeneriraj razpored' : 'Ustvari razpored'}
                     </button>
+                    <select value={selectedSeason.double_round ? 'da' : 'ne'}
+                      onChange={e => updateDoubleRound(e.target.value === 'da')}
+                      disabled={loading}
+                      className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                      <option value="ne">Enokrožno</option>
+                      <option value="da">Dvokrožno (dom + gost)</option>
+                    </select>
                     <span className="text-xs text-gray-500">
-                      Bergerjev sistem · {selectedSeason.rounds_count > 1 ? 'Dvokrožno' : 'Enokrožno'} · {teams.length} ekip
+                      Bergerjev sistem · {teams.length} ekip
+                      {fixtures.length > 0 && ` · ${selectedSeason.rounds_count} kol · ${fixtures.length} tekem`}
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 -mt-4 mb-6">
                     Razpored se sestavi po žrebanih številkah ekip (zavihek Ekipe → polje <span className="font-mono">#</span>).
+                    Število kol ni nastavitev — izračuna se iz razporeda ob generiranju.
                   </p>
                 </>
               ) : selectedSeason.format === 'split' ? (
