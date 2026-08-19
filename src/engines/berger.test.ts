@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { bergerSchedule, bergerFixtures, MAX_BERGER_TEAMS } from './berger'
+import { bergerSchedule, bergerFixtures, MAX_BERGER_TEAMS, veljavniPariIgrisc } from './berger'
 
 /**
  * Pričakovane Bergerjeve tabele iz Priloge B (BZS).
@@ -269,5 +269,43 @@ describe('bergerSchedule — število kol, iz katerega admin izpelje rounds_coun
   test('zrcaljenje na število kol ne vpliva', () => {
     expect(kol(bergerSchedule(9, true, true))).toBe(kol(bergerSchedule(9, true, false)))
     expect(bergerSchedule(9, true, true).length).toBe(bergerSchedule(9, true, false).length)
+  })
+})
+
+describe('veljavniPariIgrisc', () => {
+  /** Preverjeno na Prilogi B: pri sodem N je edina razlika N/2. */
+  test('pri sodem številu ekip je razlika natanko N/2', () => {
+    for (const [n, pricakovanaRazlika] of [[6, 3], [8, 4], [10, 5], [12, 6]] as const) {
+      const pari = veljavniPariIgrisc(n, true, false)
+      expect(pari.length).toBe(n / 2)
+      for (const [a, b] of pari) expect(b - a).toBe(pricakovanaRazlika)
+    }
+  })
+
+  test('pri 6 ekipah so pari natanko 1-4, 2-5, 3-6', () => {
+    expect(veljavniPariIgrisc(6, true, false)).toEqual([[1, 4], [2, 5], [3, 6]])
+  })
+
+  test('pri lihem številu ekip sta veljavni dve razliki', () => {
+    for (const n of [7, 9, 11]) {
+      const razlike = new Set(veljavniPariIgrisc(n, true, false).map(([a, b]) => b - a))
+      expect([...razlike].sort()).toEqual([Math.floor(n / 2), Math.ceil(n / 2)])
+    }
+  })
+
+  test('zrcaljenje na pare ne vpliva', () => {
+    expect(veljavniPariIgrisc(12, true, true)).toEqual(veljavniPariIgrisc(12, true, false))
+  })
+
+  /** Namen pravila, ne le njegova oblika. */
+  test('para iz seznama nista v nobenem krogu oba domača', () => {
+    for (const n of [6, 9, 12]) {
+      const igre = bergerSchedule(n, true, false)
+      for (const [a, b] of veljavniPariIgrisc(n, true, false)) {
+        const krogiA = new Set(igre.filter(g => g.home === a).map(g => g.round))
+        const krogiB = igre.filter(g => g.home === b).map(g => g.round)
+        for (const r of krogiB) expect(krogiA.has(r)).toBe(false)
+      }
+    }
   })
 })

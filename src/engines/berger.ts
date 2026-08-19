@@ -161,3 +161,47 @@ export function bergerFixtures(teams: DrawnTeam[], doubleRound = false, mirror =
     away_team_id: idByNumber.get(g.away)!,
   }))
 }
+
+/**
+ * Pari žrebanih številk, ki v NOBENEM krogu nista obe domači. Dve ekipi, ki si
+ * delita rezervno igrišče, morata dobiti številki iz takega para.
+ *
+ * Vrednosti se ne vkodirajo — izpeljejo se iz iste tabele, po kateri nastane
+ * razpored. Tako sodo/liho število ekip, eno- ali dvokrožnost in zrcaljenje
+ * odpadejo kot posebni primeri, pravilo pa se ne more razhajati z razporedom.
+ *
+ * Pri sodem N je to natanko razlika N/2, pri lihem N/2 navzdol ali navzgor.
+ *
+ * @returns pari [a, b] z a < b, urejeni naraščajoče po a
+ */
+export function veljavniPariIgrisc(
+  teamCount: number,
+  doubleRound = false,
+  mirror = false,
+): Array<[number, number]> {
+  const igre = bergerSchedule(teamCount, doubleRound, mirror)
+  const domaciPoKrogu = new Map<number, number[]>()
+  for (const g of igre) {
+    const seznam = domaciPoKrogu.get(g.round) ?? []
+    seznam.push(g.home)
+    domaciPoKrogu.set(g.round, seznam)
+  }
+
+  const skupajDoma = new Set<string>()
+  for (const doma of domaciPoKrogu.values()) {
+    for (let i = 0; i < doma.length; i++) {
+      for (let j = i + 1; j < doma.length; j++) {
+        const [a, b] = doma[i] < doma[j] ? [doma[i], doma[j]] : [doma[j], doma[i]]
+        skupajDoma.add(`${a}-${b}`)
+      }
+    }
+  }
+
+  const pari: Array<[number, number]> = []
+  for (let a = 1; a <= teamCount; a++) {
+    for (let b = a + 1; b <= teamCount; b++) {
+      if (!skupajDoma.has(`${a}-${b}`)) pari.push([a, b])
+    }
+  }
+  return pari
+}
