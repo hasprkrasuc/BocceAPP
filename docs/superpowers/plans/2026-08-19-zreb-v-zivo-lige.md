@@ -1238,6 +1238,9 @@ function korakiSkupinskeLige(
   const fazaA: Korak = {
     naziv: 'Razporeditev v skupini',
     predal: PREDAL_SKUPINE,
+    // predal nosi OZNAKO skupine, ne edinstvenih številk: šest ekip dobi 1 in
+    // šest 2, zato tu podvojitev ni napaka
+    enolicne: false,
     udelezenci: () => prviVParu,
     stevilke: () => [1, 2],   // 1 = A, 2 = B
     // obe skupini sta vedno na voljo: par zapolni po eno mesto v vsaki
