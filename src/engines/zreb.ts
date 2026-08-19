@@ -105,3 +105,70 @@ export function jeKoncano(opis: ZrebOpis, stanje: ZrebStanje): boolean {
     return k.udelezenci(stanje).every(id => id in ze)
   })
 }
+
+/** Preskoči korake, ki nimajo več kandidatov. */
+function napreduj(opis: ZrebOpis, stanje: ZrebStanje): ZrebStanje {
+  let korak = stanje.korak
+  while (korak < opis.koraki.length) {
+    const k = opis.koraki[korak]
+    const ze = stanje.dodeljene[k.predal] ?? {}
+    if (k.udelezenci(stanje).some(id => !(id in ze))) break
+    korak++
+  }
+  return korak === stanje.korak ? stanje : { ...stanje, korak }
+}
+
+/** Izvleče naslednjega udeleženca. Vrne NOVO stanje. */
+export function izvleciUdelezenca(
+  opis: ZrebOpis, stanje: ZrebStanje, randInt: (n: number) => number,
+): ZrebStanje {
+  if (stanje.cakajoca) throw new Error('udeleženec je že izvlečen — najprej izvleci številko')
+  const k = kandidati(opis, stanje)
+  if (k.length === 0) throw new Error('ni več udeležencev za žrebanje')
+  const id = k[randInt(k.length)]
+  return {
+    ...stanje,
+    cakajoca: id,
+    dnevnik: [...stanje.dnevnik, { tip: 'udelezenec', udelezenecId: id, korak: stanje.korak }],
+  }
+}
+
+/** Izvleče številko za čakajočega udeleženca in uveljavi posledice. Vrne NOVO stanje. */
+export function izvleciStevilko(
+  opis: ZrebOpis, stanje: ZrebStanje, randInt: (n: number) => number,
+): ZrebStanje {
+  const id = stanje.cakajoca
+  if (!id) throw new Error('najprej izvleci udeleženca')
+  const korak = opis.koraki[stanje.korak]
+  const veljavne = korak.veljavne(stanje, id)
+  if (veljavne.length === 0) {
+    throw new Error(`za ${id} ni nobene veljavne številke — žreb se ne more nadaljevati`)
+  }
+  const stevilka = veljavne[randInt(veljavne.length)]
+
+  const vse: Dodelitev[] = [
+    { udelezenecId: id, stevilka, samodejno: false },
+    ...(korak.posledice?.(stanje, id, stevilka) ?? []),
+  ]
+
+  const predal = { ...(stanje.dodeljene[korak.predal] ?? {}) }
+  const dnevnik = [...stanje.dnevnik]
+  for (const d of vse) {
+    if (d.udelezenecId in predal) {
+      throw new Error(`${d.udelezenecId} ima številko že dodeljeno`)
+    }
+    predal[d.udelezenecId] = d.stevilka
+    dnevnik.push({
+      tip: 'stevilka', udelezenecId: d.udelezenecId, stevilka: d.stevilka,
+      samodejno: d.samodejno, razlog: d.razlog, korak: stanje.korak,
+    })
+  }
+
+  const naslednje: ZrebStanje = {
+    ...stanje,
+    dodeljene: { ...stanje.dodeljene, [korak.predal]: predal },
+    cakajoca: null,
+    dnevnik,
+  }
+  return napreduj(opis, naslednje)
+}

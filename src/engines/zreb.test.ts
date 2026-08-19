@@ -1,8 +1,19 @@
 import { describe, test, expect } from 'vitest'
 import {
-  zacniZreb, kandidati, preostale, jeKoncano,
+  zacniZreb, kandidati, preostale, jeKoncano, izvleciUdelezenca, izvleciStevilko,
   type ZrebOpis, type ZrebStanje,
 } from './zreb'
+
+/** Ponovljiv generator za teste. */
+export function mulberry32(a: number) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+export const randIntIz = (prng: () => number) => (n: number) => Math.floor(prng() * n)
 
 /** Preprost opis za teste: 4 udeleženci, številke 1..4, brez omejitev. */
 export function preprostOpis(n = 4): ZrebOpis {
@@ -56,5 +67,62 @@ describe('pogon žreba — stanje', () => {
     expect(jeKoncano(o, s)).toBe(false)
     const poln: ZrebStanje = { ...s, dodeljene: { 0: { e1: 1, e2: 2, e3: 3, e4: 4 } } }
     expect(jeKoncano(o, poln)).toBe(true)
+  })
+})
+
+describe('pogon žreba — potegi', () => {
+  test('izvleciUdelezenca nastavi čakajočo in ne dodeli številke', () => {
+    const o = preprostOpis()
+    const s0 = zacniZreb(o)
+    const s1 = izvleciUdelezenca(o, s0, randIntIz(mulberry32(1)))
+    expect(s1.cakajoca).not.toBeNull()
+    expect(s0.cakajoca).toBeNull()   // izvirno stanje ostane nedotaknjeno
+    expect(s1.dodeljene).toEqual({})
+    expect(s1.dnevnik).toHaveLength(1)
+  })
+
+  test('dvakratno žrebanje udeleženca javi napako', () => {
+    const o = preprostOpis()
+    const r = randIntIz(mulberry32(1))
+    const s1 = izvleciUdelezenca(o, zacniZreb(o), r)
+    expect(() => izvleciUdelezenca(o, s1, r)).toThrow(/že izvlečen/)
+  })
+
+  test('žrebanje številke brez izvlečenega udeleženca javi napako', () => {
+    const o = preprostOpis()
+    expect(() => izvleciStevilko(o, zacniZreb(o), randIntIz(mulberry32(1)))).toThrow(/najprej izvleci/)
+  })
+
+  test('celoten žreb dodeli vse številke in napreduje čez korake', () => {
+    const o = preprostOpis()
+    const r = randIntIz(mulberry32(42))
+    let s = zacniZreb(o)
+    let potez = 0
+    while (!jeKoncano(o, s)) { s = izvleciStevilko(o, izvleciUdelezenca(o, s, r), r); potez++ }
+    expect(potez).toBe(4)
+    expect(Object.keys(s.dodeljene[0])).toHaveLength(4)
+    expect(new Set(Object.values(s.dodeljene[0])).size).toBe(4)
+    expect(preostale(o, s, 0)).toEqual([])
+  })
+
+  test('posledice dodelijo tudi druge udeležence', () => {
+    const o = preprostOpis()
+    o.koraki[0].posledice = (_s, id, st) =>
+      id === 'e1' ? [{ udelezenecId: 'e2', stevilka: st === 1 ? 2 : 1, samodejno: true, razlog: 'preizkus' }] : []
+    const r = randIntIz(mulberry32(3))
+    let s = izvleciUdelezenca(o, zacniZreb(o), r)
+    s = { ...s, cakajoca: 'e1' }
+    s = izvleciStevilko(o, s, r)
+    expect(s.dodeljene[0].e1).toBeDefined()
+    expect(s.dodeljene[0].e2).toBeDefined()
+    expect(s.dnevnik.some(v => v.samodejno && v.razlog === 'preizkus')).toBe(true)
+  })
+
+  test('brez veljavne številke javi napako in ne spremeni stanja', () => {
+    const o = preprostOpis()
+    o.koraki[0].veljavne = () => []
+    const r = randIntIz(mulberry32(5))
+    const s = { ...zacniZreb(o), cakajoca: 'e1' }
+    expect(() => izvleciStevilko(o, s, r)).toThrow(/ni nobene veljavne/)
   })
 })
