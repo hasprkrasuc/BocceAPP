@@ -833,6 +833,27 @@ export function preveriIzvedljivost(ekipe: LigaEkipa[], nastavitve: LigaNastavit
   return napake
 }
 
+/**
+ * Ali je razpored tega formata dvokrožen.
+ *
+ * Stolpca `double_round` NI mogoče prenesti naravnost. V `src/types.ts` je
+ * dokumentiran kot »samo format='flat'«, migracija ga zapolni le za `flat`, in
+ * obrazec sezone ga pri drugih formatih sploh ne pokaže — zato pri skupinskih in
+ * razdelitvenih sezonah večno ostane `false`. Resnica je drugačna: faza 1
+ * skupinske lige JE dvokrožna (`LeagueAdmin` jo tako generira), faza 1
+ * razdelitvene pa enokrožna.
+ *
+ * Napaka je nevarna v eno smer. Pari enokrožnega razporeda so nadmnožica
+ * dvokrožnih, zato bi napačni `false` pri skupinski ligi ponudil par, ki v
+ * dvokrožni sezoni ni varen — in ekipi bi bili v nekem krogu obe domači, kar je
+ * natanko tisto, čemur se pravilo izogiba.
+ */
+export function jeDvokrozno(nastavitve: LigaNastavitve): boolean {
+  if (nastavitve.format === 'groups') return true
+  if (nastavitve.format === 'split') return false
+  return nastavitve.double_round
+}
+
 /** Partnerske številke, ki jih sme dobiti soigriščna ekipa ob številki `n`. */
 function partnerskeStevilke(n: number, pari: Array<[number, number]>): number[] {
   const out: number[] = []
@@ -859,7 +880,7 @@ function korakiZaNabor(
   naziv: string,
 ): Korak[] {
   const stevilke = () => Array.from({ length: velikost }, (_, i) => i + 1)
-  const veljavniPari = veljavniPariIgrisc(velikost, nastavitve.double_round, nastavitve.berger_mirror)
+  const veljavniPari = veljavniPariIgrisc(velikost, jeDvokrozno(nastavitve), nastavitve.berger_mirror)
 
   /** Pari, ki sta oba v tem naboru. */
   const mojiPari = (s: ZrebStanje) => {
@@ -980,7 +1001,7 @@ export function preveriLigaski(
 
   // 2. Ekipi s skupnim igriščem imata veljavno razliko številk.
   const velikost = nastavitve.format === 'groups' ? 6 : ekipe.length
-  const veljavni = veljavniPariIgrisc(velikost, nastavitve.double_round, nastavitve.berger_mirror)
+  const veljavni = veljavniPariIgrisc(velikost, jeDvokrozno(nastavitve), nastavitve.berger_mirror)
   const dovoljene = new Set(veljavni.map(([a, b]) => `${a}-${b}`))
   for (const [a, b] of soigriscniPari(ekipe)) {
     for (const predal of [PREDAL_SKUPINE, PREDAL_A, PREDAL_B]) {
@@ -1230,6 +1251,36 @@ describe('preveriLigaski', () => {
   })
 })
 
+describe('jeDvokrozno', () => {
+  /**
+   * Stolpec double_round velja samo za 'flat'; pri 'groups' in 'split' večno
+   * ostane false, čeprav je faza 1 skupinske lige dvokrožna. Prenos stolpca
+   * naravnost bi pri skupinski ligi dal preohlapne pare igrišč.
+   */
+  test('groups je vedno dvokrožen, ne glede na stolpec', () => {
+    expect(jeDvokrozno({ format: 'groups', double_round: false, berger_mirror: false })).toBe(true)
+  })
+
+  test('split je vedno enokrožen, ne glede na stolpec', () => {
+    expect(jeDvokrozno({ format: 'split', double_round: true, berger_mirror: false })).toBe(false)
+  })
+
+  test('flat sledi stolpcu', () => {
+    expect(jeDvokrozno({ format: 'flat', double_round: true, berger_mirror: false })).toBe(true)
+    expect(jeDvokrozno({ format: 'flat', double_round: false, berger_mirror: false })).toBe(false)
+  })
+
+  test('skupinska liga dobi pare dvokrožnega razporeda, tudi če je stolpec false', () => {
+    const nastG = { format: 'groups' as const, double_round: false, berger_mirror: false }
+    const o = ligaskiOpis(nastG, ekipe(12, { t1: 'x', t5: 'x' }), vrstniRed12)
+    const s = odigraj(o, 17)
+    const predal = s.dodeljene[PREDAL_A]?.t1 != null ? PREDAL_A : PREDAL_B
+    const a = s.dodeljene[predal].t1, b = s.dodeljene[predal].t5
+    // dvokrožno pri šestih: edina veljavna razlika je 3 (enokrožno bi dopustilo tudi 4-6)
+    if (a != null && b != null) expect(Math.abs(a - b)).toBe(3)
+  })
+})
+
 describe('izid je sprejemljiv za obstoječo kodo', () => {
   test('flat: bergerFixtures ne vrže izjeme', () => {
     const nast = { format: 'flat' as const, double_round: true, berger_mirror: false }
@@ -1258,7 +1309,7 @@ Uvoze na vrhu datoteke dopolni:
 ```ts
 import { bergerSchedule, bergerFixtures } from './berger'
 import { validateDraw } from './leagueGroups'
-import { preveriIzvedljivost, soigriscniPari, preveriLigaski } from './zrebLiga'
+import { preveriIzvedljivost, soigriscniPari, preveriLigaski, jeDvokrozno } from './zrebLiga'
 ```
 
 > **Opomba:** `bergerFixtures` pričakuje ekipe z `draw_number`; točen tip preveri v `src/engines/berger.ts` (`BergerFixture`, vrstica ~122) in po potrebi prilagodi obliko objekta.
