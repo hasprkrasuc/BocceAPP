@@ -142,11 +142,14 @@ brez omejitev. Ker je v naboru šestih na voljo natanko toliko veljavnih parov,
 kolikor je razpolovljenih mest (3), je postavitev pri tem vrstnem redu vedno
 rešljiva — dokler preverba iz razdelka 5.4 prepusti le pare in ne trojk.
 
+**Pravilo velja v vseh ligaških formatih** — povsod, kjer si dve ekipi delita
+rezervno igrišče, ne le v skupinskih ligah. (Potrjeno 19. 8. 2026.)
+
 **Nabor je odvisen od formata.** Pri `flat` in `split` je nabor cela liga, zato
-razlika izhaja iz `N`. Pri `groups` je nabor posamezna skupina šestih, zato je
-razlika 3 — in pravilo velja le, če sta ekipi po fazi A pristali v isti skupini.
-Če sta v različnih skupinah, se nikoli ne srečata v istem razporedu in omejitve
-ni.
+razlika izhaja iz `N`: pri dvanajstih ekipah 6, pri desetih 5. Pri `groups` je
+nabor posamezna skupina šestih, zato je razlika 3 — in pravilo velja le, če sta
+ekipi po fazi A pristali v isti skupini. Če sta v različnih skupinah, se nikoli
+ne srečata v istem razporedu in omejitve ni.
 
 ### 5.4 Nov podatek: kdo si deli igrišče
 
@@ -268,14 +271,23 @@ Zagon: `npm test -- --run`. `npm run typecheck` mora ohraniti število napak
 1. **Nosilni vrstni red za fazo A.** Predvideno je samodejno polnjenje iz končne
    lestvice prejšnje sezone iste lige, kadar obstaja, sicer ročni vnos. Vrstni red
    je viden ves čas obreda, da je parjenje preverljivo.
-2. **Liho število ekip.** Pri lihem `N` sta veljavni dve razliki. Predvideno je,
-   da se med njima žreba, kadar sta prosti obe. Če zveza predpisuje eno, se
-   spremeni ena vrstica.
-3. **Kdo sme žrebati.** Predvideno je `admin` ali `super_admin`, enako kot
+2. **Kdo sme žrebati.** Predvideno je `admin` ali `super_admin`, enako kot
    `LeagueAdmin`.
-4. **Ena sezona naenkrat.**
-5. **Ključ igrišča je nov podatek.** Nekdo ga mora vnesti za obstoječe sezone,
+3. **Ena sezona naenkrat.**
+4. **Ključ igrišča je nov podatek.** Nekdo ga mora vnesti za obstoječe sezone,
    sicer se pravilo ne uveljavi. Brez vnosa se obred izvede brez te omejitve.
+
+**Potrjeno 19. 8. 2026 in ni več odprto:**
+
+- Pri lihem `N` sta veljavni dve razliki in med njima se **žreba**, kadar sta
+  prosti obe.
+- Pravilo o skupnem rezervnem igrišču velja v **vseh** ligaških formatih, ne le
+  v skupinskih.
+
+**Vredno preveriti na živih podatkih (zunaj te faze).** Če je katera obstoječa
+ravna liga dobila razliko 3 namesto `N/2`, sta si ekipi z istim rezervnim
+igriščem v nekaterih krogih obe domači in igrišče ne odigra svoje vloge. Preverba
+zahteva dostop do baze in dogovor z lastnikom projekta.
 
 ## 12 · Naslednji fazi
 
