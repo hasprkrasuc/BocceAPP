@@ -172,3 +172,37 @@ export function izvleciStevilko(
   }
   return napreduj(opis, naslednje)
 }
+
+/**
+ * Vrne seznam kršenih invariant v slovenščini; prazen seznam pomeni, da je vse
+ * v redu. Preverbe, ki so smiselne šele ob koncu, se izvedejo le, ko je žreb
+ * končan — vmesna stanja ne smejo javljati lažnih napak, ker vmesnik ob napaki
+ * obred ustavi.
+ */
+export function preveri(opis: ZrebOpis, stanje: ZrebStanje): string[] {
+  const napake: string[] = []
+  const imena = new Map(opis.udelezenci.map(u => [u.id, u.ime]))
+  const ime = (id: string) => imena.get(id) ?? id
+
+  for (const korak of opis.koraki) {
+    const ze = stanje.dodeljene[korak.predal] ?? {}
+    const nabor = new Set(korak.stevilke(stanje))
+    const videne = new Map<number, string>()
+    for (const [id, st] of Object.entries(ze)) {
+      if (!nabor.has(st)) napake.push(`${ime(id)}: številka ${st} ni v naboru koraka „${korak.naziv}“`)
+      const prej = videne.get(st)
+      if (prej) napake.push(`podvojena številka ${st}: ${ime(prej)} in ${ime(id)}`)
+      else videne.set(st, id)
+    }
+  }
+
+  if (jeKoncano(opis, stanje)) {
+    for (const korak of opis.koraki) {
+      const ze = stanje.dodeljene[korak.predal] ?? {}
+      for (const id of korak.udelezenci(stanje)) {
+        if (!(id in ze)) napake.push(`${ime(id)} nima številke v koraku „${korak.naziv}“`)
+      }
+    }
+  }
+  return [...new Set(napake)]
+}

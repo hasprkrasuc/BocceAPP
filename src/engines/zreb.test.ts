@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import {
-  zacniZreb, kandidati, preostale, jeKoncano, izvleciUdelezenca, izvleciStevilko,
+  zacniZreb, kandidati, preostale, jeKoncano, izvleciUdelezenca, izvleciStevilko, preveri,
   type ZrebOpis, type ZrebStanje,
 } from './zreb'
 
@@ -124,5 +124,63 @@ describe('pogon žreba — potegi', () => {
     const r = randIntIz(mulberry32(5))
     const s = { ...zacniZreb(o), cakajoca: 'e1' }
     expect(() => izvleciStevilko(o, s, r)).toThrow(/ni nobene veljavne/)
+  })
+})
+
+describe('pogon žreba — invariante', () => {
+  test('pravilen žreb nima napak', () => {
+    const o = preprostOpis()
+    const r = randIntIz(mulberry32(7))
+    let s = zacniZreb(o)
+    while (!jeKoncano(o, s)) s = izvleciStevilko(o, izvleciUdelezenca(o, s, r), r)
+    expect(preveri(o, s)).toEqual([])
+  })
+
+  test('ujame podvojeno številko', () => {
+    const o = preprostOpis()
+    const s: ZrebStanje = { ...zacniZreb(o), dodeljene: { 0: { e1: 1, e2: 1 } } }
+    expect(preveri(o, s).some(x => /podvojena/.test(x))).toBe(true)
+  })
+
+  test('ujame številko zunaj nabora', () => {
+    const o = preprostOpis()
+    const s: ZrebStanje = { ...zacniZreb(o), dodeljene: { 0: { e1: 99 } } }
+    expect(preveri(o, s).some(x => /ni v naboru/.test(x))).toBe(true)
+  })
+
+  test('delno stanje ne javi lažnih napak', () => {
+    const o = preprostOpis()
+    const r = randIntIz(mulberry32(9))
+    let s = zacniZreb(o)
+    for (let i = 0; i < 2; i++) s = izvleciStevilko(o, izvleciUdelezenca(o, s, r), r)
+    expect(preveri(o, s)).toEqual([])
+  })
+
+  test('podvojeno številko javi le enkrat, kadar si predal delita dva koraka', () => {
+    const o: ZrebOpis = {
+      udelezenci: [
+        { id: 'e1', ime: 'E1' },
+        { id: 'e2', ime: 'E2' },
+      ],
+      koraki: [
+        {
+          naziv: 'Prvi',
+          predal: 0,
+          udelezenci: () => ['e1'],
+          stevilke: () => [1, 2],
+          veljavne: () => [1, 2],
+        },
+        {
+          naziv: 'Drugi',
+          predal: 0,
+          udelezenci: () => ['e2'],
+          stevilke: () => [1, 2],
+          veljavne: () => [1, 2],
+        },
+      ],
+    }
+    const s: ZrebStanje = { ...zacniZreb(o), dodeljene: { 0: { e1: 1, e2: 1 } } }
+    const napake = preveri(o, s).filter(x => /podvojena/.test(x))
+    expect(napake).toHaveLength(1)
   })
 })
