@@ -147,9 +147,23 @@ rezervno igrišče, ne le v skupinskih ligah. (Potrjeno 19. 8. 2026.)
 
 **Nabor je odvisen od formata.** Pri `flat` in `split` je nabor cela liga, zato
 razlika izhaja iz `N`: pri dvanajstih ekipah 6, pri desetih 5. Pri `groups` je
-nabor posamezna skupina šestih, zato je razlika 3 — in pravilo velja le, če sta
-ekipi po fazi A pristali v isti skupini. Če sta v različnih skupinah, se nikoli
-ne srečata v istem razporedu in omejitve ni.
+nabor posamezna skupina šestih, zato je razlika 3.
+
+**Pravilo velja tudi med skupinama.** (Popravek prvotne različice, potrjeno
+19. 8. 2026.) Prvotno je bilo tu zapisano, da omejitve ni, če faza A ekipi
+raztrga v različni skupini, ker se potem nikoli ne srečata. To drži za njuno
+medsebojno tekmo, a pravilo ne govori o tem, kdaj se srečata — govori o tem,
+**kdaj sta obe domači**.
+
+Skupini igrata svoja kola ob istih terminih in obe uporabljata isto Bergerjevo
+tabelo za šest ekip. Zato je ekipa s številko `n` v skupini A domača v natanko
+istih krogih kot ekipa s številko `n` v skupini B. Ekipi s skupnim igriščem in
+isto številko v različnih skupinah bi bili torej obe domači isti dan — kar je
+natanko tisto, čemur se pravilo izogiba.
+
+Zahteva je zato **enaka ne glede na skupino**: par potrebuje števili iz
+`veljavniPariIgrisc(6, …)`. Razlikuje se le mehanika — če sta ekipi v isti
+skupini, gresta obe številki iz istega nabora, sicer vsaka iz svojega.
 
 ### 5.4 Nov podatek: kdo si deli igrišče
 
@@ -240,8 +254,9 @@ ustavi obred, namesto da bi izpeljal neveljaven žreb.
 2. Ob koncu so dodeljene vse številke nabora, brez vrzeli.
 3. Pri `groups`: natanko 6 ekip na skupino in številke 1..6 v vsaki.
 4. Pri `groups`: zaporedna nosilca iz istega para sta v različnih skupinah.
-5. Ekipi z istim `shared_venue_key`, ki sta v istem naboru, imata razliko številk
-   iz `veljavniPariIgrisc`.
+5. Ekipi z istim `shared_venue_key` imata števili, ki tvorita par iz
+   `veljavniPariIgrisc` — tudi kadar sta v različnih skupinah, ker skupini igrata
+   ob istih terminih po isti tabeli.
 
 ## 10 · Testiranje
 

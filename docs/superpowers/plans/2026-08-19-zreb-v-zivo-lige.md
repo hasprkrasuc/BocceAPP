@@ -999,19 +999,28 @@ export function preveriLigaski(
     }
   }
 
-  // 2. Ekipi s skupnim igriščem imata veljavno razliko številk.
+  // 2. Ekipi s skupnim igriščem imata števili, ki tvorita veljaven par — TUDI
+  //    kadar sta v različnih skupinah, ker skupini igrata ob istih terminih po
+  //    isti tabeli in je ekipa s številko n v A domača v istih krogih kot ekipa
+  //    s številko n v B.
   const velikost = nastavitve.format === 'groups' ? 6 : ekipe.length
   const veljavni = veljavniPariIgrisc(velikost, jeDvokrozno(nastavitve), nastavitve.berger_mirror)
   const dovoljene = new Set(veljavni.map(([a, b]) => `${a}-${b}`))
+
+  /** Številka ekipe v njenem LASTNEM predalu (pri skupinah odvisno od skupine). */
+  const stevilkaEkipe = (id: string): number | undefined => {
+    if (nastavitve.format !== 'groups') return stanje.dodeljene[PREDAL_SKUPINE]?.[id]
+    const skupina = stanje.dodeljene[PREDAL_SKUPINE]?.[id]
+    if (skupina == null) return undefined
+    return stanje.dodeljene[skupina === 1 ? PREDAL_A : PREDAL_B]?.[id]
+  }
+
   for (const [a, b] of soigriscniPari(ekipe)) {
-    for (const predal of [PREDAL_SKUPINE, PREDAL_A, PREDAL_B]) {
-      const d = stanje.dodeljene[predal] ?? {}
-      const x = d[a], y = d[b]
-      if (x == null || y == null) continue
-      const kljuc = x < y ? `${x}-${y}` : `${y}-${x}`
-      if (!dovoljene.has(kljuc)) {
-        napake.push(`${n(a)} in ${n(b)} si delita igrišče, a številki ${x} in ${y} nista veljaven par`)
-      }
+    const x = stevilkaEkipe(a), y = stevilkaEkipe(b)
+    if (x == null || y == null) continue
+    const kljuc = x < y ? `${x}-${y}` : `${y}-${x}`
+    if (!dovoljene.has(kljuc)) {
+      napake.push(`${n(a)} in ${n(b)} si delita igrišče, a številki ${x} in ${y} nista veljaven par`)
     }
   }
   return napake
@@ -1035,10 +1044,92 @@ git commit -m "Žreb: ligaški opis za flat in split, s pari skupnih igrišč"
 ## Task 7: Ligaški opis za `groups`
 
 **Files:**
+- Modify: `src/engines/zreb.ts` (posledica lahko cilja drug predal)
+- Modify: `src/engines/zreb.test.ts`
 - Modify: `src/engines/zrebLiga.ts`
 - Modify: `src/engines/zrebLiga.test.ts`
 
-- [ ] **Step 1: Napiši padajoče teste**
+### Zakaj se spremeni tudi pogon
+
+Skupini igrata svoja kola **ob istih terminih** in obe uporabljata isto Bergerjevo tabelo za šest ekip. Ekipa s številko `n` v skupini A je zato domača v natanko istih krogih kot ekipa s številko `n` v skupini B.
+
+Posledica: ekipi s skupnim igriščem morata dobiti števili iz `veljavniPariIgrisc(6, …)` **tudi kadar ju faza A raztrga v različni skupini**. Zahteva je ista, mehanika pa ne — partnerjeva številka takrat pripada drugemu predalu, česar `Dodelitev` doslej ni znala izraziti.
+
+- [ ] **Step 1: Testa za posledico v drugem predalu**
+
+Dodaj v `src/engines/zreb.test.ts`, znotraj obstoječega `describe('pogon žreba — potegi', …)`:
+
+```ts
+  test('posledica lahko cilja drug predal', () => {
+    const o = preprostOpis()
+    o.koraki[0].posledice = (_s, id, st) =>
+      id === 'e1' ? [{ udelezenecId: 'x1', stevilka: st, samodejno: true, razlog: 'drug predal', predal: 5 }] : []
+    const r = randIntIz(mulberry32(3))
+    let s: ZrebStanje = { ...zacniZreb(o), cakajoca: 'e1' }
+    s = izvleciStevilko(o, s, r)
+    expect(s.dodeljene[0].e1).toBeDefined()
+    expect(s.dodeljene[5].x1).toBe(s.dodeljene[0].e1)
+  })
+
+  test('podvojitev se preverja v ciljnem predalu, ne v predalu koraka', () => {
+    const o = preprostOpis()
+    o.koraki[0].posledice = (_s, _id, st) =>
+      [{ udelezenecId: 'y1', stevilka: st, samodejno: true, predal: 5 }]
+    const r = randIntIz(mulberry32(3))
+    const s: ZrebStanje = { ...zacniZreb(o), cakajoca: 'e1', dodeljene: { 5: { y1: 1 } } }
+    expect(() => izvleciStevilko(o, s, r)).toThrow(/že dodeljeno/)
+  })
+```
+
+- [ ] **Step 2: Poženi testa, da vidiš, da padeta**
+
+Run: `npm test -- --run src/engines/zreb.test.ts`
+Expected: FAIL — `predal` ni v tipu `Dodelitev`, oziroma se posledica zapiše v napačen predal.
+
+- [ ] **Step 3: Dopolni `src/engines/zreb.ts`**
+
+V vmesniku `Dodelitev` dodaj za `razlog`:
+
+```ts
+  /**
+   * Predal, v katerega gre ta dodelitev. Privzeto predal koraka. Nastavi ga
+   * samo, kadar posledica cilja udeleženca iz DRUGEGA nabora — npr. soigriščno
+   * ekipo, ki jo je žreb skupin postavil v drugo skupino.
+   */
+  predal?: number
+```
+
+V `izvleciStevilko` zamenjaj blok, ki gradi `predal`, `dnevnik` in `naslednje`, s tem:
+
+```ts
+  const dodeljene: Record<number, Record<string, number>> = { ...stanje.dodeljene }
+  const dnevnik = [...stanje.dnevnik]
+  for (const d of vse) {
+    const p = d.predal ?? korak.predal
+    const vedro = { ...(dodeljene[p] ?? {}) }
+    if (d.udelezenecId in vedro) {
+      throw new Error(`${d.udelezenecId} ima številko že dodeljeno`)
+    }
+    vedro[d.udelezenecId] = d.stevilka
+    dodeljene[p] = vedro
+    dnevnik.push({
+      tip: 'stevilka', udelezenecId: d.udelezenecId, stevilka: d.stevilka,
+      samodejno: d.samodejno, razlog: d.razlog, korak: stanje.korak,
+    })
+  }
+
+  const naslednje: ZrebStanje = { ...stanje, dodeljene, cakajoca: null, dnevnik }
+  return napreduj(opis, naslednje)
+```
+
+Doslej se je kopiralo eno samo vedro; zdaj se vsako vedro kopira tik pred pisanjem, da vhodno stanje ostane nedotaknjeno tudi pri več predalih hkrati.
+
+- [ ] **Step 4: Poženi teste pogona**
+
+Run: `npm test -- --run src/engines/zreb.test.ts`
+Expected: PASS, vsi obstoječi plus 2 nova.
+
+- [ ] **Step 5: Napiši padajoče teste za skupinsko ligo**
 
 Dodaj v `src/engines/zrebLiga.test.ts`:
 
@@ -1077,15 +1168,52 @@ describe('ligaški opis — groups', () => {
     }
     expect(preveri(o, s)).toEqual([])
   })
+
+  /**
+   * Skupini igrata ob istih terminih po isti tabeli, zato sta ekipi z isto
+   * številko v različnih skupinah domači v istih krogih. Pravilo o skupnem
+   * igrišču mora zato veljati tudi čez skupini.
+   */
+  test('soigriščni par dobi veljaven par številk tudi v različnih skupinah', () => {
+    // t1 in t2 sta zaporedna nosilca, zato ju faza A vedno raztrga
+    const e = ekipe(12, { t1: 'x', t2: 'x' })
+    const o = ligaskiOpis(skupinskaLiga, e, vrstniRed12)
+    for (let seme = 1; seme <= 40; seme++) {
+      const s = odigraj(o, seme)
+      const sk = s.dodeljene[PREDAL_SKUPINE]
+      expect(sk.t1).not.toBe(sk.t2)     // res sta v različnih skupinah
+      const a = s.dodeljene[sk.t1 === 1 ? PREDAL_A : PREDAL_B].t1
+      const b = s.dodeljene[sk.t2 === 1 ? PREDAL_A : PREDAL_B].t2
+      expect(Math.abs(a - b)).toBe(3)
+      expect(preveri(o, s)).toEqual([])
+    }
+  })
+
+  test('soigriščni par v isti skupini dobi razliko 3', () => {
+    // t1 in t3 nista zaporedna nosilca, zato lahko pristaneta skupaj
+    const e = ekipe(12, { t1: 'x', t3: 'x' })
+    const o = ligaskiOpis(skupinskaLiga, e, vrstniRed12)
+    let istaSkupina = 0
+    for (let seme = 1; seme <= 40; seme++) {
+      const s = odigraj(o, seme)
+      const sk = s.dodeljene[PREDAL_SKUPINE]
+      const a = s.dodeljene[sk.t1 === 1 ? PREDAL_A : PREDAL_B].t1
+      const b = s.dodeljene[sk.t3 === 1 ? PREDAL_A : PREDAL_B].t3
+      expect(Math.abs(a - b)).toBe(3)
+      if (sk.t1 === sk.t3) istaSkupina++
+      expect(preveri(o, s)).toEqual([])
+    }
+    expect(istaSkupina).toBeGreaterThan(0)   // primer se res pojavi
+  })
 })
 ```
 
-- [ ] **Step 2: Poženi teste, da vidiš, da padejo**
+- [ ] **Step 6: Poženi teste, da vidiš, da padejo**
 
 Run: `npm test -- --run src/engines/zrebLiga.test.ts`
 Expected: FAIL — `skupinska liga še ni podprta`.
 
-- [ ] **Step 3: Zamenjaj `korakiSkupinskeLige` v `src/engines/zrebLiga.ts`**
+- [ ] **Step 7: Zamenjaj `korakiSkupinskeLige` v `src/engines/zrebLiga.ts`**
 
 ```ts
 /**
@@ -1131,20 +1259,87 @@ function korakiSkupinskeLige(
     Object.entries(s.dodeljene[PREDAL_SKUPINE] ?? {})
       .filter(([, v]) => v === oznaka).map(([id]) => id)
 
+  const skupinaOd = (s: ZrebStanje, id: string) => s.dodeljene[PREDAL_SKUPINE]?.[id]
+  const predalOd = (s: ZrebStanje, id: string) => (skupinaOd(s, id) === 1 ? PREDAL_A : PREDAL_B)
+  const veljavniPari6 = veljavniPariIgrisc(6, jeDvokrozno(nastavitve), nastavitve.berger_mirror)
+  const proste = (s: ZrebStanje, predal: number) => {
+    const vzete = new Set(Object.values(s.dodeljene[predal] ?? {}))
+    return [1, 2, 3, 4, 5, 6].filter(n => !vzete.has(n))
+  }
+
+  /**
+   * Soigriščni pari, ločeni po skupini PRVE ekipe iz para. Ločena koraka sta
+   * potrebna, ker ima korak en sam predal — prva ekipa para iz skupine A žreba
+   * iz nabora A, iz skupine B pa iz nabora B.
+   *
+   * Partner je lahko v drugi skupini; takrat gre njegova številka v drug predal.
+   * Zahteva je enaka kot znotraj skupine, ker skupini igrata ob istih terminih
+   * po isti tabeli.
+   */
+  const korakPari = (oznaka: number, predal: number, imeSkupine: string): Korak => ({
+    naziv: `Skupina ${imeSkupine} — ekipe s skupnim igriščem`,
+    predal,
+    udelezenci: (s) => pari.filter(([a]) => skupinaOd(s, a) === oznaka).map(([a]) => a),
+    stevilke: () => [1, 2, 3, 4, 5, 6],
+    veljavne: (s, id) => {
+      const par = pari.find(([a]) => a === id)
+      if (!par) return proste(s, predal)
+      const partnerPredal = predalOd(s, par[1])
+      const partnerjeveProste = new Set(proste(s, partnerPredal))
+      return proste(s, predal).filter(n => {
+        const kandidati = partnerskeStevilke(n, veljavniPari6)
+        // pri istem predalu partnerjeva številka ne sme biti ta, ki jo jemljemo
+        return kandidati.some(p => partnerjeveProste.has(p) && !(partnerPredal === predal && p === n))
+      })
+    },
+    posledice: (s, id, n) => {
+      const par = pari.find(([a]) => a === id)
+      if (!par) return []
+      const partnerPredal = predalOd(s, par[1])
+      const partnerjeveProste = new Set(proste(s, partnerPredal))
+      if (partnerPredal === predal) partnerjeveProste.delete(n)
+      const moznosti = partnerskeStevilke(n, veljavniPari6).filter(p => partnerjeveProste.has(p))
+      if (moznosti.length === 0) throw new Error(`za ${id} ni proste partnerske številke`)
+      return [{
+        udelezenecId: par[1],
+        stevilka: moznosti[0],
+        samodejno: true,
+        razlog: 'skupno rezervno igrišče',
+        predal: partnerPredal,
+      }]
+    },
+  })
+
+  /** Ekipe skupine, ki niso v nobenem soigriščnem paru. */
+  const korakOstali = (oznaka: number, predal: number, imeSkupine: string): Korak => ({
+    naziv: `Skupina ${imeSkupine}`,
+    predal,
+    udelezenci: (s) => {
+      const vPariu = new Set(pari.flat())
+      return clani(oznaka)(s).filter(id => !vPariu.has(id))
+    },
+    stevilke: () => [1, 2, 3, 4, 5, 6],
+    veljavne: (s) => proste(s, predal),
+  })
+
+  // Vsi soigriščni pari gredo PRED preostale ekipe obeh skupin — sicer lahko
+  // ekipe brez omejitve zasedejo številke tako, da paru ne ostane veljavna razlika.
   return [
     fazaA,
-    ...korakiZaNabor(PREDAL_A, clani(1), 6, pari, nastavitve, 'Skupina A'),
-    ...korakiZaNabor(PREDAL_B, clani(2), 6, pari, nastavitve, 'Skupina B'),
+    korakPari(1, PREDAL_A, 'A'),
+    korakPari(2, PREDAL_B, 'B'),
+    korakOstali(1, PREDAL_A, 'A'),
+    korakOstali(2, PREDAL_B, 'B'),
   ]
 }
 ```
 
-- [ ] **Step 4: Poženi teste**
+- [ ] **Step 8: Poženi teste**
 
 Run: `npm test -- --run src/engines/zrebLiga.test.ts`
-Expected: PASS, 6 testov.
+Expected: PASS, 8 testov.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/engines/zrebLiga.ts src/engines/zrebLiga.test.ts
@@ -1248,6 +1443,30 @@ describe('preveriLigaski', () => {
     const e = ekipe(12, { t1: 'x', t7: 'x' })
     const s = { dodeljene: { 0: { t3: 5 } }, korak: 0, cakajoca: null, dnevnik: [] }
     expect(preveriLigaski(nast, e, [], s, false)).toEqual([])
+  })
+
+  /** Par v RAZLIČNIH skupinah: brez preverbe čez predala bi napaka ušla. */
+  test('ujame soigriščni par v različnih skupinah z neveljavnima številkama', () => {
+    const nastG = { format: 'groups' as const, double_round: true, berger_mirror: false }
+    const e = ekipe(12, { t1: 'x', t2: 'x' })
+    const s = {
+      dodeljene: { [PREDAL_SKUPINE]: { t1: 1, t2: 2 }, [PREDAL_A]: { t1: 2 }, [PREDAL_B]: { t2: 2 } },
+      korak: 0, cakajoca: null, dnevnik: [],
+    }
+    // obe imata številko 2 — v svojih skupinah sta domači v istih krogih
+    expect(preveriLigaski(nastG, e, vrstniRed12, s, false)
+      .some(x => /nista veljaven par/.test(x))).toBe(true)
+  })
+
+  test('sprejme soigriščni par v različnih skupinah z veljavnima številkama', () => {
+    const nastG = { format: 'groups' as const, double_round: true, berger_mirror: false }
+    const e = ekipe(12, { t1: 'x', t2: 'x' })
+    const s = {
+      dodeljene: { [PREDAL_SKUPINE]: { t1: 1, t2: 2 }, [PREDAL_A]: { t1: 2 }, [PREDAL_B]: { t2: 5 } },
+      korak: 0, cakajoca: null, dnevnik: [],
+    }
+    expect(preveriLigaski(nastG, e, vrstniRed12, s, false)
+      .some(x => /nista veljaven par/.test(x))).toBe(false)
   })
 })
 
