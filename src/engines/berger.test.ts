@@ -308,4 +308,35 @@ describe('veljavniPariIgrisc', () => {
       }
     }
   })
+
+  // Vsi zgornji testi preverjajo doubleRound=true. Enokrožni primer je druga zgodba:
+  // pri enem krogu ekipa doma igra manj pogosto, zato je nabor veljavnih parov širši
+  // (superset dvokrožnega), in pri zrcaljenju se za sodo N spremeni tudi rezultat.
+
+  test('pri enokrožnem razporedu so pari nadmnožica dvokrožnih (n=6, 10, 12)', () => {
+    for (const n of [6, 10, 12]) {
+      const enokrozno = new Set(veljavniPariIgrisc(n, false, false).map(([a, b]) => `${a}-${b}`))
+      const dvokrozno = veljavniPariIgrisc(n, true, false)
+      for (const [a, b] of dvokrozno) expect(enokrozno.has(`${a}-${b}`)).toBe(true)
+    }
+  })
+
+  test('pri 6 ekipah enokrožno so pari natanko 1-4, 2-5, 3-6, 4-6', () => {
+    expect(veljavniPariIgrisc(6, false, false)).toEqual([[1, 4], [2, 5], [3, 6], [4, 6]])
+  })
+
+  /**
+   * Mirror-invariantnost (test zgoraj) velja samo za dvokrožni razpored. Pri
+   * enokrožnem in sodem N zrcaljenje spremeni, kdo je kdaj doma, zato se
+   * spremeni tudi nabor veljavnih parov. OBZ Nova Gorica igra prav tako ligo
+   * (10 ekip, enokrožno, berger_mirror = true) — glej obzNovaGorica.test.ts.
+   */
+  test('pri enokrožnem razporedu in sodem N zrcaljenje SPREMENI pare, pri lihem ne', () => {
+    expect(veljavniPariIgrisc(10, false, true)).not.toEqual(veljavniPariIgrisc(10, false, false))
+    expect(veljavniPariIgrisc(9, false, true)).toEqual(veljavniPariIgrisc(9, false, false))
+  })
+
+  test('OBZ Nova Gorica (10 ekip, enokrožno, zrcaljeno): pari so 1-5, 1-6, 2-7, 3-8, 4-9, 5-10', () => {
+    expect(veljavniPariIgrisc(10, false, true)).toEqual([[1, 5], [1, 6], [2, 7], [3, 8], [4, 9], [5, 10]])
+  })
 })
