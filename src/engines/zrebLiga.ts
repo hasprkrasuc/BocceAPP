@@ -70,8 +70,25 @@ export function preveriIzvedljivost(ekipe: LigaEkipa[], nastavitve: LigaNastavit
   if (nastavitve.format === 'groups' && ekipe.length !== 12) {
     napake.push(`Skupinska liga zahteva 12 ekip, sezona jih ima ${ekipe.length}.`)
   }
-  if (nastavitve.format !== 'groups' && (ekipe.length < 2 || ekipe.length > 12)) {
-    napake.push(`Bergerjev razpored zahteva 2 do 12 ekip, sezona jih ima ${ekipe.length}.`)
+  if (nastavitve.format !== 'groups' && (ekipe.length < 3 || ekipe.length > 12)) {
+    napake.push(`Bergerjev razpored zahteva 3 do 12 ekip (za 2 ekipi Bergerjeva tabela ne obstaja), sezona jih ima ${ekipe.length}.`)
+  } else if (nastavitve.format !== 'groups') {
+    // Izčrpno preveri, ali gre sploh razporediti vse soigriščne pare na
+    // proste številke za to velikost lige in ta razpored — sicer bi obrazec
+    // dovolil obred, ki se v precej primerih zagotovo zatakne sredi dvorane.
+    const pari = soigriscniPari(ekipe)
+    if (pari.length > 0) {
+      const veljavni = veljavniPariIgrisc(ekipe.length, jeDvokrozno(nastavitve), nastavitve.berger_mirror)
+      const vseStevilke = Array.from({ length: ekipe.length }, (_, i) => i + 1)
+      if (!jeRazporeditevMozna(pari.length, vseStevilke, veljavni)) {
+        napake.push(
+          `${pari.length} ${pari.length === 1 ? 'par ekip si deli' : 'parov ekip si deli'} skupno igrišče, ` +
+          `a pri ${ekipe.length} ekipah in tem razporedu ` +
+          `(${jeDvokrozno(nastavitve) ? 'dvokrožno' : 'enokrožno'}${nastavitve.berger_mirror ? ', zrcaljeno' : ''}) ` +
+          `jih ni mogoče vseh razporediti — žreb bi se zagotovo zataknil.`,
+        )
+      }
+    }
   }
   return napake
 }
@@ -108,6 +125,27 @@ function partnerskeStevilke(n: number, pari: Array<[number, number]>): number[] 
 }
 
 /**
+ * Ali je mogoče preostale soigriščne pare še razporediti na proste številke.
+ *
+ * Iskanje s sestopanjem. Parov je največ šest in številk največ dvanajst, zato
+ * je izčrpno iskanje trivialno — in edino, kar zares prepreči, da bi se žreb
+ * zataknil. Pohlepna izbira partnerja brez tega preverjanja pri dveh ali več
+ * parih zaide v slepo ulico v približno polovici primerov.
+ */
+function jeRazporeditevMozna(
+  steviloParov: number, proste: number[], veljavniPari: Array<[number, number]>,
+): boolean {
+  if (steviloParov === 0) return true
+  const prosteMnozica = new Set(proste)
+  for (const [a, b] of veljavniPari) {
+    if (!prosteMnozica.has(a) || !prosteMnozica.has(b)) continue
+    const ostanek = proste.filter(n => n !== a && n !== b)
+    if (jeRazporeditevMozna(steviloParov - 1, ostanek, veljavniPari)) return true
+  }
+  return false
+}
+
+/**
  * Korak za en nabor številk 1..velikost: najprej soigriščni pari, nato ostali.
  * Vrne dva koraka z istim predalom — vrstni red je bistven, ker bi sicer lahko
  * ekipe brez omejitve zasedle številke tako, da za par ne ostane veljavna
@@ -138,26 +176,50 @@ function korakiZaNabor(
     return stevilke().filter(n => !vzete.has(n))
   }
 
+  /** Pari tega nabora, ki še čakajo na številko (prvi član še ni dodeljen). */
+  const preostaliPari = (s: ZrebStanje) => {
+    const ze = s.dodeljene[predal] ?? {}
+    return mojiPari(s).filter(([a]) => !(a in ze))
+  }
+
   const korakPari: Korak = {
     naziv: `${naziv} — ekipe s skupnim igriščem`,
     predal,
     udelezenci: prviIzParov,
     stevilke,
     veljavne: (s) => {
-      const proste = new Set(prosteV(s))
-      // veljavna je le številka, ki ima prosto tudi partnersko
-      return [...proste].filter(n => partnerskeStevilke(n, veljavniPari).some(p => proste.has(p)))
+      const prosteArr = prosteV(s)
+      // trenutni par se razreši s to potezo, zato ostane en par manj
+      const preostaliK = preostaliPari(s).length - 1
+      return prosteArr.filter(n => {
+        const brezN = prosteArr.filter(x => x !== n)
+        // veljavna je le številka, za katero obstaja prosta partnerska, PO
+        // KATERI ODVZEMU pa je še vedno mogoče razporediti vse preostale pare —
+        // ne le tista, ki je prosta ZDAJ (to je bila pohlepna napaka).
+        return partnerskeStevilke(n, veljavniPari).some(p => {
+          if (!brezN.includes(p)) return false
+          const preostaleProste = brezN.filter(x => x !== p)
+          return jeRazporeditevMozna(preostaliK, preostaleProste, veljavniPari)
+        })
+      })
     },
     posledice: (s, id, n) => {
       const par = mojiPari(s).find(([a]) => a === id)
       if (!par) return []
-      const proste = new Set(prosteV(s))
-      proste.delete(n)
-      const moznosti = partnerskeStevilke(n, veljavniPari).filter(p => proste.has(p))
-      if (moznosti.length === 0) throw new Error(`za ${id} ni proste partnerske številke`)
+      const prosteArr = prosteV(s).filter(x => x !== n)
+      const preostaliK = preostaliPari(s).length - 1
+      const moznosti = partnerskeStevilke(n, veljavniPari).filter(p => prosteArr.includes(p))
+      // izberi prvo partnersko številko, ki preostale pare pusti še izvedljive —
+      // ne kar prvo prosto (`moznosti[0]`), ker lahko pohlepna izbira zaokroži
+      // v slepo ulico za kak kasnejši par.
+      const izbrana = moznosti.find(p => {
+        const preostaleProste = prosteArr.filter(x => x !== p)
+        return jeRazporeditevMozna(preostaliK, preostaleProste, veljavniPari)
+      })
+      if (izbrana === undefined) throw new Error(`za ${id} ni proste partnerske številke`)
       return [{
         udelezenecId: par[1],
-        stevilka: moznosti[0],
+        stevilka: izbrana,
         samodejno: true,
         razlog: 'skupno rezervno igrišče',
       }]
