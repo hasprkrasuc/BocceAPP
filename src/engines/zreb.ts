@@ -26,6 +26,12 @@ export interface Dodelitev {
   samodejno: boolean
   /** Razlog samodejne dodelitve; izpiše se občinstvu. */
   razlog?: string
+  /**
+   * Predal, v katerega gre ta dodelitev. Privzeto predal koraka. Nastavi ga
+   * samo, kadar posledica cilja udeleženca iz DRUGEGA nabora — npr. soigriščno
+   * ekipo, ki jo je žreb skupin postavil v drugo skupino.
+   */
+  predal?: number
 }
 
 /**
@@ -165,25 +171,23 @@ export function izvleciStevilko(
     ...(korak.posledice?.(stanje, id, stevilka) ?? []),
   ]
 
-  const predal = { ...(stanje.dodeljene[korak.predal] ?? {}) }
+  const dodeljene: Record<number, Record<string, number>> = { ...stanje.dodeljene }
   const dnevnik = [...stanje.dnevnik]
   for (const d of vse) {
-    if (d.udelezenecId in predal) {
+    const p = d.predal ?? korak.predal
+    const vedro = { ...(dodeljene[p] ?? {}) }
+    if (d.udelezenecId in vedro) {
       throw new Error(`${d.udelezenecId} ima številko že dodeljeno`)
     }
-    predal[d.udelezenecId] = d.stevilka
+    vedro[d.udelezenecId] = d.stevilka
+    dodeljene[p] = vedro
     dnevnik.push({
       tip: 'stevilka', udelezenecId: d.udelezenecId, stevilka: d.stevilka,
       samodejno: d.samodejno, razlog: d.razlog, korak: stanje.korak,
     })
   }
 
-  const naslednje: ZrebStanje = {
-    ...stanje,
-    dodeljene: { ...stanje.dodeljene, [korak.predal]: predal },
-    cakajoca: null,
-    dnevnik,
-  }
+  const naslednje: ZrebStanje = { ...stanje, dodeljene, cakajoca: null, dnevnik }
   return napreduj(opis, naslednje)
 }
 

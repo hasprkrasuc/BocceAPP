@@ -161,6 +161,26 @@ describe('pogon žreba — potegi', () => {
     const s = { ...zacniZreb(o), cakajoca: 'e1' }
     expect(() => izvleciStevilko(o, s, r)).toThrow(/ni nobene veljavne/)
   })
+
+  test('posledica lahko cilja drug predal', () => {
+    const o = preprostOpis()
+    o.koraki[0].posledice = (_s, id, st) =>
+      id === 'e1' ? [{ udelezenecId: 'x1', stevilka: st, samodejno: true, razlog: 'drug predal', predal: 5 }] : []
+    const r = randIntIz(mulberry32(3))
+    let s: ZrebStanje = { ...zacniZreb(o), cakajoca: 'e1' }
+    s = izvleciStevilko(o, s, r)
+    expect(s.dodeljene[0].e1).toBeDefined()
+    expect(s.dodeljene[5].x1).toBe(s.dodeljene[0].e1)
+  })
+
+  test('podvojitev se preverja v ciljnem predalu, ne v predalu koraka', () => {
+    const o = preprostOpis()
+    o.koraki[0].posledice = (_s, _id, st) =>
+      [{ udelezenecId: 'y1', stevilka: st, samodejno: true, predal: 5 }]
+    const r = randIntIz(mulberry32(3))
+    const s: ZrebStanje = { ...zacniZreb(o), cakajoca: 'e1', dodeljene: { 5: { y1: 1 } } }
+    expect(() => izvleciStevilko(o, s, r)).toThrow(/že dodeljeno/)
+  })
 })
 
 describe('pogon žreba — invariante', () => {
