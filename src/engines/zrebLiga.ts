@@ -91,8 +91,10 @@ export function preveriIzvedljivost(
     }
     const steti = new Map<string, number>()
     for (const id of nosilniVrstniRed) steti.set(id, (steti.get(id) ?? 0) + 1)
-    const podvojeni = [...steti.entries()].filter(([, k]) => k > 1).map(([id]) => id)
-    if (podvojeni.length > 0) {
+    const podvojeniIdji = [...steti.entries()].filter(([, k]) => k > 1).map(([id]) => id)
+    if (podvojeniIdji.length > 0) {
+      const imeAliId = new Map(ekipe.map(e => [e.id, e.ime]))
+      const podvojeni = podvojeniIdji.map(id => imeAliId.get(id) ?? id)
       napake.push(
         `Nosilni vrstni red vsebuje isto ekipo večkrat: ${podvojeni.join(', ')}. ` +
         `Vsaka ekipa sme biti v vrstnem redu samo enkrat.`,

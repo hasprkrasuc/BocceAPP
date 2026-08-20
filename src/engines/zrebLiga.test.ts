@@ -345,6 +345,21 @@ describe('jeDvokrozno', () => {
     expect(jeDvokrozno({ format: 'flat', double_round: true, berger_mirror: false })).toBe(true)
     expect(jeDvokrozno({ format: 'flat', double_round: false, berger_mirror: false })).toBe(false)
   })
+
+  test('skupinska liga dobi pare dvokrožnega razporeda, tudi če je stolpec false', () => {
+    const nastG = { format: 'groups' as const, double_round: false, berger_mirror: false }
+    const o = ligaskiOpis(nastG, ekipe(12, { t1: 'x', t5: 'x' }), vrstniRed12)
+    // seme 2, ne 17: pri semenu 17 t1 in t5 pristaneta v RAZLIČNIH skupinah, zato
+    // bi `s.dodeljene[predal].t5` bil undefined in bi spodnja preverba tiho
+    // preskočila edino trditev v testu (b bi ostal undefined). Seme 2 ju postavi
+    // v isto skupino, kjer preverba dejansko kaj trdi.
+    const s = odigraj(o, 2)
+    const predal = s.dodeljene[PREDAL_A]?.t1 != null ? PREDAL_A : PREDAL_B
+    const a = s.dodeljene[predal].t1, b = s.dodeljene[predal].t5
+    // dvokrožno pri šestih: edina veljavna razlika je 3 (enokrožno bi dopustilo tudi 4-6)
+    expect(a != null && b != null).toBe(true)
+    if (a != null && b != null) expect(Math.abs(a - b)).toBe(3)
+  })
 })
 
 describe('izid je sprejemljiv za obstoječo kodo', () => {
@@ -414,4 +429,34 @@ describe('preveriIzvedljivost — nosilni vrstni red (samo groups)', () => {
   test('pravilna permutacija je sprejeta', () => {
     expect(preveriIzvedljivost(ekipe(12), nastGroups, vrstniRed12)).toEqual([])
   })
+})
+
+describe('lastnostni test', () => {
+  test('10 000 žrebov: nobene kršitve in nikoli brez veljavne številke', () => {
+    const primeri: Array<{ n: number, nast: LigaNastavitve, skupno: Record<string, string> }> = [
+      { n: 12, nast: { format: 'flat', double_round: true, berger_mirror: false }, skupno: { t1: 'x', t7: 'x' } },
+      { n: 11, nast: { format: 'flat', double_round: true, berger_mirror: false }, skupno: { t2: 'x', t8: 'x' } },
+      { n: 10, nast: { format: 'split', double_round: true, berger_mirror: true }, skupno: {} },
+      { n: 12, nast: { format: 'groups', double_round: true, berger_mirror: false }, skupno: { t1: 'x', t5: 'x' } },
+    ]
+    for (const p of primeri) {
+      const ekipeTega = ekipe(p.n, p.skupno)
+      const nosilniVrstniRed = p.nast.format === 'groups' ? vrstniRed12 : []
+      const o = ligaskiOpis(p.nast, ekipeTega, nosilniVrstniRed)
+      for (let seme = 1; seme <= 2500; seme++) {
+        const r = randIntIz(mulberry32(seme))
+        let s = zacniZreb(o)
+        while (!jeKoncano(o, s)) {
+          const s1 = izvleciUdelezenca(o, s, r)
+          const veljavne = o.koraki[s1.korak].veljavne(s1, s1.cakajoca!)
+          expect(veljavne.length).toBeGreaterThan(0)
+          s = izvleciStevilko(o, s1, r)
+        }
+        expect(preveri(o, s)).toEqual([])
+        // Splošni `preveri` ne pozna ligaških pravil o skupnih igriščih — to
+        // preveri šele `preveriLigaski`, zato mora biti prazen tudi on.
+        expect(preveriLigaski(p.nast, ekipeTega, nosilniVrstniRed, s, true)).toEqual([])
+      }
+    }
+  }, 60_000)
 })
