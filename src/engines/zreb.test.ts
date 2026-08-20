@@ -68,6 +68,42 @@ describe('pogon žreba — stanje', () => {
     const poln: ZrebStanje = { ...s, dodeljene: { 0: { e1: 1, e2: 2, e3: 3, e4: 4 } } }
     expect(jeKoncano(o, poln)).toBe(true)
   })
+
+  // Liga brez ijedne ekipe s skupnim igriščem ima prazen prvi korak (koraki
+  // soigriščnih parov) — začetno stanje se mora takoj premakniti na prvi
+  // korak s kandidati, sicer se obred ustavi, še preden se izvleče prva
+  // številka.
+  test('začetno stanje preskoči prazen vodilni korak', () => {
+    const ids = ['e1', 'e2', 'e3']
+    const o: ZrebOpis = {
+      udelezenci: ids.map(id => ({ id, ime: id.toUpperCase() })),
+      koraki: [
+        {
+          naziv: 'Prazen vodilni korak',
+          predal: 0,
+          udelezenci: () => [],
+          stevilke: () => [1, 2, 3],
+          veljavne: () => [1, 2, 3],
+        },
+        {
+          naziv: 'Pravi korak',
+          predal: 0,
+          udelezenci: () => ids,
+          stevilke: () => [1, 2, 3],
+          veljavne: (s) => preostaleV(s, 0, 3),
+        },
+      ],
+    }
+    const s0 = zacniZreb(o)
+    expect(s0.korak).toBe(1)
+    expect(kandidati(o, s0)).toEqual(ids)
+
+    const r = randIntIz(mulberry32(11))
+    let s = s0
+    while (!jeKoncano(o, s)) s = izvleciStevilko(o, izvleciUdelezenca(o, s, r), r)
+    expect(Object.keys(s.dodeljene[0])).toHaveLength(3)
+    expect(new Set(Object.values(s.dodeljene[0])).size).toBe(3)
+  })
 })
 
 describe('pogon žreba — potegi', () => {

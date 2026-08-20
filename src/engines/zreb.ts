@@ -77,9 +77,16 @@ export interface ZrebStanje {
   dnevnik: DnevnikVnos[]
 }
 
-/** Nespremenljivo začetno stanje. */
-export function zacniZreb(_opis: ZrebOpis): ZrebStanje {
-  return { dodeljene: {}, korak: 0, cakajoca: null, dnevnik: [] }
+/**
+ * Nespremenljivo začetno stanje.
+ *
+ * Stanje se takoj normalizira na prvi korak, ki sploh ima kandidate. Brez tega
+ * bi prazen vodilni korak — na primer korak soigriščnih parov v ligi, ki si
+ * nobenih igrišč ne deli — obred ustavil, še preden bi se izvlekla prva
+ * številka, ker `kandidati` gleda samo trenutni korak in ne išče naprej.
+ */
+export function zacniZreb(opis: ZrebOpis): ZrebStanje {
+  return napreduj(opis, { dodeljene: {}, korak: 0, cakajoca: null, dnevnik: [] })
 }
 
 /** Številka, dodeljena udeležencu v danem predalu (ali undefined). */
