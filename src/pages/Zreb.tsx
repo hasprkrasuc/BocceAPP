@@ -36,6 +36,14 @@ export default function Zreb() {
   const [shranjeno, setShranjeno] = useState(false)
   const [shranjujem, setShranjujem] = useState(false)
   const [napakaZapisa, setNapakaZapisa] = useState('')
+  /**
+   * Ali je bil zapis v bazo že POSKUŠAN (uspešno ali ne). Ločeno od `shranjeno`
+   * (uspešen zapis), ker mora razveljavitev obredu onemogočiti TAKOJ ob prvem
+   * poskusu — če je zapis na pol poti spodletel, so nekatere vrstice morda že
+   * v bazi, razveljavitev in nov žreb bi dal drugačen izid, kot je delno že
+   * zapisan. Gumb za zapis ostane omogočen, da je ponovitev mogoča.
+   */
+  const [zapisPoskusan, setZapisPoskusan] = useState(false)
   /** id ekipe → mesto po lanski lestvici (1..N); samo za format 'groups'. */
   const [mesta, setMesta] = useState<Record<string, number>>({})
   /** Število potez shranjenega delnega žreba, najdenega ob nalaganju (samo za obvestilo). */
@@ -112,6 +120,48 @@ export default function Zreb() {
   const stanje = zgodovina[zgodovina.length - 1] ?? null
   const koncano = opis && stanje ? jeKoncano(opis, stanje) : false
 
+  /**
+   * Samodejne dodelitve zadnje poteze — torej tiste na samem REPU dnevnika.
+   * Ekipa lahko soigriščnemu paru vsili številko, ne da bi operater to ekipo
+   * sam izvlekel (glej `zadnja` spodaj, ki jih namerno preskoči za glavni
+   * prikaz) — občinstvo pa mora vseeno videti, komu in zakaj je bila številka
+   * dodeljena. Ker gledamo dobesedni rep polja (ne `reverse().find(...)` čez
+   * celotno zgodovino), se seznam sam izprazni takoj, ko naslednja poteza
+   * doda karkoli — nov izvlek ekipe ali številke — brez posebnega efekta.
+   */
+  const zadnjeSamodejne = useMemo(() => {
+    const dn = stanje?.dnevnik ?? []
+    const rezultat: typeof dn = []
+    for (let i = dn.length - 1; i >= 0; i--) {
+      const v = dn[i]
+      if (v.tip === 'stevilka' && v.samodejno) rezultat.unshift(v)
+      else break
+    }
+    return rezultat
+  }, [stanje])
+
+  /** ?ozadje=prosojno v naslovu → prosojno ozadje predstavitve, za brskalnikov vir v OBS. */
+  const prosojno = useMemo(
+    () => new URLSearchParams(window.location.search).get('ozadje') === 'prosojno',
+    [],
+  )
+
+  /**
+   * Prosojna predstavitev mora resnično prekriti navigacijo in nogo ter
+   * odstraniti sivo ozadje ogrodja (glej App.tsx: Layout ovije vsako stran v
+   * `bg-gray-50` #app-shell z lepljivim Navbarjem na z-50) — sicer OBS namesto
+   * praznega prosojnega okvirja ujame zeleno vrstico in siv rob. Razred
+   * `zreb-prosojno` (pravila v index.css) se doda šele, ko je hkrati
+   * predstavitev IN zahtevana prosojnost, in se POSPRAVI ob izhodu iz
+   * predstavitve ter ob odjavi komponente — da ostali admin zasloni niso
+   * prizadeti.
+   */
+  useEffect(() => {
+    if (!predstavitev || !prosojno) return
+    document.body.classList.add('zreb-prosojno')
+    return () => { document.body.classList.remove('zreb-prosojno') }
+  }, [predstavitev, prosojno])
+
   useEffect(() => {
     if (zgodovina.length) {
       try {
@@ -159,7 +209,10 @@ export default function Zreb() {
   }
 
   function razveljavi() {
-    if (shranjeno) return
+    // Zaklenjeno tudi po zgolj POSKUŠANEM (ne le uspešnem) zapisu — če je ta
+    // na pol poti spodletel, so nekatere vrstice morda že v bazi in bi
+    // razveljavitev z novim žrebom dala izid, ki se z bazo ne bi več ujemal.
+    if (shranjeno || zapisPoskusan) return
     setNapaka('')
     // Razveljavitev lahko žreb spet postavi pred konec — brez tega bi
     // morebitno staro sporočilo o neuspelem zapisu ostalo v stanju in se
@@ -173,6 +226,10 @@ export default function Zreb() {
     if (!window.confirm('Ponastavim žreb? Vse dosedanje poteze bodo izgubljene.')) return
     setNapaka('')
     setNapakaZapisa('')
+    // Popolna ponastavitev začne povsem nov žreb brez lastne zgodovine zapisa
+    // — zaklep razveljavitve iz prejšnjega (morda spodletelega) poskusa zanjo
+    // ne velja več.
+    setZapisPoskusan(false)
     setZgodovina([zacniZreb(opis)])
   }
 
@@ -190,6 +247,9 @@ export default function Zreb() {
     const sp: Sprememba[] = spremembe(izhodisce, stanje)
     if (!window.confirm(`Zapišem ${sp.length} vrstic v bazo?`)) return
     setNapakaZapisa('')
+    // Zaklene razveljavitev TAKOJ ob poskusu, ne šele ob uspehu — glej
+    // razveljavi() zgoraj.
+    setZapisPoskusan(true)
     setShranjujem(true)
     try {
       await shraniLigaskiZreb(sp)
@@ -197,8 +257,8 @@ export default function Zreb() {
       try { localStorage.removeItem(kljuc) } catch { /* ni nujno */ }
     } catch (e) {
       setNapakaZapisa(
-        `${e instanceof Error ? e.message : String(e)} — nekatere vrstice so morda že zapisane. ` +
-        `Zapis je varno ponoviti: pritisnite gumb še enkrat.`,
+        `${e instanceof Error ? e.message : String(e)} — nekatere vrstice so morda že zapisane, ` +
+        `razveljavitev zato ni več na voljo. Zapis je varno ponoviti: pritisnite gumb še enkrat.`,
       )
     } finally {
       setShranjujem(false)
@@ -289,11 +349,14 @@ export default function Zreb() {
   const predogled = koncano ? trenutneSpremembe : []
 
   if (predstavitev) {
-    // ?ozadje=prosojno → brez ozadja, za brskalnikov vir v OBS
-    const prosojno = new URLSearchParams(window.location.search).get('ozadje') === 'prosojno'
     return (
+      // z-[60] je NAD Navbarjevim sticky z-50 (App.tsx) — brez tega bi zelena
+      // vrstica ostala nad prekrivnim slojem, tudi v neprosojnem načinu.
+      // Pri ?ozadje=prosojno samo z-index ne zadošča: prosojno ozadje ne
+      // POBRIŠE tega, kar je pod njim, zato razred `zreb-prosojno` (glej
+      // zgornji efekt in index.css) navigacijo in nogo dejansko skrije.
       <div
-        className={`fixed inset-0 flex flex-col items-center justify-center ${prosojno ? '' : 'bg-white'}`}
+        className={`fixed inset-0 z-[60] flex flex-col items-center justify-center ${prosojno ? '' : 'bg-white'}`}
         style={prosojno ? { background: 'transparent' } : undefined}
       >
         <p className="text-2xl text-gray-500 mb-6">{koncano ? 'ŽREB JE KONČAN' : trenutniKorak?.naziv}</p>
@@ -305,6 +368,16 @@ export default function Zreb() {
         <p className="text-[10rem] leading-none font-bold text-bocce-green">
           {stanje!.cakajoca ? ' ' : (zadnja?.stevilka ?? ' ')}
         </p>
+        {zadnjeSamodejne.length > 0 && (
+          <div className="mt-6 text-xl text-gray-400 text-center">
+            {zadnjeSamodejne.map((v, i) => (
+              <p key={i}>
+                {opis.udelezenci.find(u => u.id === v.udelezenecId)?.ime}: {v.stevilka}
+                {v.razlog ? ` — ${v.razlog}` : ''}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -321,13 +394,26 @@ export default function Zreb() {
         <p className="text-7xl font-bold text-bocce-green min-h-[5rem]">
           {stanje!.cakajoca ? ' ' : (zadnja?.stevilka ?? ' ')}
         </p>
+        {zadnjeSamodejne.length > 0 && (
+          <div className="mt-1 mb-2 text-sm text-gray-500">
+            {zadnjeSamodejne.map((v, i) => (
+              <p key={i}>
+                Samodejno: {opis.udelezenci.find(u => u.id === v.udelezenecId)?.ime} → {v.stevilka}
+                {v.razlog ? ` (${v.razlog})` : ''}
+              </p>
+            ))}
+          </div>
+        )}
         <button onClick={poteza} disabled={koncano}
           className="px-6 py-3 bg-bocce-green text-white rounded disabled:opacity-40">
           {stanje!.cakajoca ? 'Izvleci številko' : 'Izvleci ekipo'}
         </button>
         {napaka && <p className="mt-3 text-red-700 font-semibold">{napaka}</p>}
         <div className="mt-4 flex gap-2 flex-wrap">
-          <button onClick={razveljavi} disabled={zgodovina.length < 2 || shranjeno}
+          <button onClick={razveljavi} disabled={zgodovina.length < 2 || shranjeno || zapisPoskusan}
+            title={zapisPoskusan && !shranjeno
+              ? 'Zapis v bazo je bil že poskušan — razveljavitev ni več na voljo. Poskusite znova z gumbom »Zapiši v bazo«.'
+              : undefined}
             className="px-3 py-2 border rounded disabled:opacity-40">Razveljavi</button>
           <button onClick={ponastavi} disabled={shranjeno}
             className="px-3 py-2 border rounded disabled:opacity-40">Ponastavi</button>
