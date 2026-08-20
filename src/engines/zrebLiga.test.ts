@@ -432,18 +432,59 @@ describe('preveriIzvedljivost — nosilni vrstni red (samo groups)', () => {
 })
 
 describe('lastnostni test', () => {
-  test('10 000 žrebov: nobene kršitve in nikoli brez veljavne številke', () => {
-    const primeri: Array<{ n: number, nast: LigaNastavitve, skupno: Record<string, string> }> = [
-      { n: 12, nast: { format: 'flat', double_round: true, berger_mirror: false }, skupno: { t1: 'x', t7: 'x' } },
-      { n: 11, nast: { format: 'flat', double_round: true, berger_mirror: false }, skupno: { t2: 'x', t8: 'x' } },
-      { n: 10, nast: { format: 'split', double_round: true, berger_mirror: true }, skupno: {} },
-      { n: 12, nast: { format: 'groups', double_round: true, berger_mirror: false }, skupno: { t1: 'x', t5: 'x' } },
+  /**
+   * Vsak primer mora resnično pritisniti na sestopanje, ne le prehoditi žreb.
+   *
+   * Prejšnja različica je imela v vsakem primeru KVEČJEMU EN soigriščni par —
+   * pri enem samem paru sestopanje ni bilo nikoli zares potrebno (ni poznejšega
+   * para, ki bi ga pohlepna izbira lahko obtičala), zato je bila slepa za
+   * natanko tisti hrošč, zaradi katerega obstaja. Izmerjene stopnje zataknitve
+   * so bile pri `double_round: false`, `berger_mirror: true`, z DVEMA ali TREMI
+   * hkratnimi pari (glej komentar ob `jeRazporeditevMozna` v zrebLiga.ts).
+   *
+   * Spodnji nabor zato izrecno vključuje:
+   *  - N=6, tri hkratne pare — najslabša izmerjena oblika (~48 % zataknitev
+   *    pri pohlepni izbiri, glej isti komentar).
+   *  - N=12, tri hkratne pare — ista oblika, a z več prostimi številkami.
+   *  - `split` z DVEMA paroma — `split` je edini format, ki je vedno enokrožen
+   *    (`jeDvokrozno`), a prejšnja različica ga je preizkusila brez enega
+   *    samega para, zato ta tvegana oblika ni bila nikoli zares preizkušena.
+   *  - `groups` s tremi pari MED NOSILCI, ki niso zaporedni (t1,t3,t5,t7,t9,t11
+   *    so vsi prvi iz avtomatskih parov iz faze A in se žrebajo neodvisno) —
+   *    čez več tisoč semen zato nekateri pari pristanejo v isti skupini,
+   *    drugi v različnih, kar edino sproži `korakiSkupinskeLige`-in `korakPari`
+   *    pod pritiskom v obeh vejah (znotraj skupine in čez skupini).
+   * Dva prvotna, enostavnejša primera (po en par) ostajata za širino.
+   */
+  test('~10 500 žrebov: nobene kršitve in nikoli brez veljavne številke', () => {
+    const primeri: Array<{ n: number, nast: LigaNastavitve, skupno: Record<string, string>, semena: number }> = [
+      // Širina — prvotna, enostavnejša primera z enim samim parom.
+      { n: 12, nast: { format: 'flat', double_round: true, berger_mirror: false },
+        skupno: { t1: 'x', t7: 'x' }, semena: 1000 },
+      { n: 11, nast: { format: 'flat', double_round: true, berger_mirror: false },
+        skupno: { t2: 'x', t8: 'x' }, semena: 1000 },
+      // Najslabša izmerjena oblika: enokrožno, zrcaljeno, VSI parjeni (tri pare pri 6 ekipah).
+      { n: 6, nast: { format: 'flat', double_round: false, berger_mirror: true },
+        skupno: { t1: 'igrisce1', t2: 'igrisce1', t3: 'igrisce2', t4: 'igrisce2', t5: 'igrisce3', t6: 'igrisce3' },
+        semena: 2500 },
+      // Ista oblika pri 12 ekipah — tri pare med širšim naborom prostih številk.
+      { n: 12, nast: { format: 'flat', double_round: false, berger_mirror: true },
+        skupno: { t1: 'igrisce1', t2: 'igrisce1', t3: 'igrisce2', t4: 'igrisce2', t5: 'igrisce3', t6: 'igrisce3' },
+        semena: 2000 },
+      // split: enokrožna oblika je tu vsiljena ne glede na stolpec — a šele z
+      // dvema paroma je ta oblika resnično pod pritiskom.
+      { n: 10, nast: { format: 'split', double_round: true, berger_mirror: true },
+        skupno: { t2: 'igrisce1', t9: 'igrisce1', t4: 'igrisce2', t7: 'igrisce2' }, semena: 2000 },
+      // groups: trije pari med nezaporednimi nosilci — mešanica iste/različne skupine.
+      { n: 12, nast: { format: 'groups', double_round: true, berger_mirror: false },
+        skupno: { t1: 'igrisce1', t5: 'igrisce1', t3: 'igrisce2', t9: 'igrisce2', t7: 'igrisce3', t11: 'igrisce3' },
+        semena: 2000 },
     ]
     for (const p of primeri) {
       const ekipeTega = ekipe(p.n, p.skupno)
       const nosilniVrstniRed = p.nast.format === 'groups' ? vrstniRed12 : []
       const o = ligaskiOpis(p.nast, ekipeTega, nosilniVrstniRed)
-      for (let seme = 1; seme <= 2500; seme++) {
+      for (let seme = 1; seme <= p.semena; seme++) {
         const r = randIntIz(mulberry32(seme))
         let s = zacniZreb(o)
         while (!jeKoncano(o, s)) {
