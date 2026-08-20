@@ -43,6 +43,7 @@ const SeriesAdmin = lazy(() => import('./pages/admin/SeriesAdmin'))
 const SeriesEdit = lazy(() => import('./pages/admin/SeriesEdit'))
 const PlayerImport = lazy(() => import('./pages/admin/PlayerImport'))
 const GuestAdmin = lazy(() => import('./pages/admin/GuestAdmin'))
+const Zreb = lazy(() => import('./pages/Zreb'))
 
 const queryClient = new QueryClient()
 
@@ -140,6 +141,7 @@ export default function App() {
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
               <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
               <Route path="/admin/liga" element={<LeagueAdminRoute><LeagueAdmin /></LeagueAdminRoute>} />
+              <Route path="/admin/zreb/liga/:seasonId" element={<LeagueAdminRoute><Zreb /></LeagueAdminRoute>} />
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />
               <Route path="/admin/liga/tekma/:fixtureId" element={<OldScoresheetRedirect />} />
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />
