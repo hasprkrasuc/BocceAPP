@@ -132,7 +132,7 @@ function partnerskeStevilke(n: number, pari: Array<[number, number]>): number[] 
  * zataknil. Pohlepna izbira partnerja brez tega preverjanja pri dveh ali več
  * parih zaide v slepo ulico v približno polovici primerov.
  */
-function jeRazporeditevMozna(
+export function jeRazporeditevMozna(
   steviloParov: number, proste: number[], veljavniPari: Array<[number, number]>,
 ): boolean {
   if (steviloParov === 0) return true
@@ -261,12 +261,115 @@ export function ligaskiOpis(
   return { udelezenci, koraki: korakiSkupinskeLige(ekipe, pari, nastavitve, nosilniVrstniRed) }
 }
 
-/** Zapolni Task 7 — do takrat skupinska liga ni podprta. */
+/**
+ * Skupinska liga.
+ *
+ * Faza A — za vsak par zaporednih nosilcev (1-2, 3-4, …) žreba samo PRVI, ali
+ * gre v A (1) ali B (2). Drugi iz para gre samodejno v nasprotno skupino. Tako
+ * sta zaporedna nosilca vedno ločena in sta skupini enakovredni.
+ *
+ * Faza B — številke 1..6 posebej v vsaki skupini. Najprej VSI soigriščni pari
+ * obeh skupin, šele nato preostale ekipe: sicer lahko ekipe brez omejitve
+ * zasedejo številke tako, da paru ne ostane veljavna razlika.
+ */
 function korakiSkupinskeLige(
-  _ekipe: LigaEkipa[], _pari: Array<[string, string]>,
-  _nastavitve: LigaNastavitve, _nosilniVrstniRed: string[],
+  ekipe: LigaEkipa[], pari: Array<[string, string]>,
+  nastavitve: LigaNastavitve, nosilniVrstniRed: string[],
 ): Korak[] {
-  throw new Error('skupinska liga še ni podprta')
+  const red = nosilniVrstniRed.length ? nosilniVrstniRed : ekipe.map(e => e.id)
+  const prviVParu = red.filter((_, i) => i % 2 === 0)
+  const partner = new Map<string, string>()
+  for (let i = 0; i + 1 < red.length; i += 2) partner.set(red[i], red[i + 1])
+
+  const fazaA: Korak = {
+    naziv: 'Razporeditev v skupini',
+    predal: PREDAL_SKUPINE,
+    // predal nosi OZNAKO skupine, ne edinstvenih številk: šest ekip dobi 1 in
+    // šest 2, zato tu podvojitev ni napaka
+    enolicne: false,
+    udelezenci: () => prviVParu,
+    stevilke: () => [1, 2],   // 1 = A, 2 = B
+    veljavne: () => [1, 2],
+    posledice: (_s, id, n) => {
+      const drugi = partner.get(id)
+      if (!drugi) return []
+      return [{
+        udelezenecId: drugi,
+        stevilka: n === 1 ? 2 : 1,
+        samodejno: true,
+        razlog: 'sopostavljeni nosilec gre v nasprotno skupino',
+      }]
+    },
+  }
+
+  const clani = (oznaka: number) => (s: ZrebStanje) =>
+    Object.entries(s.dodeljene[PREDAL_SKUPINE] ?? {})
+      .filter(([, v]) => v === oznaka).map(([id]) => id)
+
+  const skupinaOd = (s: ZrebStanje, id: string) => s.dodeljene[PREDAL_SKUPINE]?.[id]
+  const predalOd = (s: ZrebStanje, id: string) => (skupinaOd(s, id) === 1 ? PREDAL_A : PREDAL_B)
+  const veljavniPari6 = veljavniPariIgrisc(6, jeDvokrozno(nastavitve), nastavitve.berger_mirror)
+  const proste = (s: ZrebStanje, predal: number) => {
+    const vzete = new Set(Object.values(s.dodeljene[predal] ?? {}))
+    return [1, 2, 3, 4, 5, 6].filter(n => !vzete.has(n))
+  }
+
+  /**
+   * Soigriščni pari, ločeni po skupini PRVE ekipe iz para — korak ima en sam
+   * predal, zato prva ekipa iz skupine A žreba iz nabora A, iz skupine B pa iz
+   * nabora B. Partnerjeva številka gre v partnerjev predal, ki je lahko drug.
+   */
+  const korakPari = (oznaka: number, predal: number, imeSkupine: string): Korak => ({
+    naziv: `Skupina ${imeSkupine} — ekipe s skupnim igriščem`,
+    predal,
+    udelezenci: (s) => pari.filter(([a]) => skupinaOd(s, a) === oznaka).map(([a]) => a),
+    stevilke: () => [1, 2, 3, 4, 5, 6],
+    veljavne: (s, id) => {
+      const par = pari.find(([a]) => a === id)
+      if (!par) return proste(s, predal)
+      const partnerPredal = predalOd(s, par[1])
+      const partnerjeveProste = new Set(proste(s, partnerPredal))
+      return proste(s, predal).filter(n =>
+        partnerskeStevilke(n, veljavniPari6).some(p =>
+          partnerjeveProste.has(p) && !(partnerPredal === predal && p === n)))
+    },
+    posledice: (s, id, n) => {
+      const par = pari.find(([a]) => a === id)
+      if (!par) return []
+      const partnerPredal = predalOd(s, par[1])
+      const partnerjeveProste = new Set(proste(s, partnerPredal))
+      if (partnerPredal === predal) partnerjeveProste.delete(n)
+      const moznosti = partnerskeStevilke(n, veljavniPari6).filter(p => partnerjeveProste.has(p))
+      if (moznosti.length === 0) throw new Error(`za ${id} ni proste partnerske številke`)
+      return [{
+        udelezenecId: par[1],
+        stevilka: moznosti[0],
+        samodejno: true,
+        razlog: 'skupno rezervno igrišče',
+        predal: partnerPredal,
+      }]
+    },
+  })
+
+  /** Ekipe skupine, ki niso v nobenem soigriščnem paru. */
+  const korakOstali = (oznaka: number, predal: number, imeSkupine: string): Korak => ({
+    naziv: `Skupina ${imeSkupine}`,
+    predal,
+    udelezenci: (s) => {
+      const vParu = new Set(pari.flat())
+      return clani(oznaka)(s).filter(id => !vParu.has(id))
+    },
+    stevilke: () => [1, 2, 3, 4, 5, 6],
+    veljavne: (s) => proste(s, predal),
+  })
+
+  return [
+    fazaA,
+    korakPari(1, PREDAL_A, 'A'),
+    korakPari(2, PREDAL_B, 'B'),
+    korakOstali(1, PREDAL_A, 'A'),
+    korakOstali(2, PREDAL_B, 'B'),
+  ]
 }
 
 /**
