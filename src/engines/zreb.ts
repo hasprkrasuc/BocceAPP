@@ -37,6 +37,13 @@ export interface Dodelitev {
 export interface Korak {
   naziv: string
   predal: number
+  /**
+   * Ali morajo biti številke tega predala med seboj različne. Privzeto true.
+   *
+   * Žreb skupin dodeljuje OZNAKO (1 = A, 2 = B), ki jo dobi več udeležencev —
+   * tam podvojitev ni napaka, ampak bistvo. Tak korak nastavi false.
+   */
+  enolicne?: boolean
   /** Udeleženci tega koraka; funkcija, ker so lahko odvisni od prejšnjih korakov. */
   udelezenci(stanje: ZrebStanje): string[]
   /** Vse številke tega predala. */
@@ -184,15 +191,31 @@ export function preveri(opis: ZrebOpis, stanje: ZrebStanje): string[] {
   const imena = new Map(opis.udelezenci.map(u => [u.id, u.ime]))
   const ime = (id: string) => imena.get(id) ?? id
 
+  // Predali, v katerih je podvajanje številk pričakovano (npr. žreb skupin:
+  // predal je OZNAKA skupine, ki jo dobi več udeležencev). Izračunano vnaprej,
+  // da se koraki, ki si delijo predal, obnašajo dosledno — dovolj je, da
+  // katerikoli od njih predal označi za ne-enoličnega.
+  const neEnolicniPredali = new Set(
+    opis.koraki.filter(k => k.enolicne === false).map(k => k.predal),
+  )
+  const preverjeniPredali = new Set<number>()
+
   for (const korak of opis.koraki) {
     const ze = stanje.dodeljene[korak.predal] ?? {}
     const nabor = new Set(korak.stevilke(stanje))
-    const videne = new Map<number, string>()
     for (const [id, st] of Object.entries(ze)) {
       if (!nabor.has(st)) napake.push(`${ime(id)}: številka ${st} ni v naboru koraka „${korak.naziv}“`)
-      const prej = videne.get(st)
-      if (prej) napake.push(`podvojena številka ${st}: ${ime(prej)} in ${ime(id)}`)
-      else videne.set(st, id)
+    }
+    // Podvojenost preverimo kvečjemu enkrat na predal, sicer bi jo koraki, ki
+    // si delijo predal, javili vsak zase — enkrat prijavljeno je dovolj.
+    if (!neEnolicniPredali.has(korak.predal) && !preverjeniPredali.has(korak.predal)) {
+      preverjeniPredali.add(korak.predal)
+      const videne = new Map<number, string>()
+      for (const [id, st] of Object.entries(ze)) {
+        const prej = videne.get(st)
+        if (prej) napake.push(`podvojena številka ${st} v koraku „${korak.naziv}“: ${ime(prej)} in ${ime(id)}`)
+        else videne.set(st, id)
+      }
     }
   }
 

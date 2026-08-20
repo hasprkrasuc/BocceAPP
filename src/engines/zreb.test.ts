@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   zacniZreb, kandidati, preostale, jeKoncano, izvleciUdelezenca, izvleciStevilko, preveri,
-  type ZrebOpis, type ZrebStanje,
+  type ZrebOpis, type ZrebStanje, type Korak,
 } from './zreb'
 
 /** Ponovljiv generator za teste. */
@@ -182,5 +182,130 @@ describe('pogon žreba — invariante', () => {
     const s: ZrebStanje = { ...zacniZreb(o), dodeljene: { 0: { e1: 1, e2: 1 } } }
     const napake = preveri(o, s).filter(x => /podvojena/.test(x))
     expect(napake).toHaveLength(1)
+  })
+
+  test('korak z enolicne: false ne javi podvojene napake, a še vedno ujame številko zunaj nabora', () => {
+    const o: ZrebOpis = {
+      udelezenci: ['t1', 't2', 't3', 't4'].map(id => ({ id, ime: id.toUpperCase() })),
+      koraki: [{
+        naziv: 'Skupina',
+        predal: 0,
+        enolicne: false,
+        udelezenci: () => ['t1', 't2', 't3', 't4'],
+        stevilke: () => [1, 2],
+        veljavne: () => [1, 2],
+      }],
+    }
+    // t1 in t2 imata isto oznako skupine (pravilno — to je bistvo oznake),
+    // t4 pa ima številko zunaj nabora (99 ni ne 1 ne 2).
+    const s: ZrebStanje = { ...zacniZreb(o), dodeljene: { 0: { t1: 1, t2: 1, t3: 2, t4: 99 } } }
+    const napake = preveri(o, s)
+    expect(napake.some(x => /podvojena/.test(x))).toBe(false)
+    expect(napake.some(x => /ni v naboru/.test(x))).toBe(true)
+  })
+
+  test('privzeto je enoličnost obvezna: brez enolicne isti razpored še vedno javi podvojeno napako', () => {
+    const o: ZrebOpis = {
+      udelezenci: ['t1', 't2', 't3', 't4'].map(id => ({ id, ime: id.toUpperCase() })),
+      koraki: [{
+        naziv: 'Skupina',
+        predal: 0,
+        // enolicne ni nastavljen — privzeto mora ostati true.
+        udelezenci: () => ['t1', 't2', 't3', 't4'],
+        stevilke: () => [1, 2],
+        veljavne: () => [1, 2],
+      }],
+    }
+    const s: ZrebStanje = { ...zacniZreb(o), dodeljene: { 0: { t1: 1, t2: 1, t3: 2, t4: 99 } } }
+    const napake = preveri(o, s)
+    expect(napake.some(x => /podvojena/.test(x))).toBe(true)
+  })
+
+  test('kadar si predal delita dva koraka in eden od njiju ni enoličen, se cel predal obravnava kot ne-enoličen', () => {
+    // Namerno: enoličnost je last predala (skupnega nabora), ne posameznega
+    // koraka — če en korak pove, da se v tem predalu številke smejo ponoviti,
+    // to velja za CEL predal, ne le za vnose tega koraka.
+    const o: ZrebOpis = {
+      udelezenci: ['t1', 't2'].map(id => ({ id, ime: id.toUpperCase() })),
+      koraki: [
+        {
+          naziv: 'Prvi',
+          predal: 0,
+          // ta korak ne pove nič o enoličnosti — a ker jo Drugi izklopi, to velja za oba.
+          udelezenci: () => ['t1'],
+          stevilke: () => [1, 2],
+          veljavne: () => [1, 2],
+        },
+        {
+          naziv: 'Drugi',
+          predal: 0,
+          enolicne: false,
+          udelezenci: () => ['t2'],
+          stevilke: () => [1, 2],
+          veljavne: () => [1, 2],
+        },
+      ],
+    }
+    const s: ZrebStanje = { ...zacniZreb(o), dodeljene: { 0: { t1: 1, t2: 1 } } }
+    expect(preveri(o, s).some(x => /podvojena/.test(x))).toBe(false)
+  })
+
+  test('žreb skupin (oznaka skupine v predalu, enolicne: false) skozi celoten žreb ne javi lažnih napak', () => {
+    // Oblika kot pri ligaškem prilagojevalniku: prvi korak dodeli OZNAKO
+    // skupine (1 ali 2) — soigriščni par gre namerno v nasprotno skupino, da
+    // se izogneta skupnemu igrišču. Nato vsaka skupina žreba svoje številke
+    // znotraj lastnega predala.
+    const parInfo: Record<string, string> = { t1: 't2', t3: 't4', t5: 't6' }
+    const vsi = ['t1', 't2', 't3', 't4', 't5', 't6']
+
+    const skupinaKorak: Korak = {
+      naziv: 'Skupina',
+      predal: 0,
+      enolicne: false,
+      udelezenci: () => Object.keys(parInfo),
+      stevilke: () => [1, 2],
+      veljavne: () => [1, 2],
+      posledice: (_s, id, st) => {
+        const partner = parInfo[id]
+        return partner
+          ? [{ udelezenecId: partner, stevilka: st === 1 ? 2 : 1, samodejno: true, razlog: 'skupno igrišče — ločena skupina' }]
+          : []
+      },
+    }
+    const stevilkeSkupine = (skupina: number): Korak => ({
+      naziv: `Številke skupine ${skupina}`,
+      predal: skupina,
+      udelezenci: (s) => vsi.filter(id => s.dodeljene[0]?.[id] === skupina),
+      stevilke: () => [1, 2, 3],
+      veljavne: (s) => {
+        const vzete = new Set(Object.values(s.dodeljene[skupina] ?? {}))
+        return [1, 2, 3].filter(x => !vzete.has(x))
+      },
+    })
+
+    const o: ZrebOpis = {
+      udelezenci: vsi.map(id => ({ id, ime: id.toUpperCase() })),
+      koraki: [skupinaKorak, stevilkeSkupine(1), stevilkeSkupine(2)],
+    }
+
+    let steviloStanj = 0
+    for (const [semeUdel, semeStev] of [[1, 2], [3, 4], [5, 6], [7, 8]]) {
+      const rUdel = randIntIz(mulberry32(semeUdel))
+      const rStev = randIntIz(mulberry32(semeStev))
+      let s = zacniZreb(o)
+      expect(preveri(o, s)).toEqual([])
+      steviloStanj++
+      let varovalka = 0
+      while (!jeKoncano(o, s)) {
+        if (varovalka++ > 100) throw new Error('neskončna zanka — preveri opis')
+        s = izvleciUdelezenca(o, s, rUdel)
+        expect(preveri(o, s)).toEqual([])
+        steviloStanj++
+        s = izvleciStevilko(o, s, rStev)
+        expect(preveri(o, s)).toEqual([])
+        steviloStanj++
+      }
+    }
+    expect(steviloStanj).toBeGreaterThan(0)
   })
 })
