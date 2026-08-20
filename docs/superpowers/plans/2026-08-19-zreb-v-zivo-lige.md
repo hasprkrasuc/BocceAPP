@@ -864,6 +864,28 @@ export function jeDvokrozno(nastavitve: LigaNastavitve): boolean {
   return nastavitve.double_round
 }
 
+/**
+ * Ali je mogoče preostale soigriščne pare še razporediti na proste številke.
+ *
+ * Iskanje s sestopanjem. Parov je največ šest in številk največ dvanajst, zato
+ * je izčrpno iskanje trivialno — in edino, kar zares prepreči, da bi se žreb
+ * zataknil. Pohlepna izbira partnerja brez tega preverjanja pri dveh ali več
+ * parih zaide v slepo ulico v približno polovici primerov (izmerjeno pri
+ * N=4 z dvema paroma in N=6 s tremi, enokrožno in zrcaljeno).
+ */
+function jeRazporeditevMozna(
+  steviloParov: number, proste: number[], veljavniPari: Array<[number, number]>,
+): boolean {
+  if (steviloParov === 0) return true
+  const prosteMnozica = new Set(proste)
+  for (const [a, b] of veljavniPari) {
+    if (!prosteMnozica.has(a) || !prosteMnozica.has(b)) continue
+    const ostanek = proste.filter(n => n !== a && n !== b)
+    if (jeRazporeditevMozna(steviloParov - 1, ostanek, veljavniPari)) return true
+  }
+  return false
+}
+
 /** Partnerske številke, ki jih sme dobiti soigriščna ekipa ob številki `n`. */
 function partnerskeStevilke(n: number, pari: Array<[number, number]>): number[] {
   const out: number[] = []
