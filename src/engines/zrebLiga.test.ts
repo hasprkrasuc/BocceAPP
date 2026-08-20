@@ -1,9 +1,11 @@
 import { describe, test, expect } from 'vitest'
 import { zacniZreb, izvleciUdelezenca, izvleciStevilko, jeKoncano, preveri } from './zreb'
 import { mulberry32, randIntIz } from './zreb.test'
-import { veljavniPariIgrisc } from './berger'
+import { veljavniPariIgrisc, bergerSchedule, bergerFixtures } from './berger'
+import { validateDraw } from './leagueGroups'
 import {
   ligaskiOpis, preveriIzvedljivost, soigriscniPari, jeDvokrozno, jeRazporeditevMozna,
+  preveriLigaski,
   PREDAL_SKUPINE, PREDAL_A, PREDAL_B,
   type LigaEkipa, type LigaNastavitve,
 } from './zrebLiga'
@@ -202,5 +204,214 @@ describe('ligaški opis — groups', () => {
       expect(preveri(o, s)).toEqual([])
     }
     expect(istaSkupina).toBeGreaterThan(0)
+  })
+})
+
+describe('skupna rezervna igrišča', () => {
+  test('soigriscniPari najde samo ključe z natanko dvema ekipama', () => {
+    const e = ekipe(6, { t1: 'balinisce-x', t2: 'balinisce-x', t3: 'y', t4: 'y', t5: 'z' })
+    expect(soigriscniPari(e)).toEqual([['t1', 't2'], ['t3', 't4']])
+  })
+
+  test('trije na istem igrišču so neizvedljivi in se ujamejo pred obredom', () => {
+    const e = ekipe(6, { t1: 'x', t2: 'x', t3: 'x' })
+    const napake = preveriIzvedljivost(e, { format: 'flat', double_round: true, berger_mirror: false })
+    expect(napake.some(x => /3 ekip/.test(x))).toBe(true)
+  })
+
+  test('pri 12 ekipah dobi soigriščni par razliko 6', () => {
+    const o = ligaskiOpis(
+      { format: 'flat', double_round: true, berger_mirror: false },
+      ekipe(12, { t1: 'x', t7: 'x' }), [],
+    )
+    for (let seme = 1; seme <= 50; seme++) {
+      const s = odigraj(o, seme)
+      expect(Math.abs(s.dodeljene[0].t1 - s.dodeljene[0].t7)).toBe(6)
+    }
+  })
+
+  test('več soigriščnih parov hkrati se izide', () => {
+    const o = ligaskiOpis(
+      { format: 'flat', double_round: true, berger_mirror: false },
+      ekipe(12, { t1: 'x', t2: 'x', t3: 'y', t4: 'y', t5: 'z', t6: 'z' }), [],
+    )
+    for (let seme = 1; seme <= 30; seme++) {
+      const s = odigraj(o, seme)
+      for (const [a, b] of [['t1','t2'],['t3','t4'],['t5','t6']] as const) {
+        expect(Math.abs(s.dodeljene[0][a] - s.dodeljene[0][b])).toBe(6)
+      }
+      expect(preveri(o, s)).toEqual([])
+    }
+  })
+
+  /**
+   * Ne le, da je razlika števili "pravilna" — poglejmo v resnični razpored:
+   * ekipi s skupnim igriščem ne smeta biti NIKOLI obe hkrati domači.
+   */
+  test('soigriščni ekipi v razporedu nista nikoli obe domači', () => {
+    const nast = { format: 'flat' as const, double_round: true, berger_mirror: false }
+    const o = ligaskiOpis(nast, ekipe(10, { t2: 'x', t9: 'x' }), [])
+    for (let seme = 1; seme <= 30; seme++) {
+      const s = odigraj(o, seme)
+      const a = s.dodeljene[0].t2, b = s.dodeljene[0].t9
+      const igre = bergerSchedule(10, true, false)
+      const krogiA = new Set(igre.filter(g => g.home === a).map(g => g.round))
+      for (const g of igre.filter(g => g.home === b)) expect(krogiA.has(g.round)).toBe(false)
+    }
+  })
+
+  /**
+   * Isti test kot zgoraj, a za skupinski format — primer, ki je motiviral
+   * pravilo čez skupini: skupini igrata ob istih terminih po isti tabeli, zato
+   * ekipa s številko n v A in ekipa s številko n v B nikoli nista obe domači v
+   * istem krogu. t1/t2 sta zaporedna nosilca, zato ju faza A vedno loči v
+   * različni skupini — natanko primer, ki bi ga preverba znotraj ene same
+   * skupine spregledala.
+   */
+  test('soigriščni par v skupinski ligi ni nikoli obe domači niti čez skupini', () => {
+    const e = ekipe(12, { t1: 'x', t2: 'x' })
+    const o = ligaskiOpis(skupinskaLiga, e, vrstniRed12)
+    const igre = bergerSchedule(6, true, false)
+    for (let seme = 1; seme <= 40; seme++) {
+      const s = odigraj(o, seme)
+      const sk = s.dodeljene[PREDAL_SKUPINE]
+      expect(sk.t1).not.toBe(sk.t2)
+      const a = s.dodeljene[sk.t1 === 1 ? PREDAL_A : PREDAL_B].t1
+      const b = s.dodeljene[sk.t2 === 1 ? PREDAL_A : PREDAL_B].t2
+      const krogiA = new Set(igre.filter(g => g.home === a).map(g => g.round))
+      for (const g of igre.filter(g => g.home === b)) expect(krogiA.has(g.round)).toBe(false)
+    }
+  })
+})
+
+describe('preveriLigaski', () => {
+  const nast = { format: 'flat' as const, double_round: true, berger_mirror: false }
+
+  test('pravilen izid nima napak', () => {
+    const e = ekipe(12, { t1: 'x', t7: 'x' })
+    const s = odigraj(ligaskiOpis(nast, e, []), 4)
+    expect(preveriLigaski(nast, e, [], s, true)).toEqual([])
+  })
+
+  test('ujame napačno razliko pri soigriščnem paru', () => {
+    const e = ekipe(12, { t1: 'x', t7: 'x' })
+    const s = { dodeljene: { 0: { t1: 1, t7: 2 } }, korak: 0, cakajoca: null, dnevnik: [] }
+    expect(preveriLigaski(nast, e, [], s, false).some(x => /nista veljaven par/.test(x))).toBe(true)
+  })
+
+  test('ujame zaporedna nosilca v isti skupini', () => {
+    const s = { dodeljene: { 0: { t1: 1, t2: 1 } }, korak: 0, cakajoca: null, dnevnik: [] }
+    expect(preveriLigaski(skupinskaLiga, ekipe(12), vrstniRed12, s, false)
+      .some(x => /zaporedna nosilca/.test(x))).toBe(true)
+  })
+
+  test('delno stanje ne javi lažnih napak', () => {
+    const e = ekipe(12, { t1: 'x', t7: 'x' })
+    const s = { dodeljene: { 0: { t3: 5 } }, korak: 0, cakajoca: null, dnevnik: [] }
+    expect(preveriLigaski(nast, e, [], s, false)).toEqual([])
+  })
+
+  test('ujame soigriščni par v različnih skupinah z neveljavnima številkama', () => {
+    const e = ekipe(12, { t1: 'x', t2: 'x' })
+    const s = {
+      dodeljene: { [PREDAL_SKUPINE]: { t1: 1, t2: 2 }, [PREDAL_A]: { t1: 2 }, [PREDAL_B]: { t2: 2 } },
+      korak: 0, cakajoca: null, dnevnik: [],
+    }
+    expect(preveriLigaski(skupinskaLiga, e, vrstniRed12, s, false)
+      .some(x => /nista veljaven par/.test(x))).toBe(true)
+  })
+
+  test('sprejme soigriščni par v različnih skupinah z veljavnima številkama', () => {
+    const e = ekipe(12, { t1: 'x', t2: 'x' })
+    const s = {
+      dodeljene: { [PREDAL_SKUPINE]: { t1: 1, t2: 2 }, [PREDAL_A]: { t1: 2 }, [PREDAL_B]: { t2: 5 } },
+      korak: 0, cakajoca: null, dnevnik: [],
+    }
+    expect(preveriLigaski(skupinskaLiga, e, vrstniRed12, s, false)
+      .some(x => /nista veljaven par/.test(x))).toBe(false)
+  })
+})
+
+describe('jeDvokrozno', () => {
+  test('groups je vedno dvokrožen, ne glede na stolpec', () => {
+    expect(jeDvokrozno({ format: 'groups', double_round: false, berger_mirror: false })).toBe(true)
+  })
+
+  test('split je vedno enokrožen, ne glede na stolpec', () => {
+    expect(jeDvokrozno({ format: 'split', double_round: true, berger_mirror: false })).toBe(false)
+  })
+
+  test('flat sledi stolpcu', () => {
+    expect(jeDvokrozno({ format: 'flat', double_round: true, berger_mirror: false })).toBe(true)
+    expect(jeDvokrozno({ format: 'flat', double_round: false, berger_mirror: false })).toBe(false)
+  })
+})
+
+describe('izid je sprejemljiv za obstoječo kodo', () => {
+  test('flat: bergerFixtures ne vrže izjeme', () => {
+    const nast: LigaNastavitve = { format: 'flat', double_round: true, berger_mirror: false }
+    const e = ekipe(10, { t2: 'x', t9: 'x' })
+    const o = ligaskiOpis(nast, e, [])
+    const s = odigraj(o, 7)
+    const teams = e.map(t => ({ id: t.id, draw_number: s.dodeljene[PREDAL_SKUPINE][t.id] }))
+    expect(() => bergerFixtures(teams, nast.double_round, nast.berger_mirror)).not.toThrow()
+  })
+
+  test('groups: leagueGroups.validateDraw ne najde napak', () => {
+    const e = ekipe(12, { t1: 'x', t2: 'x' })
+    const o = ligaskiOpis(skupinskaLiga, e, vrstniRed12)
+    const s = odigraj(o, 9)
+    const sk = s.dodeljene[PREDAL_SKUPINE]
+    const rows = e.map(t => {
+      const skupina = sk[t.id]
+      const predal = skupina === 1 ? PREDAL_A : PREDAL_B
+      return {
+        id: t.id,
+        group_label: skupina === 1 ? 'A' : 'B',
+        draw_number: s.dodeljene[predal][t.id],
+      }
+    })
+    expect(validateDraw(rows)).toEqual([])
+  })
+})
+
+describe('preveriIzvedljivost — nosilni vrstni red (samo groups)', () => {
+  const nastGroups: LigaNastavitve = { format: 'groups', double_round: true, berger_mirror: false }
+  const nastFlat: LigaNastavitve = { format: 'flat', double_round: true, berger_mirror: false }
+
+  test('prazen vrstni red je zavrnjen pri groups', () => {
+    const napake = preveriIzvedljivost(ekipe(12), nastGroups, [])
+    expect(napake.some(x => /nosilni vrstni red/i.test(x))).toBe(true)
+  })
+
+  test('prazen vrstni red je sprejet pri flat (ni relevanten)', () => {
+    expect(preveriIzvedljivost(ekipe(12), nastFlat, [])).toEqual([])
+  })
+
+  test('napačna dolžina vrstnega reda je zavrnjena', () => {
+    const napake = preveriIzvedljivost(ekipe(12), nastGroups, vrstniRed12.slice(0, 10))
+    expect(napake.some(x => /vseh 12 ekip sezone, ima jih 10/.test(x))).toBe(true)
+  })
+
+  test('podvojena ekipa v vrstnem redu je zavrnjena', () => {
+    const red = [...vrstniRed12.slice(0, 11), 't1']
+    const napake = preveriIzvedljivost(ekipe(12), nastGroups, red)
+    expect(napake.some(x => /isto ekipo večkrat/.test(x))).toBe(true)
+  })
+
+  test('neznana ekipa v vrstnem redu je zavrnjena', () => {
+    const red = [...vrstniRed12.slice(0, 11), 'ne-obstaja']
+    const napake = preveriIzvedljivost(ekipe(12), nastGroups, red)
+    expect(napake.some(x => /ki jih v tej sezoni ni/.test(x))).toBe(true)
+  })
+
+  test('manjkajoča ekipa v vrstnem redu je zavrnjena', () => {
+    const red = vrstniRed12.slice(0, 11)   // 11 od 12, brez podvojitve — manjka natanko t12
+    const napake = preveriIzvedljivost(ekipe(12), nastGroups, red)
+    expect(napake.some(x => /manjkajo ekipe/.test(x))).toBe(true)
+  })
+
+  test('pravilna permutacija je sprejeta', () => {
+    expect(preveriIzvedljivost(ekipe(12), nastGroups, vrstniRed12)).toEqual([])
   })
 })

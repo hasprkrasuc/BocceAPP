@@ -52,8 +52,17 @@ export function soigriscniPari(ekipe: LigaEkipa[]): Array<[string, string]> {
  * Preveri, ali je žreb sploh izvedljiv. Vrne napake v slovenščini; prazen
  * seznam pomeni, da se obred lahko začne. Namenoma se izvede PRED obredom, da
  * se ne zatakne sredi dvorane.
+ *
+ * `nosilniVrstniRed` je OBVEZEN za format 'groups'. Brez njega (ali s
+ * krnjenim seznamom) `ligaskiOpis` tiho pade nazaj na vrstni red ekip v bazi
+ * (za pravo sezono abecedni), faza A pa razporedi napačne ali nepopolne pare
+ * nosilcev — obred navidezno uspešno steče do konca, `jeKoncano` javi, da je
+ * gotovo, in generični `preveri` ne vidi nič narobe. Za `flat` in `split` se
+ * `nosilniVrstniRed` ne uporablja in ni preverjen.
  */
-export function preveriIzvedljivost(ekipe: LigaEkipa[], nastavitve: LigaNastavitve): string[] {
+export function preveriIzvedljivost(
+  ekipe: LigaEkipa[], nastavitve: LigaNastavitve, nosilniVrstniRed: string[] = [],
+): string[] {
   const napake: string[] = []
   const poKljucu = new Map<string, string[]>()
   for (const e of ekipe) {
@@ -69,6 +78,42 @@ export function preveriIzvedljivost(ekipe: LigaEkipa[], nastavitve: LigaNastavit
   }
   if (nastavitve.format === 'groups' && ekipe.length !== 12) {
     napake.push(`Skupinska liga zahteva 12 ekip, sezona jih ima ${ekipe.length}.`)
+  }
+  if (nastavitve.format === 'groups') {
+    // Nosilni vrstni red mora biti prava permutacija ekip sezone — sicer faza
+    // A žreba skupin razporedi napačne ali manjkajoče ekipe, ne da bi to karkoli
+    // po poti opazilo (glej dokumentacijski komentar funkcije).
+    if (nosilniVrstniRed.length !== ekipe.length) {
+      napake.push(
+        `Nosilni vrstni red mora imeti vseh ${ekipe.length} ekip sezone, ima jih ${nosilniVrstniRed.length}. ` +
+        `Pripravi razvrstitev za vse ekipe, preden začneš žreb.`,
+      )
+    }
+    const steti = new Map<string, number>()
+    for (const id of nosilniVrstniRed) steti.set(id, (steti.get(id) ?? 0) + 1)
+    const podvojeni = [...steti.entries()].filter(([, k]) => k > 1).map(([id]) => id)
+    if (podvojeni.length > 0) {
+      napake.push(
+        `Nosilni vrstni red vsebuje isto ekipo večkrat: ${podvojeni.join(', ')}. ` +
+        `Vsaka ekipa sme biti v vrstnem redu samo enkrat.`,
+      )
+    }
+    const idji = new Set(ekipe.map(e => e.id))
+    const neznani = [...new Set(nosilniVrstniRed.filter(id => !idji.has(id)))]
+    if (neznani.length > 0) {
+      napake.push(
+        `Nosilni vrstni red vsebuje ekipe, ki jih v tej sezoni ni: ${neznani.join(', ')}. ` +
+        `Preveri, ali je razvrstitev pripravljena za pravo sezono.`,
+      )
+    }
+    const vRedu = new Set(nosilniVrstniRed)
+    const manjkajoci = ekipe.filter(e => !vRedu.has(e.id))
+    if (manjkajoci.length > 0) {
+      napake.push(
+        `Nosilnemu vrstnemu redu manjkajo ekipe: ${manjkajoci.map(e => e.ime).join(', ')}. ` +
+        `Dodaj jih v razvrstitev, preden začneš žreb.`,
+      )
+    }
   }
   if (nastavitve.format !== 'groups' && (ekipe.length < 3 || ekipe.length > 12)) {
     napake.push(`Bergerjev razpored zahteva 3 do 12 ekip (za 2 ekipi Bergerjeva tabela ne obstaja), sezona jih ima ${ekipe.length}.`)
