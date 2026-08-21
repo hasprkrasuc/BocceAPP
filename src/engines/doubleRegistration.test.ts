@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFemale, eligibleSecondaryTeams, isAgeEligible, isAgeEligibleByYear, ageInYear, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible, seasonStartYear } from './doubleRegistration'
+import { isFemale, eligibleSecondaryTeams, sameSeason, primaryForSecondary, isAgeEligible, isAgeEligibleByYear, ageInYear, calcAge, latestSeasonsOnly, primaryTeams, birthYearOf, teamsCompatible, seasonStartYear } from './doubleRegistration'
 
 describe('isFemale', () => {
   it('prepozna "Ž" kot žensko', () => {
@@ -328,5 +328,84 @@ describe('birthYearOf — letnica rojstva za prikaz', () => {
     expect(birthYearOf('ni datum')).toBeNull()
     expect(birthYearOf(null)).toBeNull()
     expect(birthYearOf(undefined)).toBeNull()
+  })
+})
+
+describe('sameSeason', () => {
+  it('isti sezoni po oznaki v imenu', () => {
+    expect(sameSeason({ seasonName: 'Super Liga 2026/27' }, { seasonName: '1. liga 2026/27' })).toBe(true)
+  })
+  it('različni sezoni', () => {
+    expect(sameSeason({ seasonName: '2. liga zahod 2025/26' }, { seasonName: '1. liga 2026/27' })).toBe(false)
+  })
+  it('brez berljive oznake je konservativno true (raje zavrni kot napačno dovoli)', () => {
+    expect(sameSeason({ seasonName: 'Pokal' }, { seasonName: '1. liga 2026/27' })).toBe(true)
+    expect(sameSeason({ seasonName: null }, { seasonName: null })).toBe(true)
+  })
+})
+
+describe('eligibleSecondaryTeams — presoja znotraj sezone', () => {
+  // Resničen primer: igralec je v Super ligi 2026/27, lani pa je igral 2. ligo
+  // zahod 2025/26. Lanska nižja liga ne sme zapreti poti v 1. ligo 2026/27.
+  const my = [
+    { id: 'super27', tier: 'super_liga', category: 'men', seasonName: 'Super Liga 2026/27' },
+    { id: 'druga26', tier: '2_liga_zahod', category: 'men', seasonName: '2. liga zahod 2025/26' },
+  ]
+  const teams = [
+    { id: 'prva27', tier: '1_liga', category: 'men', seasonName: '1. liga 2026/27' },
+    { id: 'obz27', tier: 'obz', category: 'men', seasonName: '1. OBZL Nova Gorica 2026/27' },
+    { id: 'prva26', tier: '1_liga', category: 'men', seasonName: '1. liga 2025/26' },
+  ]
+
+  it('lanska 2. liga ne blokira 1. lige nove sezone', () => {
+    const res = eligibleSecondaryTeams('M', my, teams)
+    expect(res.map(t => t.id)).toContain('prva27')
+  })
+
+  it('območna liga ostane dovoljena', () => {
+    const res = eligibleSecondaryTeams('M', my, teams)
+    expect(res.map(t => t.id)).toContain('obz27')
+  })
+
+  it('1. liga LANSKE sezone ostane blokirana (lanska 2. liga je iz iste sezone)', () => {
+    const res = eligibleSecondaryTeams('M', my, teams)
+    expect(res.map(t => t.id)).not.toContain('prva26')
+  })
+
+  it('dve nižji ligi ISTE sezone se še vedno izključujeta', () => {
+    const myIsto = [
+      { id: 'super27', tier: 'super_liga', category: 'men', seasonName: 'Super Liga 2026/27' },
+      { id: 'prva27', tier: '1_liga', category: 'men', seasonName: '1. liga 2026/27' },
+    ]
+    const res = eligibleSecondaryTeams('M', myIsto, [
+      { id: 'druga27', tier: '2_liga_zahod', category: 'men', seasonName: '2. liga zahod 2026/27' },
+    ])
+    expect(res).toHaveLength(0)
+  })
+
+  it('brez matične ekipe v tisti sezoni ni sekundarne', () => {
+    const res = eligibleSecondaryTeams('M', [
+      { id: 'druga26', tier: '2_liga_zahod', category: 'men', seasonName: '2. liga zahod 2025/26' },
+    ], [
+      { id: 'obz27', tier: 'obz', category: 'men', seasonName: '1. OBZL Nova Gorica 2026/27' },
+    ])
+    expect(res).toHaveLength(0)
+  })
+})
+
+describe('primaryForSecondary', () => {
+  const my = [
+    { id: 'druga26', tier: '2_liga_zahod', category: 'men', seasonName: '2. liga zahod 2025/26' },
+    { id: 'super27', tier: 'super_liga', category: 'men', seasonName: 'Super Liga 2026/27' },
+  ]
+
+  it('izbere matično ekipo iz iste sezone, ne prve po vrsti', () => {
+    const p = primaryForSecondary(my, { tier: '1_liga', category: 'men', seasonName: '1. liga 2026/27' })
+    expect(p?.id).toBe('super27')
+  })
+
+  it('brez združljive ekipe v tisti sezoni vrne null', () => {
+    const p = primaryForSecondary(my, { tier: '1_liga', category: 'men', seasonName: '1. liga 2024/25' })
+    expect(p).toBeNull()
   })
 })
