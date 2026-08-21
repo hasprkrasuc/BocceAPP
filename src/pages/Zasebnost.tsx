@@ -40,7 +40,7 @@ export default function Zasebnost() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-1">Zasebnost in piškotki</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 9. 8. 2026.
+        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 20. 8. 2026.
       </p>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-sm text-amber-900">
@@ -109,7 +109,7 @@ export default function Zasebnost() {
       <Razdelek naslov="Katere podatke hranimo in zakaj">
         <p>
           Podatke prejmemo iz evidence Balinarske zveze Slovenije (
-          <span className="font-mono text-xs">evidence.bzs.si</span>), kamor jih ob včlanitvi
+          <span className="font-mono text-xs">evidence.balinanje.si</span>), kamor jih ob včlanitvi
           odda klub. Del podatkov nastane med tekmovanjem — izidi, uvrstitve in sodniške
           zadolžitve.
         </p>
@@ -171,7 +171,7 @@ export default function Zasebnost() {
         </p>
         <p>
           Te privolitve se zbirajo in hranijo v evidenci Balinarske zveze Slovenije na{' '}
-          <span className="font-mono text-xs">evidence.bzs.si</span>, ne v tej aplikaciji.
+          <span className="font-mono text-xs">evidence.balinanje.si</span>, ne v tej aplikaciji.
           BalinarApp podatke od tam prejme.
         </p>
         <p>
