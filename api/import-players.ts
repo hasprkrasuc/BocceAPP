@@ -171,6 +171,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const patch: Record<string, unknown> = { full_name: p.fullName, club_id: clubId, club: clubName }
         const optional: [string, unknown][] = [
           ['gender', p.gender], ['date_of_birth', p.birthDate], ['emso', p.emso],
+          // Športna številka iz obrazca oziroma izvoza JE številka licence pri zvezi
+          // (potrdil lastnik projekta 21. 8. 2026). Zapisujemo jo enako kot ostale
+          // uradne podatke — dokument zveze je vir resnice. Ko je enkrat v bazi,
+          // postane najzanesljivejši ključ za ujemanje pri zamaskiranih izvozih,
+          // kjer sta EMŠO in datum rojstva zakrita.
+          ['license_number', p.sportNumber],
           ['birth_city', p.birthCity], ['birth_country', p.birthCountry], ['citizenship', p.citizenship],
           ['address_street', p.addressStreet], ['address_house', p.addressHouse],
           ['address_postal', p.addressPostal], ['address_city', p.addressCity],
