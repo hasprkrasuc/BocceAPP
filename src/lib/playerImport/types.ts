@@ -26,6 +26,10 @@ export interface ParsedPlayer {
   addressHouse: string | null
   addressPostal: string | null
   addressCity: string | null
+  /**
+   * Športna številka iz obrazca oziroma izvoza. Je ista stvar kot številka
+   * licence pri zvezi (`users.license_number`), zato jo uvoz tja tudi zapiše.
+   */
   sportNumber: string | null
   /**
    * Klub, zapisan v sami vrstici. Registracijski obrazec ga nima (klub je v
