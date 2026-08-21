@@ -23,6 +23,10 @@
  * mladincev: primaryTeams za moške šteje tudi mladinske (U-18/U-14) ekipe,
  * eligibleSecondaryTeams pa dovoli člansko ekipo, združljivo z VSEMI trenutnimi
  * ekipami → mladinec = U-18/U-14 + Super liga + ena nižja liga.
+ *
+ * Presoja teče ZNOTRAJ SEZONE: blokirajo le ekipe iz iste sezone kot sekundarna
+ * (glej sameSeason). Lansko članstvo v nižji ligi je odigrano in z novo sezono
+ * ne trči v terminu.
  */
 
 export const DOUBLE_REG_MAX_AGE = 23
@@ -82,7 +86,29 @@ export function isFemale(gender: string | null | undefined): boolean {
       || g.startsWith('žen') || g.startsWith('zen') || g === 'female'
 }
 
-export interface DRTeamRef { id: string; tier: string; category: string }
+export interface DRTeamRef { id: string; tier: string; category: string; seasonName?: string | null }
+
+/**
+ * Ali ekipi pripadata ISTI sezoni (npr. obe 2026/27)?
+ *
+ * Primerjamo po ZAČETNEM LETU IZ IMENA sezone, ne po stolpcu `year`: ta se je v
+ * bazi vodil enkrat kot začetno, enkrat kot končno leto, zato sta imeli sezoni
+ * 2025/26 in 2026/27 nekaj časa isto vrednost. Ime nosi oznako "2026/27" in je
+ * zanesljivo.
+ *
+ * Kadar oznake ni mogoče prebrati, vrnemo `true` — torej ekipi obravnavamo, kot
+ * da sta v isti sezoni. To je konservativna smer: raje kakšno dvojno
+ * registracijo po nepotrebnem zavrnemo, kot da bi jo napačno dovolili.
+ */
+export function sameSeason(
+  a: { seasonName?: string | null },
+  b: { seasonName?: string | null },
+): boolean {
+  const ya = seasonStartYear(a.seasonName)
+  const yb = seasonStartYear(b.seasonName)
+  if (ya === null || yb === null) return true
+  return ya === yb
+}
 
 /**
  * Ekipe, v katere je dovoljena dvojna registracija (sekundarna ekipa).
@@ -93,7 +119,7 @@ export interface DRTeamRef { id: string; tier: string; category: string }
  */
 export function eligibleSecondaryTeams<T extends DRTeamRef>(
   gender: string | null | undefined,
-  myTeams: { id: string; tier?: string | null; category?: string | null }[],
+  myTeams: { id: string; tier?: string | null; category?: string | null; seasonName?: string | null }[],
   allTeams: T[],
 ): T[] {
   const myIds = new Set(myTeams.map(t => t.id))
@@ -103,13 +129,22 @@ export function eligibleSecondaryTeams<T extends DRTeamRef>(
   // MOŠKI + mladinci. Sekundarna je lahko:
   //  - članska ekipa, terminsko združljiva z VSEMI trenutnimi (U-18/U-14 + Super + ena nižja);
   //  - mladinska ekipa VIŠJE kategorije od matične (igra navzgor, npr. U-14 → U-18).
-  const myYouth = myTeams.map(mt => youthLevel(mt.category)).filter((n): n is number => n !== null)
-  const myYouthLevel = myYouth.length ? Math.min(...myYouth) : null
   return allTeams.filter(t => {
-    if (myIds.has(t.id) || myTeams.length === 0) return false
-    if (t.category === 'men') return myTeams.every(mt => teamsCompatible(mt, t))
+    if (myIds.has(t.id)) return false
+    // Presojamo LE proti ekipam iz ISTE sezone. Lanska nižja liga je odigrana in
+    // z novo sezono ne trči v terminu; brez tega bi članstvo v 2. ligi 2025/26 za
+    // vedno zaprlo pot v 1. ligo 2026/27, čeprav se sezoni ne prekrivata.
+    const vSezoni = myTeams.filter(mt => sameSeason(mt, t))
+    // Dvojna registracija potrebuje matično ekipo v isti sezoni — brez nje ni
+    // česa podvojiti.
+    if (vSezoni.length === 0) return false
+    if (t.category === 'men') return vSezoni.every(mt => teamsCompatible(mt, t))
     const tl = youthLevel(t.category)
-    if (tl !== null) return myYouthLevel !== null && tl > myYouthLevel && myTeams.every(mt => teamsCompatible(mt, t))
+    if (tl !== null) {
+      const myYouth = vSezoni.map(mt => youthLevel(mt.category)).filter((n): n is number => n !== null)
+      const myYouthLevel = myYouth.length ? Math.min(...myYouth) : null
+      return myYouthLevel !== null && tl > myYouthLevel && vSezoni.every(mt => teamsCompatible(mt, t))
+    }
     return false
   })
 }
@@ -265,4 +300,19 @@ export const DR_STATUS_LABELS: Record<string, string> = {
   pending:  'V obravnavi',
   approved: 'Odobreno',
   rejected: 'Zavrnjeno',
+}
+
+/**
+ * Matična (primarna) ekipa za dvojno registracijo v dano sekundarno ekipo:
+ * iz iste sezone in terminsko združljiva z njo.
+ *
+ * Brez tega bi se kot matična vzela kar prva ekipa igralca — pri igralcu z
+ * zgodovino v več ligah je to lahko ekipa iz druge sezone, zapis o dvojni
+ * registraciji pa bi kazal na napačen par.
+ */
+export function primaryForSecondary<T extends { id: string; tier?: string | null; category?: string | null; seasonName?: string | null }>(
+  myTeams: T[],
+  secondary: { tier?: string | null; category?: string | null; seasonName?: string | null },
+): T | null {
+  return myTeams.find(mt => sameSeason(mt, secondary) && teamsCompatible(mt, secondary)) ?? null
 }
