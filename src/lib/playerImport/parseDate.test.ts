@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { parseBirthDate } from './parseDate'
+import { parseBirthDate, letnicaIzDatuma } from './parseDate'
 
 describe('parseBirthDate', () => {
   test('Excel serijska številka → YYYY-MM-DD', () => {
@@ -18,5 +18,17 @@ describe('parseBirthDate', () => {
     expect(parseBirthDate('')).toBeNull()
     expect(parseBirthDate(null)).toBeNull()
     expect(parseBirthDate('nekaj')).toBeNull()
+  })
+})
+
+describe('letnicaIzDatuma', () => {
+  test('vrne letnico iz ISO datuma', () => {
+    expect(letnicaIzDatuma('1990-01-01')).toBe(1990)
+    expect(letnicaIzDatuma('2010-06-20')).toBe(2010)
+  })
+
+  test('brez datuma vrne null', () => {
+    expect(letnicaIzDatuma(null)).toBeNull()
+    expect(letnicaIzDatuma('')).toBeNull()
   })
 })

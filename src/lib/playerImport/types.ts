@@ -7,6 +7,18 @@ export interface ParsedPlayer {
   gender: Gender | null
   birthDate: string | null      // YYYY-MM-DD
   emso: string | null           // 13 števk ali null
+  /**
+   * Letnica rojstva. Pri neokrnjenih virih izpeljana iz `birthDate`, pri
+   * zamaskiranem izvozu iz evidence pa edino, kar o rojstvu sploh vemo.
+   */
+  birthYear: number | null
+  /**
+   * Zadnje števke EMŠO iz zamaskiranega izvoza ("*********0189" → "0189").
+   * NI EMŠO: nikoli ne sme pristati v `users.emso` in nikoli ne sme biti
+   * primarni ključ ujemanja — različne maske se lahko zlijejo v isti ostanek.
+   * Služi izključno razločevanju med kandidati, ki se že ujemajo po imenu in letnici.
+   */
+  emsoSuffix: string | null
   birthCity: string | null
   birthCountry: string | null
   citizenship: string | null
@@ -15,6 +27,11 @@ export interface ParsedPlayer {
   addressPostal: string | null
   addressCity: string | null
   sportNumber: string | null
+  /**
+   * Klub, zapisan v sami vrstici. Registracijski obrazec ga nima (klub je v
+   * glavi, zato null), izvoz iz evidence pa lahko zajema več klubov hkrati.
+   */
+  sourceClub: string | null
   rowIndex: number              // vrstica v Excelu (za sporočila)
 }
 
@@ -29,10 +46,17 @@ export interface ClubHeader {
   email: string | null
 }
 
+/** Katera oblika datoteke je bila prepoznana. */
+export type ImportFormat = 'bzs' | 'evidenca'
+
 export interface ParseResult {
   club: ClubHeader
   players: ParsedPlayer[]
   warnings: string[]
+  /** Prepoznana oblika; vmesnik jo pokaže, da je jasno, po katerih pravilih so nastali statusi. */
+  format?: ImportFormat
+  /** Vsi klubi, najdeni v datoteki. Samo izvoz iz evidence jih lahko ima več. */
+  clubs?: string[]
 }
 
 export type MatchStatus = 'new' | 'update' | 'transfer' | 'error'
@@ -43,6 +67,10 @@ export interface ExistingUser {
   emso: string | null
   club_id: string | null
   date_of_birth: string | null
+  /** Izpeljan stolpec v bazi; edini podatek o rojstvu, ki ga da zamaskiran izvoz. */
+  birth_year: number | null
+  /** Številka licence pri zvezi; v izvozu iz evidence ji ustreza "Športna št.". */
+  license_number: string | null
 }
 
 export interface ImportRow {
