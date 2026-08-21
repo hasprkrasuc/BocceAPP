@@ -31,3 +31,14 @@ export function parseBirthDate(value: string | number | null | undefined): strin
 
   return null
 }
+
+/**
+ * Letnica iz že razčlenjenega datuma (YYYY-MM-DD). Ločena od `parseBirthDate`,
+ * ker jo potrebujeta oba razčlenjevalnika: pri neokrnjenem viru je izpeljana iz
+ * datuma, pri zamaskiranem pa prebrana neposredno iz ostanka ("******1959").
+ */
+export function letnicaIzDatuma(iso: string | null): number | null {
+  if (!iso) return null
+  const m = iso.match(/^(\d{4})/)
+  return m ? Number(m[1]) : null
+}

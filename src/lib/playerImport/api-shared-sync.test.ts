@@ -75,6 +75,18 @@ describe('api/import-players.ts <-> src/lib/playerImport — sinhronizacija podv
     ).toBe(normalizeWhitespace(srcBody))
   })
 
+  test('zoziKandidate: telo v api/import-players.ts se ujema s src/lib/playerImport/matchPlayers.ts', () => {
+    // Marker je podpis parametrov in je namenoma drugačen od obeh obstoječih —
+    // extractBraceBody išče PRVI pojav, zato bi enak podpis primerjal napačen par.
+    const marker = 'kandidati: T[], emsoSuffix: string | null, sportnaSt: string | null,'
+    const apiBody = extractBraceBody(apiSource, marker, 'api/import-players.ts')
+    const srcBody = extractBraceBody(matchPlayersSource, marker, 'src/lib/playerImport/matchPlayers.ts')
+    expect(
+      normalizeWhitespace(apiBody),
+      'Telo zoziKandidate v api/import-players.ts se razlikuje od src/lib/playerImport/matchPlayers.ts — posodobi obe kopiji (glej komentar nad kopijo v api/import-players.ts)',
+    ).toBe(normalizeWhitespace(srcBody))
+  })
+
   test('api/import-players.ts ne uvaža vrednosti iz src/ (dovoljen je samo `import type`)', () => {
     const valueImportsFromSrc = apiSource
       .split('\n')

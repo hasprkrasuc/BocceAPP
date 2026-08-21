@@ -1,5 +1,5 @@
 import type { ClubHeader, ParsedPlayer, ParseResult } from './types'
-import { parseBirthDate } from './parseDate'
+import { parseBirthDate, letnicaIzDatuma } from './parseDate'
 import { normalizeEmso } from './emso'
 
 // Prebere obrazec "Evidenca in registracija igralcev po klubih" (matrika vrstic -> ParseResult).
@@ -198,6 +198,10 @@ export function parseRegistrationRows(rows: unknown[][]): ParseResult {
       gender,
       birthDate,
       emso,
+      // Registracijski obrazec da poln datum in neokrnjen EMŠO, zato je letnica
+      // le izpeljanka, ostanka EMŠO pa ni — polji obstajata zaradi izvoza iz evidence.
+      birthYear: letnicaIzDatuma(birthDate),
+      emsoSuffix: null,
       birthCity: toNullable(cellText(row, cols.birthCity)),
       birthCountry: toNullable(cellText(row, cols.drzava)),
       citizenship: toNullable(cellText(row, cols.drzavljanstvo)),
@@ -206,6 +210,7 @@ export function parseRegistrationRows(rows: unknown[][]): ParseResult {
       addressPostal: toNullable(cellText(row, cols.postna)),
       addressCity: toNullable(cellText(row, cols.addressCity)),
       sportNumber: toNullable(cellText(row, cols.sportnaSt)),
+      sourceClub: null,   // klub je v glavi obrazca, ne v vrstici
       rowIndex: i,
     }
 

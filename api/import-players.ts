@@ -14,6 +14,22 @@ const normalizeName = (s: string | null): string =>
   (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/š/g, 's').replace(/ž/g, 'z').replace(/č/g, 'c').replace(/\s+/g, ' ').trim()
 
+// Podvojeno iz src/lib/playerImport/matchPlayers.ts — api/ ne sme uvažati iz src/ (Vercel zapakira le api/). Sinhronizacijo varuje test api-shared-sync.test.ts.
+function zoziKandidate<T extends { emso: string | null; license_number: string | null }>(
+  kandidati: T[], emsoSuffix: string | null, sportnaSt: string | null,
+): T[] {
+  let zozeni = kandidati
+  if (sportnaSt) {
+    const poStevilki = zozeni.filter(k => (k.license_number || '').trim() === sportnaSt.trim())
+    if (poStevilki.length > 0) zozeni = poStevilki
+  }
+  if (emsoSuffix) {
+    const poOstanku = zozeni.filter(k => (k.emso || '').endsWith(emsoSuffix))
+    if (poOstanku.length > 0) zozeni = poOstanku
+  }
+  return zozeni
+}
+
 const URL = process.env.SUPABASE_URL as string
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY as string
 
@@ -127,6 +143,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // sicer bi vsak uvoz ustvaril nov račun za istega igralca.
           const match = await matchByNameAndBirth(admin, p.fullName, p.birthDate)
           if (match) { userId = match.id; prevClubId = match.club_id }
+        } else if (p.birthYear != null) {
+          // Zamaskiran izvoz iz evidence: poln datum in EMŠO sta zakrita, ostaneta
+          // ime in letnica. Ujemanje mora biti enako kot v predogledu.
+          const match = await matchByNameAndBirthYear(admin, p.fullName, p.birthYear, p.emsoSuffix ?? null, p.sportNumber ?? null)
+          // Namenoma NE ustvarimo novega računa: zapis brez EMŠO in brez datuma
+          // rojstva naslednji uvoz ne bi našel in bi ga vsakič znova podvojil.
+          if (!match) throw new Error('Igralca ni v bazi — iz zamaskiranega izvoza ga ne ustvarim (dodaj ga z registracijskim obrazcem ali ročno)')
+          userId = match.id
+          prevClubId = match.club_id
         } else {
           throw new Error('Brez EMŠO in datuma rojstva — ne morem varno ujeti (preskočeno, da ne podvojim)')
         }
@@ -211,4 +236,37 @@ async function matchByNameAndBirth(
   }
   if (hits.length === 0) return null
   return { id: hits[0].id as string, club_id: (hits[0].club_id as string | null) ?? null }
+}
+
+/**
+ * Ujemanje iz zamaskiranega izvoza: kandidate zožimo po letnici rojstva, ime
+ * primerjamo normalizirano v JS, nato razločimo s športno številko in ostankom
+ * EMŠO. `birth_year` je v bazi izpeljan stolpec, zato deluje za oba zapisa
+ * datuma (ISO in pikčasti BZS).
+ */
+async function matchByNameAndBirthYear(
+  admin: AdminClient,
+  fullName: string,
+  birthYear: number,
+  emsoSuffix: string | null,
+  sportnaSt: string | null,
+): Promise<{ id: string; club_id: string | null } | null> {
+  const { data, error } = await admin
+    .from('users').select('id, full_name, club_id, emso, license_number').eq('birth_year', birthYear)
+  if (error) throw new Error(`Iskanje po imenu in letnici rojstva: ${error.message}`)
+  const target = normalizeName(fullName)
+  const kandidati = (data ?? [])
+    .filter(u => normalizeName(u.full_name as string | null) === target)
+    .map(u => ({
+      id: u.id as string,
+      club_id: (u.club_id as string | null) ?? null,
+      emso: (u.emso as string | null) ?? null,
+      license_number: (u.license_number as string | null) ?? null,
+    }))
+  const zozeni = zoziKandidate(kandidati, emsoSuffix, sportnaSt)
+  if (zozeni.length > 1) {
+    throw new Error(`Najdenih več igralcev "${fullName}" z letnico ${birthYear} — brez športne številke ali neokrnjenega EMŠO jih ne morem razločiti`)
+  }
+  if (zozeni.length === 0) return null
+  return { id: zozeni[0].id, club_id: zozeni[0].club_id }
 }
