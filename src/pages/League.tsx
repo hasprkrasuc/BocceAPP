@@ -495,7 +495,9 @@ export function LeagueDetail() {
               {STATUS_LABELS[season.status]}
             </span>
             <h1 className="text-2xl font-bold text-gray-800 mt-1">{season.name}</h1>
-            <p className="text-gray-500 text-sm">Sezona {season.year} · {teams.length} ekip · {season.rounds_count} kol</p>
+            {/* Oznaka sezone iz imena ("2026/27"), ne stolpec `year`: ta je pri
+                moških ligah končno leto sezone in bi tu pisalo "Sezona 2027". */}
+            <p className="text-gray-500 text-sm">Sezona {seasonLabel(season)} · {teams.length} ekip · {season.rounds_count} kol</p>
           </div>
           {myTeam && (
             <div className="bg-bocce-green/5 border border-bocce-green/20 rounded-lg px-4 py-2 text-right">

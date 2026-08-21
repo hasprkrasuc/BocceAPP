@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { opozoriloOLetnici } from '../../engines/seasonYear'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
@@ -1143,6 +1144,13 @@ export default function LeagueAdmin() {
               <label className="block text-xs text-gray-600 mb-1">Leto *</label>
               <input required type="number" value={form.year} onChange={set('year')}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none" />
+              {/* Ne blokiramo — izjeme obstajajo in admin ima zadnjo besedo. Napačna
+                  letnica pa pomeni, da aplikacija nove sezone ne loči od prejšnje. */}
+              {opozoriloOLetnici(form.name, form.category, Number(form.year)) && (
+                <p className="text-xs text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-2 py-1.5 mt-1">
+                  ⚠ {opozoriloOLetnici(form.name, form.category, Number(form.year))}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs text-gray-600 mb-1">Rang *</label>
