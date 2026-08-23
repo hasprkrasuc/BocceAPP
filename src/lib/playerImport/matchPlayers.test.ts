@@ -6,7 +6,7 @@ const mk = (o: Partial<ParsedPlayer>): ParsedPlayer => ({
   firstName: 'X', lastName: 'Y', fullName: 'X Y', gender: 'M', birthDate: '1990-01-01',
   emso: null, birthYear: 1990, emsoSuffix: null, birthCity: null, birthCountry: null, citizenship: null,
   addressStreet: null, addressHouse: null, addressPostal: null, addressCity: null,
-  sportNumber: null, sourceClub: null, rowIndex: 0, ...o,
+  sportNumber: null, sourceClub: null, sourceCompetition: null, rowIndex: 0, ...o,
 })
 
 const eu = (o: Partial<ExistingUser> & { id: string }): ExistingUser => ({

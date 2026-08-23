@@ -36,6 +36,12 @@ export interface ParsedPlayer {
    * glavi, zato null), izvoz iz evidence pa lahko zajema več klubov hkrati.
    */
   sourceClub: string | null
+  /**
+   * Tekmovanje, zapisano v vrstici (npr. "Super Liga"). Pove, ali je datoteka
+   * seznam VSEH registriranih članov kluba ali le prijavljenih v eno tekmovanje —
+   * od tega je odvisno, ali odsotnost iz datoteke sploh kaj pomeni.
+   */
+  sourceCompetition: string | null
   rowIndex: number              // vrstica v Excelu (za sporočila)
 }
 
@@ -61,6 +67,12 @@ export interface ParseResult {
   format?: ImportFormat
   /** Vsi klubi, najdeni v datoteki. Samo izvoz iz evidence jih lahko ima več. */
   clubs?: string[]
+  /**
+   * Vsa tekmovanja, najdena v datoteki. Prazno pri registracijskem obrazcu, ki
+   * tega podatka nima. Vmesnik ga pokaže pri odjavi članov: če datoteka pokriva
+   * eno samo tekmovanje, odsotnost iz nje NE pomeni, da član ni več registriran.
+   */
+  competitions?: string[]
 }
 
 export type MatchStatus = 'new' | 'update' | 'transfer' | 'error'
@@ -106,5 +118,23 @@ export interface ImportReport {
   updated: number
   transferred: number
   addedToTeam: number
+  skipped: { player: string; reason: string }[]
+}
+
+/**
+ * Odjava članov iz kluba (POST /api/release-club-members).
+ * Namenoma ločena od uvoza: odjava se nikoli ne zgodi kot stranski učinek
+ * uvoza, ampak z lastno, izrecno potrditvijo.
+ */
+export interface ReleaseRequest {
+  /** Klub, iz katerega odjavljamo. Strežnik odjavi le tiste, ki so res v njem. */
+  clubId: string
+  playerIds: string[]
+}
+
+export interface ReleaseReport {
+  released: number
+  /** Imena odjavljenih — edini zapis o dejanju, zgodovine članstva baza ne vodi. */
+  names: string[]
   skipped: { player: string; reason: string }[]
 }
