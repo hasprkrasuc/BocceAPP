@@ -6,12 +6,12 @@ const mk = (o: Partial<ParsedPlayer>): ParsedPlayer => ({
   firstName: 'X', lastName: 'Y', fullName: 'X Y', gender: 'M', birthDate: '1990-01-01',
   emso: null, birthYear: 1990, emsoSuffix: null, birthCity: null, birthCountry: null, citizenship: null,
   addressStreet: null, addressHouse: null, addressPostal: null, addressCity: null,
-  sportNumber: null, sourceClub: null, sourceCompetition: null, rowIndex: 0, ...o,
+  sportNumber: null, email: null, sourceClub: null, sourceCompetition: null, rowIndex: 0, ...o,
 })
 
 const eu = (o: Partial<ExistingUser> & { id: string }): ExistingUser => ({
   full_name: null, emso: null, club_id: null, date_of_birth: null,
-  birth_year: null, license_number: null, ...o,
+  birth_year: null, license_number: null, email: null, ...o,
 })
 
 const CLUB = 'club-primer'
@@ -192,5 +192,80 @@ describe('computeStatuses', () => {
     const rows = computeStatuses([mk({ emso: '0101990500011' })], existing, CLUB)
     expect(rows[0].status).toBe('update')
     expect(rows[0].existingUserId).toBe('u12')
+  })
+})
+
+// ─── veriga ključev: e-pošta → EMŠO → ime+datum → ime+letnica ───
+
+describe('computeStatuses — veriga ključev', () => {
+  test('e-naslov iz izvoza ujame igralca, tudi če se EMŠO razlikuje', () => {
+    // Ravno primer iz prakse: v bazi je EMŠO shranjen kot Excelov prikaz števila.
+    const existing: ExistingUser[] = [eu({
+      id: 'u40', full_name: 'Zoran Rednak', email: 'zoran.rednak.7fcf@balinar.app',
+      emso: '2.50798E+12', club_id: CLUB,
+    })]
+    const rows = computeStatuses(
+      [mk({ fullName: 'Zoran Rednak', email: 'ZORAN.REDNAK.7FCF@balinar.app', emso: '2507980500599', birthDate: '1980-07-25' })],
+      existing, CLUB,
+    )
+    expect(rows[0].status).toBe('update')
+    expect(rows[0].existingUserId).toBe('u40')
+  })
+
+  test('EMŠO brez zadetka ne konča iskanja — nadaljuje po imenu in datumu', () => {
+    // Prej je prisoten EMŠO pomenil konec iskanja in igralec je izpadel kot nov.
+    const existing: ExistingUser[] = [eu({
+      id: 'u41', full_name: 'Aleš Skale', date_of_birth: '1975-02-13', club_id: CLUB,
+    })]
+    const rows = computeStatuses(
+      [mk({ fullName: 'Aleš Skale', emso: '1302975500012', birthDate: '1975-02-13' })],
+      existing, CLUB,
+    )
+    expect(rows[0].status).toBe('update')
+    expect(rows[0].existingUserId).toBe('u41')
+  })
+
+  test('pokvarjen EMŠO v bazi ne prepreči ujemanja po imenu', () => {
+    const existing: ExistingUser[] = [eu({
+      id: 'u42', full_name: 'Ekrem Đogić', date_of_birth: '1962-01-17', emso: '1.70196E+12', club_id: CLUB,
+    })]
+    const rows = computeStatuses(
+      [mk({ fullName: 'Ekrem Đogić', emso: '1701962501143', birthDate: '1962-01-17' })],
+      existing, CLUB,
+    )
+    expect(rows[0].status).toBe('update')
+  })
+
+  test('veljaven, a DRUGAČEN EMŠO ob ujemanju po imenu → napaka (morda druga oseba)', () => {
+    const existing: ExistingUser[] = [eu({
+      id: 'u43', full_name: 'Janez Novak', date_of_birth: '1980-01-01', emso: '0101980500019', club_id: CLUB,
+    })]
+    const rows = computeStatuses(
+      [mk({ fullName: 'Janez Novak', emso: '0101980500027', birthDate: '1980-01-01' })],
+      existing, CLUB,
+    )
+    expect(rows[0].status).toBe('error')
+    expect(rows[0].error).toMatch(/drugačen EMŠO/i)
+  })
+
+  test('drugačen EMŠO ob ujemanju po E-POŠTI ne blokira (istovetnost je dokazana)', () => {
+    const existing: ExistingUser[] = [eu({
+      id: 'u44', full_name: 'Janez Novak', email: 'janez@balinar.app', emso: '0101980500019', club_id: CLUB,
+    })]
+    const rows = computeStatuses(
+      [mk({ fullName: 'Janez Novak', email: 'janez@balinar.app', emso: '0101980500027', birthDate: '1980-01-01' })],
+      existing, CLUB,
+    )
+    expect(rows[0].status).toBe('update')
+  })
+
+  test('e-naslov, ki ga v bazi ni, ne prepreči ujemanja po EMŠO', () => {
+    const existing: ExistingUser[] = [eu({ id: 'u45', full_name: 'X Y', emso: '0101990500011', club_id: CLUB })]
+    const rows = computeStatuses(
+      [mk({ email: 'nekdo.drug@balinar.app', emso: '0101990500011' })],
+      existing, CLUB,
+    )
+    expect(rows[0].status).toBe('update')
+    expect(rows[0].existingUserId).toBe('u45')
   })
 })

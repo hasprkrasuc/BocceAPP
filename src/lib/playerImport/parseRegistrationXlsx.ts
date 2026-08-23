@@ -210,6 +210,7 @@ export function parseRegistrationRows(rows: unknown[][]): ParseResult {
       addressPostal: toNullable(cellText(row, cols.postna)),
       addressCity: toNullable(cellText(row, cols.addressCity)),
       sportNumber: toNullable(cellText(row, cols.sportnaSt)),
+      email: null,             // obrazec e-naslovov iz aplikacije ne vsebuje
       sourceClub: null,        // klub je v glavi obrazca, ne v vrstici
       sourceCompetition: null, // obrazec je seznam vseh registriranih, ne po tekmovanjih
       rowIndex: i,

@@ -32,6 +32,12 @@ export interface ParsedPlayer {
    */
   sportNumber: string | null
   /**
+   * E-naslov iz aplikacije, kadar ga izvoz nosi s sabo (stolpec "e-mail
+   * balinar.app"). Najmočnejši možni ključ: naslov je nastal pri nas in je
+   * enoličen, zato ujemanje po njem ni ugibanje, ampak istovetnost.
+   */
+  email: string | null
+  /**
    * Klub, zapisan v sami vrstici. Registracijski obrazec ga nima (klub je v
    * glavi, zato null), izvoz iz evidence pa lahko zajema več klubov hkrati.
    */
@@ -87,6 +93,8 @@ export interface ExistingUser {
   birth_year: number | null
   /** Številka licence pri zvezi; v izvozu iz evidence ji ustreza "Športna št.". */
   license_number: string | null
+  /** Prijavni e-naslov; izvoz iz evidence ga lahko nosi s sabo. */
+  email: string | null
 }
 
 export interface ImportRow {

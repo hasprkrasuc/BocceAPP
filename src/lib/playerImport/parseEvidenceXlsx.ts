@@ -118,6 +118,7 @@ interface Stolpci {
   emso: number
   sportnaSt: number
   tekmovanje: number
+  eposta: number
 }
 
 /**
@@ -149,6 +150,8 @@ function najdiStolpce(headerRow: unknown[]): Stolpci {
     emso: najdiStolpec(lower, 'emšo', 'emso'),
     sportnaSt: najdiStolpec(lower, 'športna št.', 'športna', 'sportna'),
     tekmovanje: najdiStolpec(lower, 'tekmovanje'),
+    // Novejši izvozi nosijo s sabo e-naslov iz aplikacije — enoličen ključ.
+    eposta: najdiStolpec(lower, 'e-mail balinar.app', 'e-mail', 'email', 'e-pošta'),
   }
 }
 
@@ -254,6 +257,7 @@ export function parseEvidenceRows(rows: unknown[][]): ParseResult {
       addressPostal: null,
       addressCity: null,
       sportNumber: toNullable(cellText(row, cols.sportnaSt)),
+      email: toNullable(cellText(row, cols.eposta).toLowerCase()),
       sourceClub,
       sourceCompetition,
       rowIndex: i,

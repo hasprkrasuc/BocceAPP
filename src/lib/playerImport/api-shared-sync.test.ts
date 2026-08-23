@@ -87,6 +87,16 @@ describe('api/import-players.ts <-> src/lib/playerImport — sinhronizacija podv
     ).toBe(normalizeWhitespace(srcBody))
   })
 
+  test('emsoNasprotuje: telo v api/import-players.ts se ujema s src/lib/playerImport/matchPlayers.ts', () => {
+    const marker = '(obstojeci: string | null, uvozeni: string | null): boolean'
+    const apiBody = extractBraceBody(apiSource, marker, 'api/import-players.ts')
+    const srcBody = extractBraceBody(matchPlayersSource, marker, 'src/lib/playerImport/matchPlayers.ts')
+    expect(
+      normalizeWhitespace(apiBody),
+      'Telo emsoNasprotuje v api/import-players.ts se razlikuje od src/lib/playerImport/matchPlayers.ts — posodobi obe kopiji (glej komentar nad kopijo v api/import-players.ts)',
+    ).toBe(normalizeWhitespace(srcBody))
+  })
+
   test('nobena datoteka v api/ ne uvaža vrednosti iz src/ (dovoljen je samo `import type`)', () => {
     // Velja za CELOTEN imenik api/, ne le za import-players.ts: vsaka nova
     // strežniška datoteka lahko na enak način podre produkcijo.

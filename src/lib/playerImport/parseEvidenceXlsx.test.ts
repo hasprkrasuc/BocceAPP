@@ -121,6 +121,45 @@ describe('parseEvidenceRows', () => {
   })
 })
 
+describe('parseEvidenceRows — novejši izvoz z e-naslovom', () => {
+  // Izvoz iz evidence odslej lahko nosi s sabo e-naslov iz aplikacije in vrstice,
+  // ki niso zamaskirane. Oboje se mora prebrati.
+  const GLAVA2 = [...GLAVA, 'e-mail balinar.app']
+  const novi: unknown[][] = [
+    GLAVA2,
+    ['TESTNI', 'PETER', 'ZZ TEST KLUB', 'B. društvo ZZ Test', 'OBZ Test', '1. Liga', 'm',
+     '1980-07-25', '2507980500599', '', 'ZZ.Testni.7fcf@balinar.app'],
+    ['ZAKRITI', 'ANA', 'ZZ TEST KLUB', 'B. društvo ZZ Test', 'OBZ Test', '1. Liga', 'ž',
+     '******1957', '*********0429', '', ''],
+  ]
+  const r = parseEvidenceRows(novi)
+
+  test('prebere e-naslov in ga zapiše z malimi črkami', () => {
+    expect(r.players[0].email).toBe('zz.testni.7fcf@balinar.app')
+  })
+
+  test('prazen e-naslov je null, ne prazen niz', () => {
+    expect(r.players[1].email).toBeNull()
+  })
+
+  test('mali "m" in "ž" se prepoznata kot spol', () => {
+    expect(r.players[0].gender).toBe('M')
+    expect(r.players[1].gender).toBe('Ž')
+  })
+
+  test('neokrnjena vrstica da poln datum in EMŠO, zakrita pa letnico in ostanek', () => {
+    expect(r.players[0].birthDate).toBe('1980-07-25')
+    expect(r.players[0].emso).toBe('2507980500599')
+    expect(r.players[1].birthDate).toBeNull()
+    expect(r.players[1].birthYear).toBe(1957)
+    expect(r.players[1].emsoSuffix).toBe('0429')
+  })
+
+  test('tekmovanje se zabeleži za presojo o odjavi članov', () => {
+    expect(r.competitions).toEqual(['1. Liga'])
+  })
+})
+
 describe('parseImportRows — razvrščanje po obliki', () => {
   test('izvoz iz evidence gre v svoj razčlenjevalnik', () => {
     const r = parseImportRows(evidenca)
