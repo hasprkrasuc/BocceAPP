@@ -107,7 +107,7 @@ async function fetchAllExistingUsers(): Promise<ExistingUser[]> {
       // emso je občutljiv stolpec — na public.users ga authenticated ne bere.
       // Uvoz teče pod adminom, ki mu users_sensitive vrne vse vrstice.
       .from('users_sensitive')
-      .select('id, full_name, emso, club_id, date_of_birth, birth_year, license_number')
+      .select('id, full_name, emso, club_id, date_of_birth, birth_year, license_number, email')
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
     const page = (data ?? []) as ExistingUser[]
@@ -814,6 +814,7 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
       addressPostal: null,
       addressCity: null,
       sportNumber: null,
+      email: null,
       sourceClub: null,
       sourceCompetition: null,
       rowIndex: 0,
