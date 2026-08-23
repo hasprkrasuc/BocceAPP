@@ -122,19 +122,27 @@ export interface ImportReport {
 }
 
 /**
- * Odjava članov iz kluba (POST /api/release-club-members).
- * Namenoma ločena od uvoza: odjava se nikoli ne zgodi kot stranski učinek
- * uvoza, ampak z lastno, izrecno potrditvijo.
+ * Sprememba klubskega članstva (POST /api/club-membership).
+ *
+ * Ena sama pot za oboje: odjavo članov ob uvozu (toClubId: null) in
+ * nastavitev kluba na profilu igralca. Odjava se nikoli ne zgodi kot
+ * stranski učinek uvoza — vedno je izrecno dejanje.
  */
-export interface ReleaseRequest {
-  /** Klub, iz katerega odjavljamo. Strežnik odjavi le tiste, ki so res v njem. */
-  clubId: string
+export interface ClubMembershipRequest {
   playerIds: string[]
+  /** Nov klub; `null` pomeni brez kluba (odjava). */
+  toClubId: string | null
+  /**
+   * Klub, v katerem naj bi igralci trenutno bili (`null` = brez kluba).
+   * Strežnik ravna SAMO s tistimi, ki se ujemajo. To je hkrati straža pred
+   * klicem mimo vmesnika in pred zastarelim seznamom na zaslonu.
+   */
+  expectFromClubId: string | null
 }
 
-export interface ReleaseReport {
-  released: number
-  /** Imena odjavljenih — edini zapis o dejanju, zgodovine članstva baza ne vodi. */
+export interface ClubMembershipReport {
+  changed: number
+  /** Imena spremenjenih — zgodovine članstva baza ne vodi, to je edini zapis. */
   names: string[]
   skipped: { player: string; reason: string }[]
 }
