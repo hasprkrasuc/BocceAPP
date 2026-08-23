@@ -117,6 +117,7 @@ interface Stolpci {
   datum: number
   emso: number
   sportnaSt: number
+  tekmovanje: number
 }
 
 /**
@@ -147,6 +148,7 @@ function najdiStolpce(headerRow: unknown[]): Stolpci {
     datum: najdiStolpec(lower, 'datum rojstva', 'datum'),
     emso: najdiStolpec(lower, 'emšo', 'emso'),
     sportnaSt: najdiStolpec(lower, 'športna št.', 'športna', 'sportna'),
+    tekmovanje: najdiStolpec(lower, 'tekmovanje'),
   }
 }
 
@@ -203,6 +205,7 @@ export function parseEvidenceRows(rows: unknown[][]): ParseResult {
   const players: ParsedPlayer[] = []
   const warnings: string[] = []
   const klubi: string[] = []
+  const tekmovanja: string[] = []
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i]
@@ -231,6 +234,9 @@ export function parseEvidenceRows(rows: unknown[][]): ParseResult {
     const sourceClub = toNullable(cellText(row, cols.klub)) ?? toNullable(cellText(row, cols.drustvo))
     if (sourceClub && !klubi.includes(sourceClub)) klubi.push(sourceClub)
 
+    const sourceCompetition = toNullable(cellText(row, cols.tekmovanje))
+    if (sourceCompetition && !tekmovanja.includes(sourceCompetition)) tekmovanja.push(sourceCompetition)
+
     players.push({
       firstName,
       lastName,
@@ -249,6 +255,7 @@ export function parseEvidenceRows(rows: unknown[][]): ParseResult {
       addressCity: null,
       sportNumber: toNullable(cellText(row, cols.sportnaSt)),
       sourceClub,
+      sourceCompetition,
       rowIndex: i,
     })
   }
@@ -281,5 +288,5 @@ export function parseEvidenceRows(rows: unknown[][]): ParseResult {
     email: null,
   }
 
-  return { club, players, warnings, format: 'evidenca', clubs: klubi }
+  return { club, players, warnings, format: 'evidenca', clubs: klubi, competitions: tekmovanja }
 }

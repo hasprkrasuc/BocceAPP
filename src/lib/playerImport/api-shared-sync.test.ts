@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -87,13 +87,22 @@ describe('api/import-players.ts <-> src/lib/playerImport — sinhronizacija podv
     ).toBe(normalizeWhitespace(srcBody))
   })
 
-  test('api/import-players.ts ne uvaža vrednosti iz src/ (dovoljen je samo `import type`)', () => {
-    const valueImportsFromSrc = apiSource
-      .split('\n')
-      .filter(line => /from ['"]\.\.\/src/.test(line) && !/^\s*import type/.test(line))
+  test('nobena datoteka v api/ ne uvaža vrednosti iz src/ (dovoljen je samo `import type`)', () => {
+    // Velja za CELOTEN imenik api/, ne le za import-players.ts: vsaka nova
+    // strežniška datoteka lahko na enak način podre produkcijo.
+    const apiDir = path.resolve(here, '../../../api')
+    const kršitve: string[] = []
+    for (const ime of readdirSync(apiDir).filter((f: string) => f.endsWith('.ts'))) {
+      const vsebina = readFileSync(path.join(apiDir, ime), 'utf8')
+      for (const line of vsebina.split('\n')) {
+        if (/from ['"]\.\.\/src/.test(line) && !/^\s*import type/.test(line)) {
+          kršitve.push(`${ime}: ${line.trim()}`)
+        }
+      }
+    }
     expect(
-      valueImportsFromSrc,
-      `Najden value-import iz src/ v api/import-players.ts (Vercel zapakira le api/, to bo padlo z ERR_MODULE_NOT_FOUND): ${valueImportsFromSrc.join('; ')}`,
+      kršitve,
+      `Najden value-import iz src/ v api/ (Vercel zapakira le api/, to bo padlo z ERR_MODULE_NOT_FOUND): ${kršitve.join('; ')}`,
     ).toEqual([])
   })
 })

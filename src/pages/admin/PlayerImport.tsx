@@ -16,7 +16,8 @@ import { parseImportFile } from '../../lib/playerImport/parseImportFile'
 import { computeStatuses, normalizeName } from '../../lib/playerImport/matchPlayers'
 import { parseBirthDate, letnicaIzDatuma } from '../../lib/playerImport/parseDate'
 import { isValidEmso, normalizeEmso } from '../../lib/playerImport/emso'
-import type { ExistingUser, ImportReport, ImportRequest, ImportRow, ParseResult, ParsedPlayer, Gender } from '../../lib/playerImport/types'
+import { kandidatiZaOdjavo, opozoriloOObsegu, type ClanKluba } from '../../lib/playerImport/odjavaClanov'
+import type { ExistingUser, ImportReport, ImportRequest, ImportRow, ParseResult, ParsedPlayer, Gender, ReleaseRequest, ReleaseReport } from '../../lib/playerImport/types'
 
 interface SeasonOption { id: string; name: string }
 interface TeamOption { id: string; club_name: string }
@@ -83,6 +84,18 @@ async function postImport(body: ImportRequest): Promise<ImportReport> {
   return json as ImportReport
 }
 
+async function postRelease(body: ReleaseRequest): Promise<ReleaseReport> {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const res = await fetch('/api/release-club-members', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session?.access_token}` },
+    body: JSON.stringify(body),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Odjava ni uspela')
+  return json as ReleaseReport
+}
+
 // users ima več tisoč vrstic — privzeta Supabase omejitev je 1000 na klic.
 // Brez paginacije bi ujemanje tiho zgrešilo igralce in bi vsi izpadli kot "novi".
 async function fetchAllExistingUsers(): Promise<ExistingUser[]> {
@@ -131,6 +144,14 @@ export default function PlayerImport() {
   // cilj bi pomenilo množičen napačen prestop — tega v bazi ni mogoče
   // razveljaviti, ker se prejšnji klub nikamor ne shrani.
   const [klubIzDatoteke, setKlubIzDatoteke] = useState('')
+
+  // Odjava članov, ki jih v uvoženi datoteki ni — ločen korak po uvozu.
+  const [clani, setClani] = useState<ClanKluba[]>([])
+  const [vEkipiSezone, setVEkipiSezone] = useState<Set<string>>(new Set())
+  const [odjavaIzbrani, setOdjavaIzbrani] = useState<Set<string>>(new Set())
+  const [odjavaBusy, setOdjavaBusy] = useState(false)
+  const [odjavaReport, setOdjavaReport] = useState<ReleaseReport | null>(null)
+  const [odjavaNapaka, setOdjavaNapaka] = useState<string | null>(null)
 
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<ImportReport | null>(null)
@@ -185,6 +206,59 @@ export default function PlayerImport() {
       return prev
     })
   }, [imeKlubaIzDatoteke])
+
+  // Po uspešnem uvozu naložimo člane izbranega kluba in igralce, ki v tej
+  // sezoni že imajo ekipo. Šele iz obojega se da presoditi, koga sploh ponuditi
+  // za odjavo. Brez izbranega kluba ni koga odjaviti (klub je bil pravkar ustvarjen).
+  useEffect(() => {
+    if (!report || !clubId || !seasonId) { setClani([]); setVEkipiSezone(new Set()); return }
+    let odpovedano = false
+    ;(async () => {
+      const { data: clanData } = await supabase
+        .from('users').select('id, full_name, birth_year').eq('club_id', clubId).order('full_name')
+      const { data: teamData } = await supabase.from('league_teams').select('id').eq('season_id', seasonId)
+      const teamIds = (teamData ?? []).map(t => t.id as string)
+      const { data: tpData } = teamIds.length
+        ? await supabase.from('league_team_players').select('player_id').in('league_team_id', teamIds)
+        : { data: [] as { player_id: string }[] }
+      if (odpovedano) return
+      setClani((clanData ?? []) as ClanKluba[])
+      setVEkipiSezone(new Set((tpData ?? []).map(r => r.player_id as string)))
+      setOdjavaIzbrani(new Set())
+      setOdjavaReport(null)
+      setOdjavaNapaka(null)
+    })()
+    return () => { odpovedano = true }
+  }, [report, clubId, seasonId])
+
+  async function odjaviIzbrane() {
+    if (!clubId || odjavaIzbrani.size === 0) return
+    const imena = odjavaKandidati.filter(k => odjavaIzbrani.has(k.id)).map(k => k.full_name || k.id)
+    // Brskalnikovo okence dolgega seznama ne pokaže do konca; raje ga skrajšamo,
+    // da je iz njega vedno razvidno, koliko ljudi je v igri.
+    const NAJVEC_V_OKENCU = 15
+    const izpis = imena.length > NAJVEC_V_OKENCU
+      ? `${imena.slice(0, NAJVEC_V_OKENCU).join(', ')} … in še ${imena.length - NAJVEC_V_OKENCU}`
+      : imena.join(', ')
+    if (!window.confirm(
+      `Odjaviti ${imena.length} ${imena.length === 1 ? 'člana' : 'članov'} iz kluba ${selectedClub?.name ?? ''}?\n\n` +
+      `${izpis}\n\n` +
+      'Klub se jim izbriše iz profila. Zgodovine članstva baza ne vodi, zato tega ni mogoče razveljaviti ' +
+      'z gumbom — klub bi jim bilo treba vpisati znova (npr. z novim uvozom). Rezultati in zapisniki ostanejo nedotaknjeni.'
+    )) return
+    setOdjavaBusy(true); setOdjavaNapaka(null)
+    try {
+      setOdjavaReport(await postRelease({ clubId, playerIds: [...odjavaIzbrani] }))
+      setOdjavaIzbrani(new Set())
+      const { data: clanData } = await supabase
+        .from('users').select('id, full_name, birth_year').eq('club_id', clubId).order('full_name')
+      setClani((clanData ?? []) as ClanKluba[])
+    } catch (e) {
+      setOdjavaNapaka(e instanceof Error ? e.message : String(e))
+    } finally {
+      setOdjavaBusy(false)
+    }
+  }
 
   async function loadSeasons() {
     const { data } = await supabase.from('league_seasons').select('id, name').order('name', { ascending: false })
@@ -241,6 +315,12 @@ export default function PlayerImport() {
   const importableCount = rows.length - counts.error
 
   const selectedClub = clubs.find(c => c.id === clubId) ?? null
+
+  // Kdor je bil v datoteki, ni kandidat za odjavo. Uporabimo predogled: tudi
+  // igralec, ki ga je strežnik preskočil, je bil v datoteki in ga ne ponujamo.
+  const vDatoteki = new Set(rows.map(r => r.existingUserId).filter((id): id is string => !!id))
+  const { kandidati: odjavaKandidati, zadrzani: odjavaZadrzani } = kandidatiZaOdjavo(clani, vDatoteki, vEkipiSezone)
+  const opozoriloObsega = opozoriloOObsegu(parsed?.competitions, parsed?.format)
 
   // Ime kluba za ročni vnos: IZBRAN klub (odloča clubId) → izbrana obstoječa ekipa
   // → natipkana nova ekipa → klub iz prebrane datoteke. Ko je izbrana obstoječa
@@ -545,6 +625,85 @@ export default function PlayerImport() {
         </div>
       )}
 
+      {/* Odjava članov, ki jih v datoteki ni — ločen korak z lastno potrditvijo.
+          Nikoli se ne zgodi kot stranski učinek uvoza. */}
+      {report && clubId && (odjavaKandidati.length > 0 || odjavaZadrzani.length > 0 || odjavaReport) && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 mt-6">
+          <h2 className="font-semibold text-gray-800 mb-1">Člani kluba, ki jih v datoteki ni</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            {selectedClub?.name} · {odjavaKandidati.length} za morebitno odjavo
+            {odjavaZadrzani.length > 0 && ` · ${odjavaZadrzani.length} zadržanih`}
+          </p>
+
+          {opozoriloObsega && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 mb-4 text-xs">
+              ⚠ {opozoriloObsega}
+            </div>
+          )}
+
+          {odjavaReport && (
+            <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg px-3 py-2 mb-4 text-sm">
+              Odjavljenih: {odjavaReport.released}
+              {odjavaReport.names.length > 0 && <> — {odjavaReport.names.join(', ')}</>}
+              {odjavaReport.skipped.length > 0 && (
+                <div className="text-xs text-green-700 mt-1">
+                  Preskočenih: {odjavaReport.skipped.length} (niso člani tega kluba)
+                </div>
+              )}
+            </div>
+          )}
+
+          {odjavaNapaka && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 mb-4 text-sm">
+              {odjavaNapaka}
+            </div>
+          )}
+
+          {odjavaKandidati.length > 0 && (
+            <>
+              <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 mb-4 max-h-80 overflow-y-auto">
+                {odjavaKandidati.map(k => (
+                  <label key={k.id} className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={odjavaIzbrani.has(k.id)}
+                      onChange={e => setOdjavaIzbrani(prev => {
+                        const next = new Set(prev)
+                        if (e.target.checked) next.add(k.id); else next.delete(k.id)
+                        return next
+                      })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-gray-800">{k.full_name ?? '(brez imena)'}</span>
+                    {k.birth_year && <span className="text-xs text-gray-400">r. {k.birth_year}</span>}
+                  </label>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-xs text-gray-400">
+                  Odjava izbriše klub iz profila. Rezultati, zapisniki in uvrstitve ostanejo nedotaknjeni.
+                </p>
+                <button
+                  onClick={odjaviIzbrane}
+                  disabled={odjavaBusy || odjavaIzbrani.size === 0}
+                  className="bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  {odjavaBusy ? 'Odjavljam …' : `Odjavi izbrane (${odjavaIzbrani.size})`}
+                </button>
+              </div>
+            </>
+          )}
+
+          {odjavaZadrzani.length > 0 && (
+            <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600">
+              <span className="font-medium">Zadržani ({odjavaZadrzani.length}):</span>{' '}
+              {odjavaZadrzani.map(z => z.full_name ?? z.id).join(', ')}.
+              V datoteki jih ni, a v tej sezoni že igrajo za neko ekipo, zato jih za odjavo ne ponujam.
+            </div>
+          )}
+        </div>
+      )}
+
       <AddSinglePlayer
         seasonId={seasonId}
         teamId={teamId}
@@ -656,6 +815,7 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
       addressCity: null,
       sportNumber: null,
       sourceClub: null,
+      sourceCompetition: null,
       rowIndex: 0,
     }
 
