@@ -32,6 +32,14 @@ export default function PlayerDetail() {
   const [seasonStats, setSeasonStats] = useState<PlayerSeasonSummary[]>([])
   const [rangLoading, setRangLoading] = useState(true)
 
+  // Klubsko članstvo (samo admin). Doslej ga v aplikaciji ni bilo mogoče
+  // spremeniti nikjer — Administracija → Uporabniki ureja le vlogo, profil pa
+  // samo besedilno polje, ki na članstvo ne vpliva.
+  const [klubi, setKlubi] = useState<{ id: string; name: string }[]>([])
+  const [izbranKlub, setIzbranKlub] = useState<string>('')
+  const [klubBusy, setKlubBusy] = useState(false)
+  const [klubMsg, setKlubMsg] = useState<string | null>(null)
+
   // Skupni rang + statistika aktualnih sezon (iz deljenega izračuna rang lestvice)
   useEffect(() => {
     if (!id) return
@@ -44,6 +52,46 @@ export default function PlayerDetail() {
       .catch(() => { setRankInfo(null); setSeasonStats([]) })
       .finally(() => setRangLoading(false))
   }, [id])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    supabase.from('clubs').select('id, name').order('name').then(({ data }) => setKlubi(data ?? []))
+  }, [isAdmin])
+
+  useEffect(() => { setIzbranKlub(player?.club_id ?? '') }, [player?.club_id])
+
+  async function shraniKlub() {
+    if (!player) return
+    const toClubId = izbranKlub || null
+    const trenutni = player.club_id ?? null
+    if (toClubId === trenutni) return
+    const ime = klubi.find(k => k.id === toClubId)?.name
+    if (!window.confirm(
+      toClubId
+        ? `Vpisati ${player.full_name} v klub ${ime}?`
+        : `Odvzeti klub igralcu ${player.full_name}?\n\nZgodovine članstva baza ne vodi, zato se prejšnji klub izgubi. ` +
+          'Rezultati in zapisniki ostanejo nedotaknjeni.'
+    )) return
+    setKlubBusy(true); setKlubMsg(null)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const res = await fetch('/api/club-membership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session?.access_token}` },
+        body: JSON.stringify({ playerIds: [player.id], toClubId, expectFromClubId: trenutni }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Sprememba ni uspela')
+      if (json.changed === 0) throw new Error(json.skipped?.[0]?.reason ?? 'Sprememba ni bila izvedena')
+      const { data: osvezen } = await supabase.from('users').select(USER_PUBLIC_COLS).eq('id', player.id).single()
+      if (osvezen) setPlayer(osvezen as UserProfile)
+      setKlubMsg(toClubId ? `✓ Vpisan v klub ${ime}` : '✓ Klub odvzet')
+    } catch (e) {
+      setKlubMsg(`❌ ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setKlubBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -230,6 +278,45 @@ export default function PlayerDetail() {
           </dl>
         </div>
       </div>
+
+      {/* Klubsko članstvo — samo admin. Ločeno od vloge: kdor sodi in igra, ima
+          vlogo "sodnik", igranje pa teče prek ekip, ne prek vloge. */}
+      {isAdmin && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-1">Klub</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            {player.club_id
+              ? <>Trenutno član kluba <span className="font-medium text-gray-700">{player.club}</span>.</>
+              : 'Igralec ni vpisan v noben klub, zato se ne pojavi med člani nobenega kluba.'}
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <select
+              value={izbranKlub}
+              onChange={e => setIzbranKlub(e.target.value)}
+              className="flex-1 min-w-[14rem] border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none"
+            >
+              <option value="">— brez kluba —</option>
+              {klubi.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+            </select>
+            <button
+              onClick={shraniKlub}
+              disabled={klubBusy || (izbranKlub || null) === (player.club_id ?? null)}
+              className="bg-bocce-green text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-bocce-green-light transition-colors disabled:opacity-40 shrink-0"
+            >
+              {klubBusy ? '...' : 'Shrani klub'}
+            </button>
+          </div>
+          {klubMsg && (
+            <p className={`text-sm rounded-lg px-3 py-2 mt-3 ${klubMsg.startsWith('❌') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+              {klubMsg}
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-3">
+            Članstvo v klubu in nastop za ekipo sta ločeni stvari — v ligaško ekipo se igralec
+            doda v Administracija → Državne lige → Ekipe.
+          </p>
+        </div>
+      )}
 
       {/* Aktualna sezona + skupni rang */}
       <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6">
