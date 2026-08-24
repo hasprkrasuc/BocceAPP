@@ -42,6 +42,48 @@ export function pricakovanaLetnicaSezone(
 }
 
 /**
+ * Oznaka sezone, kakršno bi po letnici in kategoriji pričakovali ("2026/27").
+ * Null, kadar letnice ni ali ni verjetna.
+ */
+export function predlaganaOznakaSezone(
+  category: string | null | undefined,
+  year: number | null | undefined,
+): string | null {
+  if (year === null || year === undefined || !Number.isInteger(year)) return null
+  if (year < 1900 || year > 2200) return null
+  const zacetek = category === 'men' ? year - 1 : year
+  const konec = String((zacetek + 1) % 100).padStart(2, '0')
+  return `${zacetek}/${konec}`
+}
+
+/**
+ * Opozorilo, kadar ime sezone nima oznake "2026/27".
+ *
+ * Vsaka liga se začne v enem koledarskem letu in konča v naslednjem, zato ime
+ * brez oznake ni okrajšava, ampak manjkajoč podatek. Posledice so vidne:
+ * ligaška pot in meni sezono uvrstita po stolpcu `year` (League.tsx →
+ * seasonLabel), zato se je "1. liga OBZ Gorenjska" z letnico 2027 znašla pod
+ * skupino "Sezona 2027" namesto pri 2026/27. Tudi seasonStartYear pri dvojnih
+ * registracijah bere prav to oznako iz imena.
+ *
+ * opozoriloOLetnici tega primera ne pokrije — kadar oznake ni, namenoma molči,
+ * ker nima česa primerjati.
+ */
+export function opozoriloOOznakiSezone(
+  seasonName: string | null | undefined,
+  category: string | null | undefined,
+  year: number | null | undefined,
+): string | null {
+  const ime = (seasonName ?? '').trim()
+  if (ime === '') return null
+  if (zacetnoLetoIzImena(ime) !== null) return null
+  const predlog = predlaganaOznakaSezone(category, year)
+  return 'Vsaka liga se začne v enem letu in konča v naslednjem, zato naj ime nosi oznako sezone' +
+    (predlog ? ` — npr. »${ime} ${predlog}«` : '') +
+    '. Brez nje se na ligaški poti in v meniju izpiše samo letnica iz stolpca leto.'
+}
+
+/**
  * Opozorilo za obrazec, ali nič, kadar je vnos v redu. Namenoma ne blokira:
  * izjeme obstajajo in admin mora imeti zadnjo besedo.
  */

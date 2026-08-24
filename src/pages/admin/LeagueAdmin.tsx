@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { opozoriloOLetnici } from '../../engines/seasonYear'
+import { opozoriloOLetnici, opozoriloOOznakiSezone } from '../../engines/seasonYear'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
@@ -1189,7 +1189,15 @@ export default function LeagueAdmin() {
               <label className="block text-xs text-gray-600 mb-1">Ime sezone *</label>
               <input required type="text" value={form.name} onChange={set('name')}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
-                placeholder="Super Liga 2025" />
+                placeholder="Super Liga 2026/27" />
+              {/* Namig je prej kazal "Super Liga 2025" in s tem učil napačno obliko.
+                  Ime brez oznake sezone se na ligaški poti in v meniju uvrsti po
+                  stolpcu leto — tako je "1. liga OBZ Gorenjska" pristala pod 2027. */}
+              {opozoriloOOznakiSezone(form.name, form.category, Number(form.year)) && (
+                <p className="text-xs text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-2 py-1.5 mt-1">
+                  ⚠ {opozoriloOOznakiSezone(form.name, form.category, Number(form.year))}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs text-gray-600 mb-1">Leto *</label>
