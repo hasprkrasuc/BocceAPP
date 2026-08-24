@@ -11,6 +11,10 @@
  *   »Brus Team Idrija« ← »BRUSTEAM IDRIJA« (drugačen razmik)
  *   »Šiška Ljubljana« ← »ŠIŠKA«          (prijava ima kraj zraven, klub ne)
  *
+ * Skupne ekipe dveh društev se imenujejo po obeh (»SKALA HRAST« = Skala
+ * Sežana + Hrast Kobjeglava, »SKALA PLISKOVICA« = Skala Sežana + Pliskovica).
+ * Take ekipe kluba nimajo in ga ne smejo dobiti.
+ *
  * Ta motor iz imena PREDLAGA klub. Ničesar ne zapiše in nikoli ne ugiba med
  * dvema enako dobrima kandidatoma — dvoumnost vrne kot seznam, o katerem
  * odloči človek. To je namenoma: napačno pripet klub bi ekipi nadel tuj grb,
@@ -83,6 +87,16 @@ export function besedeImena(s: string | null | undefined): string[] {
 
 const jePodmnozica = (a: string[], b: string[]): boolean => a.every(w => b.includes(w))
 
+/**
+ * Prva pomenska beseda imena — tista, po kateri klub prepoznamo. »Skala Sežana«
+ * da »skala«, »Balinarski Športni Klub Krim Ljubljana« pa »krim«, ne »ljubljana«:
+ * kraj na koncu je pristavek, ne ime.
+ */
+export function vodilnaBeseda(ime: string | null | undefined): string {
+  const b = normalizirajImeKluba(ime).split(' ').filter(Boolean)
+  return b.find(w => !SPLOSNE_BESEDE.has(w)) ?? ''
+}
+
 const brezUjemanja: UjemanjeKluba = { klub: null, zanesljivost: null, kandidati: [] }
 
 const izid = (zadetki: KlubZaUjemanje[], zanesljivost: Zanesljivost): UjemanjeKluba =>
@@ -117,9 +131,21 @@ export function najdiKlub(imeEkipe: string | null | undefined, klubi: KlubZaUjem
   // Najšibkejša stopnja. Ime, ki ga sestavljajo same splošne besede (»BK«,
   // »Balinarski klub«), tu ne sme loviti — ujelo bi se s pol seznama.
   if (besede.every(w => SPLOSNE_BESEDE.has(w))) return brezUjemanja
+  // Vodilne besede vseh klubov: po njih prepoznamo, da preostanek imena kaže na
+  // DRUG klub — takrat gre za skupno ekipo dveh društev in ne za enega od njiju.
+  const vodilne = new Map<string, string>()
+  for (const k of klubi) {
+    const v = vodilnaBeseda(k.name)
+    if (v) vodilne.set(v, k.id)
+  }
   const delni = klubi.filter(k => {
     const kb = besedeImena(k.name)
-    return jePodmnozica(besede, kb) || jePodmnozica(kb, besede)
+    if (jePodmnozica(besede, kb)) return true          // klub ima ime daljše od prijave
+    if (!jePodmnozica(kb, besede)) return false
+    // Prijava ima besede čez ime kluba. Če katera od njih vodi drug klub, je to
+    // skupna ekipa: »SKALA PLISKOVICA« ni Pliskovica, ampak Pliskovica + Skala.
+    const odvec = besede.filter(w => !kb.includes(w))
+    return !odvec.some(w => { const drug = vodilne.get(w); return drug !== undefined && drug !== k.id })
   })
   if (delni.length) return izid(delni, 'delno')
 

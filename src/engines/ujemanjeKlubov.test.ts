@@ -96,6 +96,23 @@ describe('najdiKlub', () => {
     expect(u.kandidati).toEqual([])
   })
 
+  test('skupna ekipa dveh društev se ne pripiše nobenemu od njiju', () => {
+    // »SKALA PLISKOVICA« je skupna ekipa Skale Sežane in Pliskovice. Beseda
+    // »skala« vodi drug klub, zato prijava ni Pliskovica sama.
+    const dve = [k('p', 'Pliskovica ZZ'), k('s', 'Skala ZZ Sežana')]
+    expect(najdiKlub('Pliskovica ZZ', dve).klub?.id).toBe('p')
+    const u = najdiKlub('Skala Pliskovica ZZ', dve)
+    expect(u.klub).toBeNull()
+    expect(u.zanesljivost).toBeNull()
+  })
+
+  test('kraj v imenu drugega kluba ne prepreči ujemanja', () => {
+    // »Šiška Ljubljana« se mora ujeti s »Šiška ZZ«, čeprav »ljubljana« nastopa
+    // v imenu drugega kluba — tam je pristavek za krajem, ne vodilna beseda.
+    const zLjubljano = [k('si', 'Šiška ZZ'), k('kr', 'Balinarski klub Krim ZZ Ljubljana')]
+    expect(najdiKlub('Šiška ZZ Ljubljana', zLjubljano).klub?.id).toBe('si')
+  })
+
   test('neznano ime nima predloga', () => {
     const u = najdiKlub('ZZ Nekaj Desetega', KLUBI)
     expect(u.klub).toBeNull()
