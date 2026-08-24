@@ -15,6 +15,7 @@ import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplin
 import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../lib/matchDate'
 import { useAuth } from '../../contexts/AuthContext'
 import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
+import { krsitveSkupnihIgrisc } from '../../engines/zrebLiga'
 import {
   polfinale, finale, zmagovalecSerije, prvoKoloPolfinala, prvoKoloFinala,
   turnirPolfinala, turnirZakljucek,
@@ -379,10 +380,58 @@ export default function LeagueAdmin() {
    * (glej Zreb.tsx / engines/zrebLiga.ts). Prazen vnos pomeni brez para
    * (optimistično v UI + shrani v bazo).
    */
-  function setSharedVenueKey(teamId: string, v: string) {
+  /**
+   * Zadnja obramba pred zapisom razporeda: razpored, v katerem bi bili ekipi s
+   * skupnim igriščem kdaj obe domači v istem krogu, se sploh ne ustvari.
+   *
+   * Ne sklepa iz žrebanih številk, ampak gleda tekme, ki bodo res zapisane —
+   * zato ujame tudi vzroke, ki jih ne poznamo vnaprej: po žrebu spremenjeno
+   * zrcaljenje ali enokrožnost, ročno popravljene številke, star žreb.
+   */
+  function igriscaVRedu(
+    fixtureList: Array<{ round_number: number, home_team_id: string, away_team_id: string }>,
+  ): boolean {
+    const krsitve = krsitveSkupnihIgrisc(
+      teams.map(t => ({ id: t.id, ime: t.club_name, shared_venue_key: t.shared_venue_key ?? null })),
+      fixtureList,
+    )
+    if (krsitve.length === 0) return true
+    setMessage(
+      `⚠ Razpored NI bil ustvarjen: ${krsitve.join(' ')} ` +
+      `Ponovi žreb v »Žreb v živo« ali popravi ključe skupnih igrišč.`,
+    )
+    return false
+  }
+
+  /**
+   * Med tipkanjem se vrednost hrani SUROVA, brez `trim()`.
+   *
+   * Prej se je trim() izvajal ob vsakem pritisku tipke, rezultat pa se je vrnil
+   * v isto nadzorovano polje — zato presledka vanj sploh ni bilo mogoče
+   * vtipkati in „Balinišče Tabor“ je pristalo kot „BaliniščeTabor“. Če je bil
+   * isti ključ pri eni ekipi vtipkan, pri drugi pa prilepljen, sta bila niza
+   * različna, para pa žreb ni prepoznal.
+   */
+  function setSharedVenueKeyDraft(teamId: string, v: string) {
+    setTeams(ts => ts.map(t => (t.id === teamId ? { ...t, shared_venue_key: v } : t)))
+  }
+
+  /**
+   * Zapiše ključ šele ob izgubi fokusa, in počaka na izid.
+   *
+   * Prej je vsak pritisk tipke sprožil svoj `update` brez `await` in brez
+   * branja napake: ob tipkanju „Branik“ je odletelo šest zahtevkov, katerih
+   * vrstni red prihoda ni zajamčen, zato je v bazi lahko obstala predpona.
+   * Obrazec tega ni mogel razkriti, ker po urejanju nikoli ne prebere baze —
+   * operater je vedno videl tisto, kar je natipkal, žreb pa bere bazo.
+   */
+  async function saveSharedVenueKey(teamId: string, v: string) {
     const key = v.trim() === '' ? null : v.trim()
     setTeams(ts => ts.map(t => (t.id === teamId ? { ...t, shared_venue_key: key } : t)))
-    supabase.from('league_teams').update({ shared_venue_key: key }).eq('id', teamId)
+    const { error } = await supabase
+      .from('league_teams').update({ shared_venue_key: key }).eq('id', teamId)
+    if (error) setMessage(`⚠ Ključa igrišča ni bilo mogoče shraniti: ${error.message}`)
+    else setMessage(key ? `✓ Igrišče „${key}“ shranjeno` : '✓ Igrišče odstranjeno')
   }
 
   /** Napake žreba za format='groups' (prazno = žreb veljaven). Vsebuje tudi napačno skupno število ekip. */
@@ -421,6 +470,7 @@ export default function LeagueAdmin() {
       return
     }
     const kol = Math.max(...fixtureList.map(f => f.round_number))
+    if (!igriscaVRedu(fixtureList)) return
     const zamenjave = opozoriloOZamenjavah(fixtures.filter(f => !f.group_label), fixtureList)
     if (!window.confirm(
       `Ustvari Bergerjev razpored za ${teams.length} ekip — ` +
@@ -470,6 +520,7 @@ export default function LeagueAdmin() {
       setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
       return
     }
+    if (!igriscaVRedu(fixtureList)) return
     const zamenjaveSplit = opozoriloOZamenjavah(fixtures.filter(f => !f.group_label), fixtureList)
     if (!window.confirm(
       `Ustvari fazo 1 (${SPLIT_TEAMS} ekip, enokrožno, kola 1-${SPLIT_PHASE1_ROUNDS})? To bo izbrisalo obstoječe tekme!` +
@@ -524,6 +575,7 @@ export default function LeagueAdmin() {
       return
     }
 
+    if (!igriscaVRedu([...fixturesA, ...fixturesB])) return
     const zamenjaveSkupin = opozoriloOZamenjavah(
       fixtures.filter(f => f.group_label === 'A' || f.group_label === 'B'),
       [...fixturesA, ...fixturesB],
@@ -1454,9 +1506,10 @@ export default function LeagueAdmin() {
                           title="Ekipe z enakim ključem si delijo rezervno igrišče in v istem krogu ne smejo biti obe domačin hkrati.">
                           <span className="text-gray-400">igrišče</span>
                           <input type="text" value={team.shared_venue_key ?? ''}
-                            onChange={e => setSharedVenueKey(team.id, e.target.value)}
-                            className="w-16 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center focus:ring-2 focus:ring-bocce-green outline-none"
-                            placeholder="–" />
+                            onChange={e => setSharedVenueKeyDraft(team.id, e.target.value)}
+                            onBlur={e => { void saveSharedVenueKey(team.id, e.target.value) }}
+                            className="w-40 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
+                            placeholder="npr. Balinišče Tabor" />
                         </label>
                         <span className="font-semibold text-gray-800">{team.club_name}</span>
                         {team.short_name && <span className="ml-1 text-xs text-gray-400">({team.short_name})</span>}

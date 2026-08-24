@@ -13,7 +13,7 @@
  * nobenem krogu ni obe domači (glej `veljavniPariIgrisc`).
  */
 import { veljavniPariIgrisc } from './berger'
-import type { Korak, ZrebOpis, ZrebStanje } from './zreb'
+import { jeKoncano, preveri, type Korak, type ZrebOpis, type ZrebStanje } from './zreb'
 
 export interface LigaEkipa {
   id: string
@@ -32,14 +32,30 @@ export const PREDAL_SKUPINE = 0
 export const PREDAL_A = 1
 export const PREDAL_B = 2
 
+/**
+ * Ključ igrišča, pripravljen za primerjavo: brez robnih presledkov, z enojnimi
+ * notranjimi in brez razlike med veliko in malo začetnico.
+ *
+ * Isti ključ uporabnik pri dveh ekipah vtipka ročno, zato se zapisa slej ko
+ * prej razlikujeta („Balinišče Tabor“ proti „balinišče  tabor“). Dobesedna
+ * primerjava bi tak par tiho spregledala — in ker je molk edini znak, bi se to
+ * pokazalo šele v razporedu, ko je za popravek že prepozno.
+ */
+function normKljuc(v: string | null | undefined): string | null {
+  if (v == null) return null
+  const t = v.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sl')
+  return t === '' ? null : t
+}
+
 /** Pari ekip, ki si delijo igrišče. Vrne pare id-jev; ključi z eno ekipo se ignorirajo. */
 export function soigriscniPari(ekipe: LigaEkipa[]): Array<[string, string]> {
   const poKljucu = new Map<string, string[]>()
   for (const e of ekipe) {
-    if (!e.shared_venue_key) continue
-    const seznam = poKljucu.get(e.shared_venue_key) ?? []
+    const k = normKljuc(e.shared_venue_key)
+    if (k == null) continue
+    const seznam = poKljucu.get(k) ?? []
     seznam.push(e.id)
-    poKljucu.set(e.shared_venue_key, seznam)
+    poKljucu.set(k, seznam)
   }
   const pari: Array<[string, string]> = []
   for (const [, ids] of poKljucu) {
@@ -64,16 +80,26 @@ export function preveriIzvedljivost(
   ekipe: LigaEkipa[], nastavitve: LigaNastavitve, nosilniVrstniRed: string[] = [],
 ): string[] {
   const napake: string[] = []
-  const poKljucu = new Map<string, string[]>()
+  const poKljucu = new Map<string, { prikaz: string, imena: string[] }>()
   for (const e of ekipe) {
-    if (!e.shared_venue_key) continue
-    const s = poKljucu.get(e.shared_venue_key) ?? []
-    s.push(e.ime)
-    poKljucu.set(e.shared_venue_key, s)
+    const k = normKljuc(e.shared_venue_key)
+    if (k == null) continue
+    const s = poKljucu.get(k) ?? { prikaz: (e.shared_venue_key ?? '').trim(), imena: [] }
+    s.imena.push(e.ime)
+    poKljucu.set(k, s)
   }
-  for (const [kljuc, imena] of poKljucu) {
+  for (const [, { prikaz, imena }] of poKljucu) {
     if (imena.length > 2) {
-      napake.push(`Igrišče „${kljuc}“ si deli ${imena.length} ekip (${imena.join(', ')}). Pravilo o razliki številk velja samo za dve.`)
+      napake.push(`Igrišče „${prikaz}“ si deli ${imena.length} ekip (${imena.join(', ')}). Pravilo o razliki številk velja samo za dve.`)
+    }
+    // Ključ pri eni sami ekipi ne pomeni nič — skoraj vedno je druga polovica
+    // para zapisana drugače ali pa je sploh ni. Brez tega opozorila je edini
+    // znak molk: žreb tiho teče brez omejitve, kot da igrišča nihče ne deli.
+    if (imena.length === 1) {
+      napake.push(
+        `Igrišče „${prikaz}“ ima vpisano samo ekipa ${imena[0]}. Skupno igrišče pomeni isti ključ pri DVEH ekipah — ` +
+        `preveri, ali je pri drugi ekipi zapisan drugače ali manjka.`,
+      )
     }
   }
   if (nastavitve.format === 'groups' && ekipe.length !== 12) {
@@ -476,6 +502,96 @@ export function preveriLigaski(
     const kljuc = x < y ? `${x}-${y}` : `${y}-${x}`
     if (!dovoljene.has(kljuc)) {
       napake.push(`${n(a)} in ${n(b)} si delita igrišče, a številki ${x} in ${y} nista veljaven par`)
+    }
+  }
+  return napake
+}
+
+/**
+ * Ali je shranjeni žreb, obnovljen iz brskalnika, še uporaben za TE ekipe,
+ * TE ključe igrišč in TE nastavitve sezone.
+ *
+ * Zaslon obreda si potek shrani v `localStorage` pod ključem sezone, da
+ * osvežitev strani sredi prireditve ne uniči žreba. Shranjene so samo poteze —
+ * nič o ekipah, njihovih igriščih ali nastavitvah razporeda. Če se je med tem
+ * karkoli od tega spremenilo, obnovljeni žreb ni več veljaven, čeprav je bil
+ * takrat, ko je nastal, popolnoma pravilen.
+ *
+ * Prav to se je zgodilo v praksi: žreb je stekel, preden sta bila vpisana
+ * ključa skupnega igrišča, nato pa se je po vpisu obnovil — in ker se pravila
+ * preverjajo samo ob NOVIH potezah, obnovljenega stanja ni preveril nihče.
+ * Ekipi s skupnim igriščem sta bili v razporedu obe domači v 1. krogu.
+ *
+ * @returns napake v slovenščini; prazen seznam pomeni, da je obnova varna
+ */
+export function preveriObnovljenoStanje(
+  opis: ZrebOpis,
+  nastavitve: LigaNastavitve,
+  ekipe: LigaEkipa[],
+  nosilniVrstniRed: string[],
+  stanje: ZrebStanje,
+): string[] {
+  const napake: string[] = []
+
+  const znani = new Set(ekipe.map(e => e.id))
+  const neznani = new Set<string>()
+  for (const poPredalu of Object.values(stanje.dodeljene ?? {})) {
+    for (const id of Object.keys(poPredalu)) if (!znani.has(id)) neznani.add(id)
+  }
+  if (neznani.size > 0) {
+    napake.push(
+      `Shranjeni žreb vsebuje ekipe, ki jih v sezoni ni več: ${[...neznani].join(', ')}. ` +
+      `Sestava ekip se je po tistem žrebu spremenila, zato ga ni mogoče nadaljevati.`,
+    )
+  }
+
+  napake.push(...preveri(opis, stanje))
+  napake.push(...preveriLigaski(
+    nastavitve, ekipe, nosilniVrstniRed, stanje, jeKoncano(opis, stanje),
+  ))
+  return napake
+}
+
+/**
+ * Ali kateri par ekip s skupnim igriščem v razporedu kdaj nastopa kot domačin
+ * dvakrat v istem krogu.
+ *
+ * Zadnja obramba, tik preden tekme nastanejo. Vse dosedanje okvare tega
+ * pravila so bile TIHE — ključ se ni ujel, obnovljen žreb se ni preveril — in
+ * so se pokazale šele v razporedu, ko je bil žreb že opravljen pred občinstvom.
+ * Ta preverba ne sklepa iz številk, ampak gleda tekme, ki bodo res zapisane,
+ * zato ujame tudi vzroke, ki jih ne poznamo: spremenjeno zrcaljenje ali
+ * enokrožnost po žrebu, ročno popravljene številke, uvožen razpored.
+ *
+ * @returns napake v slovenščini; prazen seznam pomeni, da je razpored v redu
+ */
+export function krsitveSkupnihIgrisc(
+  ekipe: LigaEkipa[],
+  tekme: Array<{ round_number: number, home_team_id: string, away_team_id: string }>,
+): string[] {
+  const pari = soigriscniPari(ekipe)
+  if (pari.length === 0) return []
+  const ime = new Map(ekipe.map(e => [e.id, e.ime]))
+  const n = (id: string) => ime.get(id) ?? id
+
+  const domaciPoKrogu = new Map<number, Set<string>>()
+  for (const t of tekme) {
+    const s = domaciPoKrogu.get(t.round_number) ?? new Set<string>()
+    s.add(t.home_team_id)
+    domaciPoKrogu.set(t.round_number, s)
+  }
+
+  const napake: string[] = []
+  for (const [a, b] of pari) {
+    const krogi = [...domaciPoKrogu.entries()]
+      .filter(([, doma]) => doma.has(a) && doma.has(b))
+      .map(([krog]) => krog)
+      .sort((x, y) => x - y)
+    if (krogi.length > 0) {
+      napake.push(
+        `${n(a)} in ${n(b)} si delita igrišče, a sta v razporedu obe domači v ` +
+        `${krogi.map(k => `${k}.`).join(', ')} krogu.`,
+      )
     }
   }
   return napake

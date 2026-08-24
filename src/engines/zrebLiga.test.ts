@@ -5,7 +5,7 @@ import { veljavniPariIgrisc, bergerSchedule, bergerFixtures } from './berger'
 import { validateDraw } from './leagueGroups'
 import {
   ligaskiOpis, preveriIzvedljivost, soigriscniPari, jeDvokrozno, jeRazporeditevMozna,
-  preveriLigaski,
+  preveriLigaski, preveriObnovljenoStanje, krsitveSkupnihIgrisc,
   PREDAL_SKUPINE, PREDAL_A, PREDAL_B,
   type LigaEkipa, type LigaNastavitve,
 } from './zrebLiga'
@@ -500,4 +500,82 @@ describe('lastnostni test', () => {
       }
     }
   }, 60_000)
+})
+
+describe('ključ skupnega igrišča je odporen na zapis', () => {
+  test('ključa, ki se razlikujeta le v presledkih in velikosti črk, še vedno tvorita par', () => {
+    const e: LigaEkipa[] = [
+      { id: 't1', ime: 'Branik', shared_venue_key: 'Balinišče Tabor' },
+      { id: 't2', ime: 'Angel Besednjak', shared_venue_key: ' balinišče tabor ' },
+      { id: 't3', ime: 'Tretja', shared_venue_key: null },
+    ]
+    expect(soigriscniPari(e)).toEqual([['t1', 't2']])
+  })
+
+  test('ključ, ki ga ima samo ena ekipa, javi napako — skoraj vedno je to tipkarska napaka', () => {
+    const e = ekipe(6, { t1: 'Tabor' })
+    const napake = preveriIzvedljivost(e, { format: 'flat', double_round: false, berger_mirror: false })
+    expect(napake.join(' | ')).toContain('Tabor')
+  })
+})
+
+describe('preveriObnovljenoStanje — obnova žreba iz brskalnika', () => {
+  const nast: LigaNastavitve = { format: 'flat', double_round: false, berger_mirror: false }
+  const rocno = (m: Record<string, number>) => ({
+    dodeljene: { [PREDAL_SKUPINE]: { ...m } }, korak: 1, cakajoca: null, dnevnik: [],
+  })
+  const vse = { t1: 1, t2: 2, t3: 3, t4: 4, t5: 5, t6: 6 }
+
+  test('zavrne obnovljen žreb, ki krši pravilo o skupnem igrišču', () => {
+    // Točno uporabnikov primer: žreb je tekel BREZ vpisanih igrišč, ključa sta
+    // bila dodana šele potem. Pri 6 ekipah 1 in 2 nista veljaven par.
+    const zIgrisci = ekipe(6, { t1: 'Tabor', t2: 'Tabor' })
+    const opis = ligaskiOpis(nast, zIgrisci, [])
+    const napake = preveriObnovljenoStanje(opis, nast, zIgrisci, [], rocno(vse))
+    expect(napake.join(' | ')).toContain('delita igrišče')
+  })
+
+  test('zavrne obnovljen žreb z ekipo, ki je v sezoni ni več', () => {
+    const sest = ekipe(6)
+    const opis = ligaskiOpis(nast, sest, [])
+    const napake = preveriObnovljenoStanje(opis, nast, sest, [], rocno({ ...vse, t7: 7 }))
+    expect(napake.join(' | ')).toContain('t7')
+  })
+
+  test('sprejme obnovljen žreb, ki pravilo spoštuje', () => {
+    const zIgrisci = ekipe(6, { t1: 'Tabor', t4: 'Tabor' })
+    const opis = ligaskiOpis(nast, zIgrisci, [])
+    expect(preveriObnovljenoStanje(opis, nast, zIgrisci, [], rocno(vse))).toEqual([])
+  })
+})
+
+describe('krsitveSkupnihIgrisc — zadnja obramba pred ustvarjanjem razporeda', () => {
+  test('javi par, ki je v istem krogu dvakrat domač', () => {
+    const e = ekipe(6, { t1: 'Tabor', t2: 'Tabor' })
+    const tekme = [
+      { round_number: 1, home_team_id: 't1', away_team_id: 't6' },
+      { round_number: 1, home_team_id: 't2', away_team_id: 't5' },
+      { round_number: 1, home_team_id: 't3', away_team_id: 't4' },
+    ]
+    const napake = krsitveSkupnihIgrisc(e, tekme)
+    expect(napake.join(' | ')).toContain('1. krogu')
+    expect(napake.join(' | ')).toContain('Ekipa 1')
+  })
+
+  test('molči, kadar par nikoli ni dvakrat domač', () => {
+    const e = ekipe(6, { t1: 'Tabor', t4: 'Tabor' })
+    const tekme = bergerFixtures(
+      e.map((t, i) => ({ id: t.id, draw_number: i + 1 })), false, false,
+    )
+    expect(krsitveSkupnihIgrisc(e, tekme)).toEqual([])
+  })
+
+  test('ujame kršitev, ki nastane, ker se je zrcaljenje po žrebu spremenilo', () => {
+    // Pri 6 ekipah enokrožno je 4-6 veljaven par — a samo NEzrcaljeno.
+    // Če se razpored ustvari zrcaljeno, sta 4 in 6 obe domači že v 1. krogu.
+    const e = ekipe(6, { t4: 'Tabor', t6: 'Tabor' })
+    const zreb = e.map((t, i) => ({ id: t.id, draw_number: i + 1 }))
+    expect(krsitveSkupnihIgrisc(e, bergerFixtures(zreb, false, false))).toEqual([])
+    expect(krsitveSkupnihIgrisc(e, bergerFixtures(zreb, false, true)).join(' | ')).toContain('1. krogu')
+  })
 })

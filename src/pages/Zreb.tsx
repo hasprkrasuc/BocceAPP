@@ -4,7 +4,9 @@ import {
   zacniZreb, izvleciUdelezenca, izvleciStevilko, jeKoncano, preveri, preostale,
   type ZrebStanje,
 } from '../engines/zreb'
-import { ligaskiOpis, preveriIzvedljivost, preveriLigaski } from '../engines/zrebLiga'
+import {
+  ligaskiOpis, preveriIzvedljivost, preveriLigaski, preveriObnovljenoStanje,
+} from '../engines/zrebLiga'
 import {
   naloziLigaskiZreb, spremembe, shraniLigaskiZreb,
   type LigaskoIzhodisce, type Sprememba,
@@ -170,17 +172,39 @@ export default function Zreb() {
     }
   }, [zgodovina, kljuc, mesta])
 
+  /**
+   * Začne žreb — ali nadaljuje shranjenega, a SAMO če je ta za sedanjo sezono
+   * še veljaven.
+   *
+   * Shranjeni zapis nosi le poteze, nič o ekipah, ključih igrišč ali
+   * nastavitvah razporeda. Če se je karkoli od tega po tistem žrebu
+   * spremenilo, je obnovljeni žreb neveljaven, čeprav je bil takrat pravilen.
+   * Ker se pravila preverjajo samo ob NOVIH potezah, obnovljenega stanja sicer
+   * ne bi preveril nihče: `jeKoncano` bi javil, da je gotov, gumb »Zapiši v
+   * bazo« bi se prikazal in v bazo bi šle številke, ki kršijo pravilo o
+   * skupnem igrišču. Prav to se je zgodilo v ligi OBZ Štajerska.
+   */
   function zacni() {
-    if (!opis) return
+    if (!opis || !izhodisce) return
     try {
       const shr = localStorage.getItem(kljuc)
       if (shr) {
         const p = JSON.parse(shr) as ShranjenoStanje
-        if (
-          p && Array.isArray(p.zgodovina) && p.zgodovina.length > 1 &&
-          window.confirm(`Najden je začet žreb (${p.zgodovina[p.zgodovina.length - 1].dnevnik.length} potez). Nadaljujem?`)
-        ) {
-          setZgodovina(p.zgodovina); setZacet(true); return
+        if (p && Array.isArray(p.zgodovina) && p.zgodovina.length > 1) {
+          const zadnje = p.zgodovina[p.zgodovina.length - 1]
+          const napakeObnove = preveriObnovljenoStanje(
+            opis, izhodisce.nastavitve, izhodisce.ekipe, nosilniVrstniRed, zadnje,
+          )
+          if (napakeObnove.length > 0) {
+            localStorage.removeItem(kljuc)
+            setNajdenoNadaljevanje(null)
+            setNapaka(
+              `Shranjeni žreb je bil zavržen, ker za sedanjo sezono ni več veljaven: ` +
+              `${napakeObnove.join(' | ')} — začenjam nov žreb.`,
+            )
+          } else if (window.confirm(`Najden je začet žreb (${zadnje.dnevnik.length} potez). Nadaljujem?`)) {
+            setZgodovina(p.zgodovina); setZacet(true); return
+          }
         }
       }
     } catch { /* pokvarjen zapis ignoriramo */ }
