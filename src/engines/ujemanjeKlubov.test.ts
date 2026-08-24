@@ -86,6 +86,16 @@ describe('najdiKlub', () => {
     expect(najdiKlub('BK', KLUBI).kandidati).toEqual([])
   })
 
+  test('ekipa območne zveze se ne ujame s klubom istega kraja', () => {
+    // »OBZ POSTOJNA« je ekipa območne zveze in kluba nima; brez straže bi se po
+    // besedi »Postojna« ujela s klubom in nosila tuj grb.
+    const zKrajem = [...KLUBI, k('c8', 'ZZ Postojna')]
+    expect(najdiKlub('ZZ Postojna', zKrajem).klub?.id).toBe('c8')
+    const u = najdiKlub('OBZ ZZ Postojna', zKrajem)
+    expect(u.klub).toBeNull()
+    expect(u.kandidati).toEqual([])
+  })
+
   test('neznano ime nima predloga', () => {
     const u = najdiKlub('ZZ Nekaj Desetega', KLUBI)
     expect(u.klub).toBeNull()
