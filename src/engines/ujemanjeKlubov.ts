@@ -51,6 +51,15 @@ const SPLOSNE_BESEDE = new Set([
   'klub', 'drustvo', 'zveza', 'ekipa', 'team',
 ])
 
+/**
+ * Oznake, ki povedo, da ekipa sploh NI klubska. Območne zveze nastopajo s
+ * svojo ekipo (npr. »OBZ POSTOJNA« v ligi U-18) in kluba nimajo — `club_id` je
+ * pri njih pravilno prazen (glej migracijo 20260804_01). Brez te straže bi se
+ * taka ekipa po besedi »Postojna« ujela s klubom POSTOJNA in na vsaki tekmi
+ * nosila tuj grb.
+ */
+const NEKLUBSKE_OZNAKE = new Set(['obz', 'obzl', 'zveza'])
+
 /** Male črke, šumniki na osnovne, vse nečrkovno v presledek, presledki strnjeni. */
 export function normalizirajImeKluba(s: string | null | undefined): string {
   return (s || '')
@@ -91,6 +100,9 @@ export function najdiKlub(imeEkipe: string | null | undefined, klubi: KlubZaUjem
   const ime = normalizirajImeKluba(imeEkipe)
   if (!ime) return brezUjemanja
 
+  const besede = besedeImena(imeEkipe)
+  if (besede.some(w => NEKLUBSKE_OZNAKE.has(w))) return brezUjemanja
+
   const tocni = klubi.filter(k => normalizirajImeKluba(k.name) === ime)
   if (tocni.length) return izid(tocni, 'tocno')
 
@@ -98,7 +110,6 @@ export function najdiKlub(imeEkipe: string | null | undefined, klubi: KlubZaUjem
   const strnjeni = klubi.filter(k => strniImeKluba(k.name) === strnjeno)
   if (strnjeni.length) return izid(strnjeni, 'strnjeno')
 
-  const besede = besedeImena(imeEkipe)
   const kljuc = besede.join(' ')
   const poNaboru = klubi.filter(k => besedeImena(k.name).join(' ') === kljuc)
   if (poNaboru.length) return izid(poNaboru, 'nabor')
