@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { opozoriloOLetnici } from '../../engines/seasonYear'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
@@ -16,6 +16,8 @@ import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplin
 import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../lib/matchDate'
 import { useAuth } from '../../contexts/AuthContext'
 import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
+import { najdiKlub, predlagajPovezave, type KlubZaUjemanje } from '../../engines/ujemanjeKlubov'
+import KlubskiGrb from '../../components/KlubskiGrb'
 import {
   polfinale, finale, zmagovalecSerije, prvoKoloPolfinala, prvoKoloFinala,
   turnirPolfinala, turnirZakljucek,
@@ -99,6 +101,9 @@ export default function LeagueAdmin() {
   const [seasons, setSeasons] = useState<LeagueSeason[]>([])
   const [selectedSeason, setSelectedSeason] = useState<LeagueSeason | null>(null)
   const [teams, setTeams] = useState<LeagueTeam[]>([])
+  /** Klubi za povezavo ekipa → klub (od tod pride logotip na javnih straneh). */
+  const [klubi, setKlubi] = useState<(KlubZaUjemanje & { logo_url: string | null })[]>([])
+  const [povezujem, setPovezujem] = useState(false)
   const [fixtures, setFixtures] = useState<LeagueFixture[]>([])
   const [players, setPlayers] = useState<Pick<UserProfile, 'id' | 'full_name' | 'club'>[]>([])
   const [disciplines, setDisciplines] = useState<LeagueSeasonDiscipline[]>([])
@@ -134,6 +139,10 @@ export default function LeagueAdmin() {
   }>({ name: '', discipline_type: 'posamezno', players_per_side: 1, has_reserve: false, block_number: 1, order_num: 1 })
 
   useEffect(() => { loadSeasons() }, [])
+  useEffect(() => {
+    supabase.from('clubs').select('id, name, logo_url').order('name')
+      .then(({ data }) => setKlubi((data ?? []) as (KlubZaUjemanje & { logo_url: string | null })[]))
+  }, [])
   useEffect(() => {
     if (!selectedSeason) return
     // ob menjavi sezone razveljavi rezultate prejšnje, da predlog faze 2 ne more
@@ -237,7 +246,7 @@ export default function LeagueAdmin() {
     const { data } = await supabase.from('league_teams')
       // Izrecni stolpci namesto users(*): občutljivih stolpcev vloga
       // authenticated ne sme brati, zvezdica bi vrnila 401.
-      .select(`*, captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`)
+      .select(`*, club:clubs(id, name, logo_url), captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`)
       .eq('season_id', selectedSeason.id)
       .order('draw_number', { ascending: true, nullsFirst: false })
       .order('club_name')
@@ -332,11 +341,16 @@ export default function LeagueAdmin() {
     e.preventDefault()
     if (!selectedSeason) return
     setLoading(true)
+    // Klub pripnemo takoj, kadar se ime nedvoumno ujame — sicer ekipa nastane
+    // brez povezave in nihče je nikoli več ne pogleda. Dvoumnosti ne ugibamo;
+    // takrat ostane prazna in jo admin izbere v izbirniku spodaj.
+    const ujemanje = najdiKlub(teamForm.club_name, klubi)
     await supabase.from('league_teams').insert({
       season_id: selectedSeason.id,
       club_name: teamForm.club_name,
       short_name: teamForm.short_name || null,
       captain_id: teamForm.captain_id || null,
+      club_id: ujemanje.klub?.id ?? null,
     })
     setTeamForm({ club_name: '', short_name: '', captain_id: '' })
     await loadTeams()
@@ -372,6 +386,43 @@ export default function LeagueAdmin() {
     const g = value === '' ? null : (value as 'A' | 'B')
     setTeams(ts => ts.map(t => (t.id === teamId ? { ...t, group_label: g } : t)))
     supabase.from('league_teams').update({ group_label: g }).eq('id', teamId)
+  }
+
+  /**
+   * Klub ekipe. Piše se `club_id`; `club_name` ostane nedotaknjen, ker je
+   * zgodovinski zapis prijave (migracija 20260804_01) — ekipa se je tisto
+   * sezono res imenovala tako, tudi če se klub danes piše drugače.
+   */
+  async function changeTeamClub(teamId: string, clubId: string) {
+    const klub = klubi.find(k => k.id === clubId) ?? null
+    setTeams(ts => ts.map(t => (t.id === teamId
+      ? { ...t, club_id: klub?.id ?? null, club: klub ? { id: klub.id, name: klub.name, logo_url: klub.logo_url } : null }
+      : t)))
+    const { error } = await supabase.from('league_teams').update({ club_id: klub?.id ?? null }).eq('id', teamId)
+    if (error) { setMessage(`⚠ Kluba ni bilo mogoče shraniti: ${error.message}`); await loadTeams() }
+  }
+
+  /** Predlogi za ekipe te sezone, ki kluba še nimajo. */
+  const predlogi = useMemo(() => predlagajPovezave(teams, klubi), [teams, klubi])
+  const brezKluba = teams.filter(t => !t.club_id).length
+
+  async function poveziPredlagane() {
+    if (predlogi.length === 0) return
+    if (!window.confirm(
+      `Povezati ${predlogi.length} ekip s predlaganimi klubi?\n\n` +
+      predlogi.map(p => `${p.imeEkipe} → ${p.klub.name}`).join('\n')
+    )) return
+    setPovezujem(true)
+    let napak = 0
+    for (const p of predlogi) {
+      const { error } = await supabase.from('league_teams').update({ club_id: p.klub.id }).eq('id', p.ekipaId)
+      if (error) napak++
+    }
+    await loadTeams()
+    setPovezujem(false)
+    setMessage(napak === 0
+      ? `✓ Povezanih ${predlogi.length} ekip s klubi`
+      : `⚠ Povezanih ${predlogi.length - napak}, neuspešnih ${napak}`)
   }
 
   /** Napake žreba za format='groups' (prazno = žreb veljaven). Vsebuje tudi napačno skupno število ekip. */
@@ -1389,6 +1440,25 @@ export default function LeagueAdmin() {
                   )}
                 </div>
               )}
+              {brezKluba > 0 && (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <p>
+                    <span className="font-medium">{brezKluba}</span> {brezKluba === 1 ? 'ekipa ni povezana' : 'ekip ni povezanih'} s klubom,
+                    zato {brezKluba === 1 ? 'nima' : 'nimajo'} logotipa na lestvici in sporedu.
+                  </p>
+                  {predlogi.length > 0 ? (
+                    <div className="mt-2 flex items-center gap-3 flex-wrap">
+                      <button type="button" onClick={poveziPredlagane} disabled={povezujem}
+                        className="bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50">
+                        {povezujem ? 'Povezujem...' : `Poveži ${predlogi.length} predlaganih`}
+                      </button>
+                      <span className="text-xs text-amber-700">Predlog se pokaže pred potrditvijo.</span>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-amber-700">Za preostale imena ni mogoče nedvoumno ujeti — izberi klub ročno pri ekipi.</p>
+                  )}
+                </div>
+              )}
               <form onSubmit={addTeam} className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
                 <div className="flex-1 min-w-[180px]">
                   <label className="block text-xs text-gray-600 mb-1">Klub *</label>
@@ -1445,6 +1515,31 @@ export default function LeagueAdmin() {
                         {team.captain && <span className="ml-2 text-xs text-gray-500">Vodja ekipe: {team.captain.full_name}</span>}
                       </div>
                       <button onClick={() => removeTeam(team.id)} className="text-xs text-red-400 hover:text-red-600">Izbriši</button>
+                    </div>
+                    {/* Klub ekipe — od tod pride logotip na javnih straneh. */}
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <KlubskiGrb ime={team.club_name} logoUrl={team.club?.logo_url} velikost="md" />
+                      <select value={team.club_id ?? ''} onChange={e => changeTeamClub(team.id, e.target.value)}
+                        className={`border rounded-lg px-2 py-1 text-xs bg-white focus:ring-2 focus:ring-bocce-green outline-none
+                          ${team.club_id ? 'border-gray-300 text-gray-700' : 'border-amber-300 text-amber-700'}`}>
+                        <option value="">– brez kluba –</option>
+                        {klubi.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+                      </select>
+                      {!team.club_id && (() => {
+                        const u = najdiKlub(team.club_name, klubi)
+                        if (u.klub) {
+                          return (
+                            <button type="button" onClick={() => changeTeamClub(team.id, u.klub!.id)}
+                              className="text-xs text-bocce-green hover:underline">
+                              predlog: {u.klub.name}
+                            </button>
+                          )
+                        }
+                        if (u.kandidati.length > 1) {
+                          return <span className="text-xs text-gray-400">več možnih klubov — izberi ročno</span>
+                        }
+                        return <span className="text-xs text-gray-400">ni ujemanja po imenu</span>
+                      })()}
                     </div>
                     <div className="flex flex-wrap gap-2 mb-2">
                       {team.league_team_players?.map(p => (

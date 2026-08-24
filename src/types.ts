@@ -222,12 +222,16 @@ export interface LeagueTeam {
   club_name: string
   short_name: string | null
   captain_id: string | null
+  /** Klub, ki mu ekipa pripada. NULL je dovoljen — glej migracijo 20260804_01. */
+  club_id: string | null
   /** Žrebana številka (1..N oz. 1..6 znotraj skupine) za Bergerjev razpored; NULL = žreb še ni opravljen */
   draw_number: number | null
   /** Samo za format='groups': v kateri skupini faze 1 je ekipa ('A'/'B'). NULL = žreb še ni vnešen. */
   group_label: 'A' | 'B' | null
   captain?: UserProfile
   league_team_players?: LeagueTeamPlayer[]
+  /** Vgnezden klub iz poizvedbe — od tod pride logotip ekipe. */
+  club?: Pick<Club, 'id' | 'name' | 'logo_url'> | null
 }
 
 export interface LeagueTeamPlayer {

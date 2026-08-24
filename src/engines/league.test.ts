@@ -12,7 +12,7 @@ const makeSeason = (overrides?: Partial<LeagueSeason>): LeagueSeason => ({
 
 const makeTeam = (id: string, name: string): LeagueTeam => ({
   id, season_id: 's1', club_name: name, short_name: null, captain_id: null,
-  draw_number: null, group_label: null,
+  club_id: null, draw_number: null, group_label: null,
 })
 
 const makeFixture = (
