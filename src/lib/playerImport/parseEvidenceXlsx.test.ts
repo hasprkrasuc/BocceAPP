@@ -160,6 +160,39 @@ describe('parseEvidenceRows — novejši izvoz z e-naslovom', () => {
   })
 })
 
+describe('parseEvidenceRows — glava e-naslova se med izvozi razlikuje', () => {
+  // Videni obliki: "e-mail balinar.app" in "Mail Balinar App". Če stolpec izpade,
+  // se sodnik ob uvozu podvoji: v bazo je prišel brez EMŠO in brez datuma
+  // rojstva, zato ga preostali ključi ne morejo ujeti in e-naslov je edini.
+  const vrstica = (eposta: string) => ([
+    'TESTNI', 'PETER', 'ZZ TEST KLUB', 'B. društvo ZZ Test', 'OBZ Test', 'OBMOČNA LIGA', 'M',
+    '******1945', '*********0049', '', eposta,
+  ])
+
+  test.each([
+    'e-mail balinar.app',
+    'Mail Balinar App',
+    'E-mail',
+    'email',
+    'E-pošta',
+  ])('prepozna glavo %s', glava => {
+    const r = parseEvidenceRows([[...GLAVA, glava], vrstica('ZZ.Testni.0049@balinar.app')])
+    expect(r.players[0].email).toBe('zz.testni.0049@balinar.app')
+  })
+
+  test('brez stolpca z e-naslovom ostane email null, razčlenitev pa se ne pokvari', () => {
+    const r = parseEvidenceRows([GLAVA, vrstica('').slice(0, GLAVA.length)])
+    expect(r.players).toHaveLength(1)
+    expect(r.players[0].email).toBeNull()
+  })
+
+  test('stolpec "Ime" se ne zamenja z e-naslovom', () => {
+    // Iskanje po vsebovanosti velja SAMO za e-naslov; drugod bi "ime" ujelo "priimek".
+    const r = parseEvidenceRows([[...GLAVA, 'Mail Balinar App'], vrstica('ZZ.Testni.0049@balinar.app')])
+    expect(r.players[0].fullName).toBe('PETER TESTNI')
+  })
+})
+
 describe('parseImportRows — razvrščanje po obliki', () => {
   test('izvoz iz evidence gre v svoj razčlenjevalnik', () => {
     const r = parseImportRows(evidenca)
