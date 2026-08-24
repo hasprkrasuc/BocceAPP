@@ -138,6 +138,24 @@ function najdiStolpec(lower: string[], ...variante: string[]): number {
   return -1
 }
 
+/**
+ * Stolpec z e-naslovom. Glava se med izvozi piše različno — videli smo
+ * "e-mail balinar.app" in "Mail Balinar App" — zato ga po neuspelem natančnem
+ * iskanju poiščemo še po vsebovani besedi "mail".
+ *
+ * Vsebovanost je tu varna, drugod pa ne, zato to NE sme v najdiStolpec: "ime"
+ * je vsebovano v "priimek" in bi ime igralca brala napačna glava.
+ *
+ * Da se stolpec ne najde, ni malenkost: e-naslov je edini ključ, ki ujame
+ * sodnika. Ta je v bazo prišel brez EMŠO in brez datuma rojstva, zato preostali
+ * trije ključi na njem nimajo česa primerjati in se ob uvozu podvoji.
+ */
+function najdiStolpecEposte(lower: string[]): number {
+  const tocno = najdiStolpec(lower, 'e-mail balinar.app', 'e-mail', 'email', 'e-pošta', 'eposta')
+  if (tocno >= 0) return tocno
+  return lower.findIndex(o => o.includes('mail') || o.includes('pošta') || o.includes('posta'))
+}
+
 function najdiStolpce(headerRow: unknown[]): Stolpci {
   const lower = headerRow.map(oznaka)
   return {
@@ -151,7 +169,7 @@ function najdiStolpce(headerRow: unknown[]): Stolpci {
     sportnaSt: najdiStolpec(lower, 'športna št.', 'športna', 'sportna'),
     tekmovanje: najdiStolpec(lower, 'tekmovanje'),
     // Novejši izvozi nosijo s sabo e-naslov iz aplikacije — enoličen ključ.
-    eposta: najdiStolpec(lower, 'e-mail balinar.app', 'e-mail', 'email', 'e-pošta'),
+    eposta: najdiStolpecEposte(lower),
   }
 }
 
