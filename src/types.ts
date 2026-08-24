@@ -226,6 +226,8 @@ export interface LeagueTeam {
   draw_number: number | null
   /** Samo za format='groups': v kateri skupini faze 1 je ekipa ('A'/'B'). NULL = žreb še ni vnešen. */
   group_label: 'A' | 'B' | null
+  /** Ekipe z enakim ključem si delijo rezervno igrišče; NULL = ne deli. */
+  shared_venue_key: string | null
   captain?: UserProfile
   league_team_players?: LeagueTeamPlayer[]
 }

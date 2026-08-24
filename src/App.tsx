@@ -43,6 +43,7 @@ const SeriesAdmin = lazy(() => import('./pages/admin/SeriesAdmin'))
 const SeriesEdit = lazy(() => import('./pages/admin/SeriesEdit'))
 const PlayerImport = lazy(() => import('./pages/admin/PlayerImport'))
 const GuestAdmin = lazy(() => import('./pages/admin/GuestAdmin'))
+const Zreb = lazy(() => import('./pages/Zreb'))
 
 const queryClient = new QueryClient()
 
@@ -74,7 +75,11 @@ function RequirePasswordChange({ children }: { children: React.ReactNode }) {
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-50">
+    // id="app-shell" je oprijemljivka za index.css: ko je Žreb v predstavitvi
+    // s prosojnim ozadjem (?ozadje=prosojno), telo dobi razred `zreb-prosojno`,
+    // ta pa po tem id-ju izbriše sivo ozadje ter skrije Navbar in nogo, da OBS
+    // ujame res prosojen okvir namesto zelene vrstice in sivega roba.
+    <div id="app-shell" className="min-h-screen bg-gray-50">
       <Navbar />
       <main>{children}</main>
       <footer className="mt-16 border-t border-gray-200 py-6 text-center text-xs text-gray-400">
@@ -140,6 +145,7 @@ export default function App() {
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
               <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
               <Route path="/admin/liga" element={<LeagueAdminRoute><LeagueAdmin /></LeagueAdminRoute>} />
+              <Route path="/admin/zreb/liga/:seasonId" element={<LeagueAdminRoute><Zreb /></LeagueAdminRoute>} />
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />
               <Route path="/admin/liga/tekma/:fixtureId" element={<OldScoresheetRedirect />} />
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />

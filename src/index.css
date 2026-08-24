@@ -19,4 +19,25 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /*
+   * Predstavitveni način žreba s prosojnim ozadjem (Zreb.tsx, ?ozadje=prosojno)
+   * je namenjen brskalnikovemu viru v OBS: OBS naredi privzeto ozadje strani
+   * prosojno, a to ne pomaga, dokler nekaj na strani še vedno slika lastno
+   * (neprosojno) barvo čez cel zaslon. App.tsx ovije VSAKO stran v #app-shell
+   * z `bg-gray-50` in lepljivim Navbarjem (z-50) ter nogo — brez teh pravil bi
+   * se v OBS namesto praznega prosojnega okvirja pokazala zelena vrstica in
+   * siv rob. Razred `zreb-prosojno` na <body> preklaplja Zreb.tsx sam, samo
+   * dokler je hkrati v predstavitvi IN zahtevana prosojnost.
+   */
+  body.zreb-prosojno {
+    background: transparent !important;
+  }
+  body.zreb-prosojno #app-shell {
+    background: transparent !important;
+  }
+  body.zreb-prosojno #app-shell > nav,
+  body.zreb-prosojno #app-shell > footer {
+    display: none !important;
+  }
 }
