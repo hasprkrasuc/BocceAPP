@@ -1,5 +1,6 @@
 import { sl } from '../i18n/sl'
 import type { TeamStats } from '../types'
+import KlubskiGrb from './KlubskiGrb'
 
 interface Props {
   standings: TeamStats[]
@@ -42,8 +43,11 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
                   {i >= 3 && <span className="text-gray-400">{i + 1}</span>}
                 </td>
                 <td className="px-3 py-2.5">
-                  <span className={isHighlighted ? 'text-bocce-green' : 'text-gray-800'}>{row.team.club_name}</span>
-                  {row.team.short_name && <span className="ml-2 text-xs text-gray-400">({row.team.short_name})</span>}
+                  <span className="flex items-center gap-2">
+                    <KlubskiGrb ime={row.team.club_name} logoUrl={row.team.club?.logo_url} velikost="sm" />
+                    <span className={isHighlighted ? 'text-bocce-green' : 'text-gray-800'}>{row.team.club_name}</span>
+                    {row.team.short_name && <span className="text-xs text-gray-400">({row.team.short_name})</span>}
+                  </span>
                 </td>
                 <td className="px-3 py-2.5 text-center text-gray-600">{row.played}</td>
                 <td className="px-3 py-2.5 text-center text-green-700 font-medium">{row.won}</td>

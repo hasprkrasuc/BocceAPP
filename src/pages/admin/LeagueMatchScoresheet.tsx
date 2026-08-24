@@ -7,6 +7,7 @@ import type { LeagueFixture, LeagueSeasonDiscipline, LeagueMatchResult, LeagueMa
 import { evaluatePlayerLineup, seasonUsesBlock2Rule, type LineupDisc } from '../../engines/leagueLineup'
 import { formatMatchDateTime } from '../../lib/matchDate'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
+import KlubskiGrb from '../../components/KlubskiGrb'
 
 const TECHNICAL_TYPES: DisciplineType[] = ['stafeta', 'hitrostno', 'natancno']
 
@@ -175,7 +176,7 @@ export default function LeagueMatchScoresheet() {
     if (!fixtureId) return
     const [{ data: fx }, { data: existing }] = await Promise.all([
       supabase.from('league_fixtures')
-        .select(`*, home_team:league_teams!league_fixtures_home_team_id_fkey(*, league_team_players(*, player:users(${USER_PUBLIC_COLS}))), away_team:league_teams!league_fixtures_away_team_id_fkey(*, league_team_players(*, player:users(${USER_PUBLIC_COLS})))`)
+        .select(`*, home_team:league_teams!league_fixtures_home_team_id_fkey(*, club:clubs(id, name, logo_url), league_team_players(*, player:users(${USER_PUBLIC_COLS}))), away_team:league_teams!league_fixtures_away_team_id_fkey(*, club:clubs(id, name, logo_url), league_team_players(*, player:users(${USER_PUBLIC_COLS})))`)
         .eq('id', fixtureId).single(),
       supabase.from('league_match_results')
         .select('*, discipline_results:league_match_discipline_results(*)')
@@ -454,9 +455,12 @@ export default function LeagueMatchScoresheet() {
           )}
         </div>
         <div className="flex items-center justify-center gap-4 flex-wrap">
-          <div className="text-right flex-1 min-w-[150px]">
-            <p className="font-bold text-gray-800 text-xl">{fixture.home_team?.club_name ?? '—'}</p>
-            <p className="text-xs text-gray-400">Domači</p>
+          <div className="flex-1 min-w-[150px] flex items-center justify-end gap-3">
+            <div className="text-right">
+              <p className="font-bold text-gray-800 text-xl">{fixture.home_team?.club_name ?? '—'}</p>
+              <p className="text-xs text-gray-400">Domači</p>
+            </div>
+            <KlubskiGrb ime={fixture.home_team?.club_name} logoUrl={fixture.home_team?.club?.logo_url} velikost="lg" />
           </div>
           <div className="text-center px-4">
             <div className="text-5xl font-bold text-bocce-green font-mono leading-none">
@@ -466,9 +470,12 @@ export default function LeagueMatchScoresheet() {
             <p className="text-sm font-mono text-gray-500 mt-1.5">{runHomePunt} : {runAwayPunt}</p>
             <p className="text-xs text-gray-400">punt razlika</p>
           </div>
-          <div className="text-left flex-1 min-w-[150px]">
-            <p className="font-bold text-gray-800 text-xl">{fixture.away_team?.club_name ?? '—'}</p>
-            <p className="text-xs text-gray-400">Gostje</p>
+          <div className="flex-1 min-w-[150px] flex items-center gap-3">
+            <KlubskiGrb ime={fixture.away_team?.club_name} logoUrl={fixture.away_team?.club?.logo_url} velikost="lg" />
+            <div className="text-left">
+              <p className="font-bold text-gray-800 text-xl">{fixture.away_team?.club_name ?? '—'}</p>
+              <p className="text-xs text-gray-400">Gostje</p>
+            </div>
           </div>
         </div>
       </div>

@@ -40,7 +40,7 @@ export default function Zasebnost() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-1">Zasebnost in piškotki</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 20. 8. 2026.
+        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 24. 8. 2026.
       </p>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-sm text-amber-900">
@@ -144,6 +144,11 @@ export default function Zasebnost() {
                 <td className="px-3 py-2 text-gray-500">vi in skrbnik</td>
               </tr>
               <tr>
+                <td className="px-3 py-2">Fotografija</td>
+                <td className="px-3 py-2">prepoznavnost na profilu in v seznamu članov kluba; ni obvezna</td>
+                <td className="px-3 py-2 text-gray-500">javno</td>
+              </tr>
+              <tr>
                 <td className="px-3 py-2">Rezultati in uvrstitve</td>
                 <td className="px-3 py-2">vodenje tekmovanj in zgodovina</td>
                 <td className="px-3 py-2 text-gray-500">javno</td>
@@ -152,7 +157,8 @@ export default function Zasebnost() {
           </table>
         </div>
         <p>
-          <strong>Javno vidno je samo prvo in zadnje.</strong> EMŠO, naslova, e-naslova,
+          <strong>Javno vidno je samo tisto, kar je v stolpcu »Kdo ga vidi« označeno kot
+          javno.</strong> EMŠO, naslova, e-naslova,
           telefona in polnega datuma rojstva ne prikazujemo nikjer — ti podatki so na
           ravni baze zaprti tako, da jih tudi drug prijavljen uporabnik ne more prebrati.
           Vidite jih le vi in skrbnik zveze.
@@ -176,7 +182,8 @@ export default function Zasebnost() {
         </p>
         <p>
           Podatki mladoletnih so zaščiteni enako kot vsi ostali; javno se prikazujeta ime
-          in klub ter letnica rojstva, tako kot pri članih.
+          in klub ter letnica rojstva, tako kot pri članih. Fotografija ni obvezna in je
+          nihče ne naloži sam — doda jo skrbnik zveze; če je naložena, je javno vidna.
         </p>
       </Razdelek>
 

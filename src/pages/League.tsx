@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
+import KlubskiGrb from '../components/KlubskiGrb'
 import { useRealtimeTable, useJitteredCallback, mergeRowById } from '../lib/useRealtimeTable'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
@@ -263,10 +264,11 @@ function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: s
       className={`block bg-white border rounded-xl overflow-hidden transition-colors hover:bg-gray-50 group
         ${isMyMatch ? 'border-bocce-green/30 bg-bocce-green/5 hover:bg-bocce-green/10' : 'border-gray-200'}`}>
       <div className="flex items-center gap-4 px-5 py-3">
-        <div className="flex-1 text-right">
-          <span className={`font-medium text-sm ${f.home_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
+        <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
+          <span className={`font-medium text-sm text-right ${f.home_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
             {f.home_team?.club_name}
           </span>
+          <KlubskiGrb ime={f.home_team?.club_name} logoUrl={f.home_team?.club?.logo_url} velikost="sm" />
         </div>
         <div className="text-center min-w-[80px]">
           {f.status === 'completed' ? (
@@ -279,7 +281,8 @@ function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: s
             </div>
           )}
         </div>
-        <div className="flex-1 text-left">
+        <div className="flex-1 flex items-center gap-2 min-w-0">
+          <KlubskiGrb ime={f.away_team?.club_name} logoUrl={f.away_team?.club?.logo_url} velikost="sm" />
           <span className={`font-medium text-sm ${f.away_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
             {f.away_team?.club_name}
           </span>
@@ -426,7 +429,10 @@ export function LeagueDetail() {
     if (!id) return
     const [{ data: s }, { data: t }, { data: f }] = await Promise.all([
       supabase.from('league_seasons').select('*').eq('id', id).single(),
-      supabase.from('league_teams').select(`*, captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`).eq('season_id', id),
+      // Klub je vgnezden zaradi logotipa. Klubov je na sezono kvečjemu toliko
+      // kot ekip, zato embed ne podvaja ničesar občutnega — za razliko od ekip
+      // v tekmah spodaj.
+      supabase.from('league_teams').select(`*, club:clubs(id, name, logo_url), captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`).eq('season_id', id),
       // Brez vgnezdenih ekip: sezona ima ~9 ekip, tekem pa ~80, zato je embed
       // prinesel isto ekipo do 160-krat (izmerjeno 71 KB → 35 KB). Ekipe so že
       // naložene v poizvedbi nad to vrstico; spodaj jih pripnemo po id-ju, zato
@@ -445,8 +451,8 @@ export function LeagueDetail() {
       const { data: cj } = await supabase.from('users').select('id, full_name').in('id', cjIds)
       cjMap = Object.fromEntries((cj ?? []).map((u: { id: string; full_name: string | null }) => [u.id, u.full_name]))
     }
-    // Ena ekipa = en objekt, deljen med vsemi njenimi tekmami. Ko bo ekipa dobila
-    // logotip, ga bo imela vsaka tekma brez dodatnega prenosa.
+    // Ena ekipa = en objekt, deljen med vsemi njenimi tekmami — logotip kluba
+    // s tem pride do vsake tekme brez dodatnega prenosa.
     const teamById = new Map(teamList.map(tm => [tm.id, tm]))
     setFixtures(fixturesRaw.map(fx => ({
       ...fx,
@@ -500,9 +506,12 @@ export function LeagueDetail() {
             <p className="text-gray-500 text-sm">Sezona {seasonLabel(season)} · {teams.length} ekip · {season.rounds_count} kol</p>
           </div>
           {myTeam && (
-            <div className="bg-bocce-green/5 border border-bocce-green/20 rounded-lg px-4 py-2 text-right">
-              <p className="text-xs text-gray-500">Moja ekipa</p>
-              <p className="font-semibold text-bocce-green">{myTeam.club_name}</p>
+            <div className="bg-bocce-green/5 border border-bocce-green/20 rounded-lg px-4 py-2 flex items-center gap-3">
+              <KlubskiGrb ime={myTeam.club_name} logoUrl={myTeam.club?.logo_url} velikost="md" />
+              <div className="text-right">
+                <p className="text-xs text-gray-500">Moja ekipa</p>
+                <p className="font-semibold text-bocce-green">{myTeam.club_name}</p>
+              </div>
             </div>
           )}
         </div>
@@ -710,13 +719,15 @@ export function LeagueDetail() {
                             return (
                               <div key={f.id}
                                 className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 flex items-center gap-4 opacity-50">
-                                <div className="flex-1 text-right">
-                                  <span className="font-medium text-sm text-gray-500">{f.home_team?.club_name}</span>
+                                <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
+                                  <span className="font-medium text-sm text-gray-500 text-right">{f.home_team?.club_name}</span>
+                                  <KlubskiGrb ime={f.home_team?.club_name} logoUrl={f.home_team?.club?.logo_url} velikost="sm" />
                                 </div>
                                 <div className="text-center min-w-[80px]">
                                   <span className="text-xs text-gray-400 italic">ni bila odigrana</span>
                                 </div>
-                                <div className="flex-1 text-left">
+                                <div className="flex-1 flex items-center gap-2 min-w-0">
+                                  <KlubskiGrb ime={f.away_team?.club_name} logoUrl={f.away_team?.club?.logo_url} velikost="sm" />
                                   <span className="font-medium text-sm text-gray-500">{f.away_team?.club_name}</span>
                                 </div>
                               </div>
@@ -768,7 +779,10 @@ export function LeagueDetail() {
         <div className="grid sm:grid-cols-2 gap-4">
           {teams.map(team => (
             <div key={team.id} className="bg-white border border-gray-200 rounded-xl p-4">
-              <h3 className="font-semibold text-gray-800 mb-2">{team.club_name}</h3>
+              <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                <KlubskiGrb ime={team.club_name} logoUrl={team.club?.logo_url} velikost="lg" />
+                <span>{team.club_name}</span>
+              </h3>
               {team.captain && (
                 <p className="text-xs text-gray-500 mb-2">Vodja ekipe: {team.captain.full_name}</p>
               )}
