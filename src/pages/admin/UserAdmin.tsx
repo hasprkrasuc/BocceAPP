@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import type { UserProfile, UserRole } from '../../types'
 import { ROLE_LABELS, ROLE_COLORS, ROLE_ORDER } from '../../lib/roles'
 import ImageUpload from '../../components/ImageUpload'
+import { isGenericEmail } from '../../lib/genericEmail'
 
 /** Stolpcev v tabeli — za colSpan razširjene vrstice. */
 const STOLPCEV = 7
@@ -21,6 +22,9 @@ export default function UserAdmin() {
   const [urejam, setUrejam] = useState<string | null>(null)
   const [vrsticaBusy, setVrsticaBusy] = useState(false)
   const [vrsticaMsg, setVrsticaMsg] = useState<string | null>(null)
+  /** Enkrat prikazano geslo po ponastavitvi. Nikjer se ne shrani. */
+  const [novoGeslo, setNovoGeslo] = useState<string | null>(null)
+  const [novNaslov, setNovNaslov] = useState('')
 
   useEffect(() => { load() }, [])
   useEffect(() => {
@@ -124,8 +128,61 @@ export default function UserAdmin() {
     }
   }
 
+  /**
+   * Ponastavitev gesla. Strežnik ustvari naključno geslo, ga vrne ENKRAT in
+   * uporabnika označi z must_change_password — tisto, ki ga vidi admin, velja
+   * samo do prve prijave. Obstoječega gesla ni mogoče prebrati niti tu.
+   */
+  async function ponastaviGeslo(u: UserProfile) {
+    if (!window.confirm(
+      `Ponastaviti geslo za ${u.full_name}?\n\n` +
+      'Staro geslo bo takoj neveljavno. Novo se prikaže enkrat — prepiši ga, preden zapreš vrstico.'
+    )) return
+    setVrsticaBusy(true); setVrsticaMsg(null); setNovoGeslo(null)
+    try {
+      const res = await fetch('/api/user-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await zeton()}` },
+        body: JSON.stringify({ action: 'reset-password', userId: u.id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Ponastavitev ni uspela')
+      setNovoGeslo(json.password as string)
+    } catch (e) {
+      setVrsticaMsg(`❌ ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setVrsticaBusy(false)
+    }
+  }
+
+  /** Sprememba prijavnega naslova — pot za tiste, ki imajo pravi poštni predal. */
+  async function shraniNaslov(u: UserProfile) {
+    const naslov = novNaslov.trim().toLowerCase()
+    if (!naslov || naslov === (u.email ?? '').toLowerCase()) return
+    if (!window.confirm(`Prijavni naslov za ${u.full_name} spremeniti v ${naslov}?`)) return
+    setVrsticaBusy(true); setVrsticaMsg(null)
+    try {
+      const res = await fetch('/api/user-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await zeton()}` },
+        body: JSON.stringify({ action: 'set-email', userId: u.id, email: naslov }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Sprememba ni uspela')
+      setUsers(us => us.map(x => (x.id === u.id ? { ...x, email: naslov } : x)))
+      setNovNaslov('')
+      setVrsticaMsg(`✓ Prijavni naslov je zdaj ${naslov}`)
+    } catch (e) {
+      setVrsticaMsg(`❌ ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setVrsticaBusy(false)
+    }
+  }
+
   function preklopiUrejanje(userId: string) {
     setVrsticaMsg(null)
+    setNovoGeslo(null)   // geslo ne sme obviseti na zaslonu pri drugem človeku
+    setNovNaslov('')
     setUrejam(prej => (prej === userId ? null : userId))
   }
 
@@ -279,6 +336,59 @@ export default function UserAdmin() {
                             </p>
                           </div>
                         </div>
+                        {/* Prijava — pot nazaj za tistega, ki je pozabil geslo. */}
+                        <div className="mt-6 pt-4 border-t border-bocce-green/20">
+                          <h3 className="text-sm font-medium text-gray-700 mb-2">Prijava</h3>
+                          <div className="grid sm:grid-cols-2 gap-6">
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Prijavni e-naslov</label>
+                              <div className="flex gap-2">
+                                <input type="email" value={novNaslov} onChange={e => setNovNaslov(e.target.value)}
+                                  disabled={vrsticaBusy}
+                                  placeholder={u.email ?? 'ime@email.com'}
+                                  className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-50" />
+                                <button onClick={() => shraniNaslov(u)} disabled={vrsticaBusy || !novNaslov.trim()}
+                                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                                  Shrani
+                                </button>
+                              </div>
+                              {isGenericEmail(u.email) && (
+                                <p className="mt-1 text-xs text-amber-700">
+                                  Sedanji naslov je dodelila aplikacija ob uvozu in ne more prejeti pošte —
+                                  ponastavitev gesla po e-pošti pri njem ne deluje.
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Geslo</label>
+                              <button onClick={() => ponastaviGeslo(u)} disabled={vrsticaBusy}
+                                className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                                Ponastavi geslo
+                              </button>
+                              <p className="mt-1 text-xs text-gray-500">
+                                Sedanjega gesla ne vidi nihče — v bazi je le zgoščena vrednost.
+                                Novo se prikaže enkrat, uporabnik pa ga ob prvi prijavi zamenja.
+                              </p>
+                            </div>
+                          </div>
+
+                          {novoGeslo && (
+                            <div className="mt-3 rounded-lg border border-green-300 bg-green-50 px-4 py-3">
+                              <p className="text-xs text-green-800 mb-1">
+                                Novo geslo za <strong>{u.full_name}</strong> — prikazano samo zdaj:
+                              </p>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <code className="font-mono text-lg tracking-wide text-gray-900 select-all">{novoGeslo}</code>
+                                <button onClick={() => navigator.clipboard?.writeText(novoGeslo)}
+                                  className="text-xs text-bocce-green hover:underline">kopiraj</button>
+                              </div>
+                              <p className="text-xs text-green-800 mt-1">
+                                Staro geslo je neveljavno. Ob prvi prijavi ga bo moral zamenjati.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
                         {vrsticaMsg && (
                           <p className={`mt-3 text-sm ${vrsticaMsg.startsWith('✓') ? 'text-green-700' : 'text-red-600'}`}>{vrsticaMsg}</p>
                         )}

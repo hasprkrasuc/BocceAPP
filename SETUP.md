@@ -160,7 +160,15 @@ nastavi svoj SMTP.
 > **Pomembno:** od 1403 uporabnikov jih 1370 nima pravega poštnega predala — ob
 > uvozu so dobili naslov oblike `ime.priimek.hash@balinar.app`, ki nikamor ne
 > vodi. Tem ponastavitev po e-pošti **ne more** pomagati; obrazec jih na to
-> opozori in jih napoti na skrbnika. Geslo jim mora nastaviti skrbnik.
+> opozori in jih napoti na skrbnika.
+
+Za te obstaja druga pot: **/admin/uporabniki → Uredi → Prijava**. Admin lahko
+uporabniku vpiše pravi e-naslov ali mu ponastavi geslo — novo se izpiše enkrat
+za prepis ali narek po telefonu, uporabnik pa ga ob prvi prijavi zamenja.
+
+Gesla administratorja ali super administratorja sme ponastaviti **samo super
+administrator**; sicer bi lahko katerikoli admin prevzel račun kateregakoli
+drugega. Sedanjega gesla ne vidi nihče — v bazi je le zgoščena vrednost.
 
 ---
 
