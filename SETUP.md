@@ -137,6 +137,39 @@ update public.users set role = 'super_admin' where email = 'tvoj@email.com';
 
 Vse nadaljnje vloge dvigni prek **/admin/uporabniki**.
 
+### 3.3 Ponastavitev pozabljenega gesla
+
+Prijavni zaslon ima **Pozabljeno geslo?**, ki pošlje povezavo na `/novo-geslo`.
+Da povezava sploh odide in da ob kliku ne pade, sta v Dashboardu potrebni dve
+nastavitvi — migracije jih ne pokrijejo, ker živita zunaj sheme `public`.
+
+**Supabase → Authentication → URL Configuration:**
+
+- *Site URL*: naslov produkcije (npr. `https://balinar.app`)
+- *Redirect URLs*: dodaj `https://balinar.app/novo-geslo` in — za razvoj —
+  `http://localhost:5173/novo-geslo`
+
+Brez tega Supabase povezave ne pošlje, obrazec pa pokaže napako, ki jo vrne
+strežnik. Vsak preview na Vercelu ima svojo domeno, zato ponastavitev tam ne bo
+delovala, dokler naslova ne dodaš posebej.
+
+**Supabase → Project Settings → Authentication → SMTP Settings:** vgrajena pošta
+je namenjena razvoju in je strogo omejena (nekaj sporočil na uro). Za resno rabo
+nastavi svoj SMTP.
+
+> **Pomembno:** od 1403 uporabnikov jih 1370 nima pravega poštnega predala — ob
+> uvozu so dobili naslov oblike `ime.priimek.hash@balinar.app`, ki nikamor ne
+> vodi. Tem ponastavitev po e-pošti **ne more** pomagati; obrazec jih na to
+> opozori in jih napoti na skrbnika.
+
+Za te obstaja druga pot: **/admin/uporabniki → Uredi → Prijava**. Admin lahko
+uporabniku vpiše pravi e-naslov ali mu ponastavi geslo — novo se izpiše enkrat
+za prepis ali narek po telefonu, uporabnik pa ga ob prvi prijavi zamenja.
+
+Gesla administratorja ali super administratorja sme ponastaviti **samo super
+administrator**; sicer bi lahko katerikoli admin prevzel račun kateregakoli
+drugega. Sedanjega gesla ne vidi nihče — v bazi je le zgoščena vrednost.
+
 ---
 
 ## 4. Poveži aplikacijo

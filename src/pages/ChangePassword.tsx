@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../supabase'
 import AccountLoginSection from '../components/AccountLoginSection'
+import { napakaNovegaGesla, NAJMANJ_ZNAKOV } from '../lib/ponastavitevGesla'
 
 /**
  * Zaslon za prisilno spremembo gesla ob prvi prijavi (must_change_password).
@@ -20,8 +21,9 @@ export default function ChangePassword() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
-    if (password.length < 8) { setError('Novo geslo mora imeti vsaj 8 znakov'); return }
-    if (password !== confirm) { setError('Gesli se ne ujemata'); return }
+    // Deljeno s ponastavitvijo prek povezave, da se pravili ne razideta.
+    const n = napakaNovegaGesla(password, confirm)
+    if (n) { setError(n); return }
     setLoading(true)
     try {
       const { error: pErr } = await supabase.auth.updateUser({ password })
@@ -62,7 +64,7 @@ export default function ChangePassword() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Novo geslo *</label>
               <input type="password" required value={password} onChange={e => setPassword(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-bocce-green outline-none"
-                placeholder="Vsaj 8 znakov" autoComplete="new-password" />
+                placeholder={`Vsaj ${NAJMANJ_ZNAKOV} znakov`} autoComplete="new-password" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Ponovi novo geslo *</label>
