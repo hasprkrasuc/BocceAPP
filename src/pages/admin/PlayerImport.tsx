@@ -15,7 +15,7 @@ import { supabase } from '../../supabase'
 import { parseImportFile } from '../../lib/playerImport/parseImportFile'
 import { computeStatuses, normalizeName } from '../../lib/playerImport/matchPlayers'
 import { parseBirthDate, letnicaIzDatuma } from '../../lib/playerImport/parseDate'
-import { isValidEmso, normalizeEmso } from '../../lib/playerImport/emso'
+import { isValidPersonalId, normalizeEmso } from '../../lib/playerImport/emso'
 import { kandidatiZaOdjavo, opozoriloOObsegu, type ClanKluba } from '../../lib/playerImport/odjavaClanov'
 import type { ExistingUser, ImportReport, ImportRequest, ImportRow, ParseResult, ParsedPlayer, Gender, ClubMembershipRequest, ClubMembershipReport } from '../../lib/playerImport/types'
 
@@ -739,12 +739,15 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
   const [report, setReport] = useState<ImportReport | null>(null)
 
   // Neveljavna kontrolna števka NE blokira (glej onSubmit) — le opozorimo, da lahko
-  // admin preveri pri klubu. Prikažemo šele, ko je oblika pravilna (13 števk), sicer
-  // bi med tipkanjem opozarjali na "napako", ki je zgolj nedokončan vnos.
+  // admin preveri pri klubu. Prikažemo šele, ko je oblika dokončana, sicer bi med
+  // tipkanjem opozarjali na "napako", ki je zgolj nedokončan vnos.
+  //
+  // Dolžini sta dve: 13 števk je slovenski EMŠO, 11 pa tuja oznaka (hrvaški OIB).
+  // Tujci v naših ligah nastopajo in slovenskega EMŠO nimajo.
   const emsoDigits = normalizeEmso(emso.trim())
   const emsoChecksumWarning =
-    emso.trim() && /^\d{13}$/.test(emsoDigits) && !isValidEmso(emsoDigits)
-      ? '⚠ Neveljavna kontrolna števka EMŠO — preveri pri klubu (vseeno lahko dodaš)'
+    emso.trim() && /^(\d{11}|\d{13})$/.test(emsoDigits) && !isValidPersonalId(emsoDigits)
+      ? '⚠ Neveljavna kontrolna števka — preveri pri klubu (vseeno lahko dodaš)'
       : null
 
   function resetForm() {
@@ -780,11 +783,11 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
       }
     }
 
-    // Blokiramo le OBLIKO (13 števk) — napačna kontrolna števka je pri realnih podatkih
+    // Blokiramo le OBLIKO (13 števk za EMŠO, 11 za tujo oznako) — napačna kontrolna števka je pri realnih podatkih
     // pogosto le tipkarska napaka kluba na uradnem obrazcu, zato jo (enako kot masovni
     // uvoz) le označimo z opozorilom ob polju in dovolimo vnos.
-    if (emsoTrimmed && !/^\d{13}$/.test(normalizeEmso(emsoTrimmed))) {
-      setFormError('EMŠO mora imeti 13 števk')
+    if (emsoTrimmed && !/^(\d{11}|\d{13})$/.test(normalizeEmso(emsoTrimmed))) {
+      setFormError('EMŠO mora imeti 13 števk (tuja oznaka 11)')
       return
     }
 
@@ -888,7 +891,7 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
             type="text"
             value={emso}
             onChange={e => setEmso(e.target.value)}
-            placeholder="13 števk"
+            placeholder="13 števk (tujci 11)"
             className="w-full border rounded p-2 text-sm"
           />
           {emsoChecksumWarning && (

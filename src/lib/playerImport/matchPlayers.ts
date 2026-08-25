@@ -1,5 +1,5 @@
 import type { ParsedPlayer, ExistingUser, ImportRow } from './types'
-import { isValidEmso, normalizeEmso } from './emso'
+import { isValidPersonalId, normalizeEmso } from './emso'
 
 // Deljeno tudi s strežniško funkcijo api/import-players.ts — ujemanje brez EMŠO
 // se mora na obeh straneh normalizirati enako, sicer predogled in uvoz razideta.
@@ -45,7 +45,7 @@ export function zoziKandidate<T extends { emso: string | null; license_number: s
 export function emsoNasprotuje(obstojeci: string | null, uvozeni: string | null): boolean {
   if (!obstojeci || !uvozeni) return false
   const stari = normalizeEmso(obstojeci)
-  if (!/^\d{13}$/.test(stari)) return false
+  if (!/^(\d{11}|\d{13})$/.test(stari)) return false
   return stari !== normalizeEmso(uvozeni)
 }
 
@@ -80,11 +80,15 @@ export function computeStatuses(
     ({ player: p, status: 'error', existingUserId: null, currentClubId: null, error, warning })
 
   return players.map((p): ImportRow => {
-    // Neveljavna kontrolna števka EMŠO je pri realnih podatkih pogosto zgolj tipkarska
+    // Neveljavna kontrolna števka je pri realnih podatkih pogosto zgolj tipkarska
     // napaka kluba (ista napaka se ponovi vsako sezono) — igralec je še vedno prepoznaven,
-    // zato tega NE blokiramo, le opozorimo. EMŠO kljub temu uporabimo za ujemanje po enakosti.
-    const warning = p.emso && !isValidEmso(p.emso)
-      ? 'Neveljavna kontrolna števka EMŠO — preveri pri klubu'
+    // zato tega NE blokiramo, le opozorimo. Oznako kljub temu uporabimo za ujemanje po enakosti.
+    //
+    // Preverjamo isValidPersonalId in ne isValidEmso: v ligah nastopajo tujci, ki
+    // slovenskega EMŠO nimajo. Njihov hrvaški OIB je pravilen podatek in ga ni
+    // pošteno vsako sezono označevati za napako.
+    const warning = p.emso && !isValidPersonalId(p.emso)
+      ? 'Neveljavna kontrolna števka oznake osebe — preveri pri klubu'
       : null
 
     let match: ExistingUser | undefined

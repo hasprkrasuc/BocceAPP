@@ -193,6 +193,35 @@ describe('parseEvidenceRows — glava e-naslova se med izvozi razlikuje', () => 
   })
 })
 
+describe('parseEvidenceRows — tuja oznaka osebe', () => {
+  // V naših ligah nastopajo tujci brez slovenskega EMŠO. Njihova oznaka ima 11
+  // števk (hrvaški OIB). Brez tega bi pristala med ostanki maske in nikoli v
+  // stolpcu emso — igralca ne bi bilo mogoče ujeti po oznaki, strežnik pa bi
+  // vrstico ob uvozu zavrnil.
+  const vrstica = (oznaka: string) => ([
+    'TUJEC', 'IVAN', 'ZZ TEST KLUB', 'B. društvo ZZ Test', 'OBZ Test', 'Super Liga', 'M',
+    '1978-05-12', oznaka, '',
+  ])
+
+  test('11-mestna oznaka se prebere kot polnovredna, ne kot ostanek', () => {
+    // Številka je izmišljena in izračunana, ne pripada nikomur.
+    const r = parseEvidenceRows([GLAVA, vrstica('12345678903')])
+    expect(r.players[0].emso).toBe('12345678903')
+    expect(r.players[0].emsoSuffix).toBeNull()
+  })
+
+  test('zamaskirana 11-mestna vrednost ostane ostanek', () => {
+    const r = parseEvidenceRows([GLAVA, vrstica('*******8903')])
+    expect(r.players[0].emso).toBeNull()
+    expect(r.players[0].emsoSuffix).toBe('8903')
+  })
+
+  test('12-mestna vrednost ni ne EMŠO ne tuja oznaka', () => {
+    const r = parseEvidenceRows([GLAVA, vrstica('123456789031')])
+    expect(r.players[0].emso).toBeNull()
+  })
+})
+
 describe('parseImportRows — razvrščanje po obliki', () => {
   test('izvoz iz evidence gre v svoj razčlenjevalnik', () => {
     const r = parseImportRows(evidenca)
