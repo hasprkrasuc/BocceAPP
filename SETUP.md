@@ -153,9 +153,33 @@ Brez tega Supabase povezave ne pošlje, obrazec pa pokaže napako, ki jo vrne
 strežnik. Vsak preview na Vercelu ima svojo domeno, zato ponastavitev tam ne bo
 delovala, dokler naslova ne dodaš posebej.
 
-**Supabase → Project Settings → Authentication → SMTP Settings:** vgrajena pošta
-je namenjena razvoju in je strogo omejena (nekaj sporočil na uro). Za resno rabo
-nastavi svoj SMTP.
+**Supabase → Authentication → Emails → SMTP Settings.** Vgrajena pošta je
+namenjena razvoju in je strogo omejena (nekaj sporočil na uro), zato produkcija
+pošilja prek lastnega ponudnika. Postavitev, ki teče (25. 8. 2026):
+
+| polje | vrednost |
+| --- | --- |
+| Sender email address | `noreply@balinar.app` |
+| Sender name | `BalinarApp` |
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| Username | `resend` (dobesedno, ni e-naslov) |
+| Password | ključ `re_…` iz Resend → API keys |
+| Minimum interval per user | `60` sekund |
+
+Domena `balinar.app` je v Resendu potrjena v regiji **eu-west-1 (Irska)**, da
+pošta ostane v EU. Zapisi SPF, DKIM in povratni MX so v DNS pri Vercelu, kjer
+domena gostuje; brez njih pošta ni zavrnjena, a romá med vsiljeno.
+
+Po vklopu lastnega SMTP Supabase postavi mejo **30 sporočil na uro**, da zaščiti
+ugled nove domene. Dvignjena je na 60 v **Authentication → Rate Limits → Rate
+limit for sending emails**. Prava zgornja meja ni ta številka, ampak brezplačni
+paket Resenda: 100 sporočil na dan in 3000 na mesec.
+
+Ali je postavitev res v veljavi, se vidi po **pošiljatelju prejetega sporočila**:
+`noreply@balinar.app` pomeni Resend, `noreply@mail.app.supabase.io` pa vgrajeno
+pošto. Sam dnevnik za to ne zadošča — `POST /recover` vrne 200 v obeh primerih.
+Kadar SMTP dostopi niso pravilni, vrne 500 z `Error sending recovery email`.
 
 > **Pomembno:** od 1403 uporabnikov jih 1370 nima pravega poštnega predala — ob
 > uvozu so dobili naslov oblike `ime.priimek.hash@balinar.app`, ki nikamor ne
