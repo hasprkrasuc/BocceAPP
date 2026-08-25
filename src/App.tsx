@@ -9,6 +9,8 @@ import ChangePassword from './pages/ChangePassword'
 
 import Home from './pages/Home'
 import { Login, Signup } from './pages/Auth'
+import PozabljenoGeslo from './pages/PozabljenoGeslo'
+import NovoGeslo from './pages/NovoGeslo'
 import Profile from './pages/Profile'
 import { TournamentList, TournamentDetail } from './pages/Tournament'
 import { LeagueList, LeagueDetail } from './pages/League'
@@ -131,6 +133,10 @@ export default function App() {
               {/* Auth */}
               <Route path="/prijava" element={<Login />} />
               <Route path="/registracija" element={<Signup />} />
+              {/* Ponastavitev gesla je javna po naravi — do nje pride človek,
+                  ki se prav zato ne more prijaviti. */}
+              <Route path="/pozabljeno-geslo" element={<PozabljenoGeslo />} />
+              <Route path="/novo-geslo" element={<NovoGeslo />} />
 
               {/* Protected (logged in) */}
               <Route path="/profil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

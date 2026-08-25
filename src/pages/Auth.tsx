@@ -49,7 +49,12 @@ export function Login() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{sl.auth.password}</label>
+            <div className="flex items-baseline justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">{sl.auth.password}</label>
+              <Link to="/pozabljeno-geslo" className="text-xs text-bocce-green hover:underline">
+                Pozabljeno geslo?
+              </Link>
+            </div>
             <input
               type="password"
               required
