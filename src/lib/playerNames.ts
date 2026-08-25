@@ -37,3 +37,32 @@ export async function resolvePlayerNames(ids: string[]): Promise<Map<string, Res
   }
   return map
 }
+
+export interface IgralecZaOznako {
+  full_name: string | null
+  birth_year?: number | null
+  club?: string | null
+}
+
+/**
+ * Oznaka igralca za izbirnike: »Ivan Ličan (1961)«.
+ *
+ * Letnica ni okras. V bazi sta dva Ivana Ličana, oba v istem klubu — eden
+ * letnik 1961, drugi 1964. Brez letnice ju pri vnosu zapisnika ni mogoče
+ * ločiti, izbira pa se zapiše v rezultate, kjer napake nihče več ne opazi.
+ *
+ * Klub se pripne samo tam, kjer izbirnik sega čez več klubov; znotraj ene
+ * ekipe je odveč in vrstico po nepotrebnem podaljša.
+ *
+ * Manjkajoča letnica ne pusti praznega oklepaja: pri sodnikih in starejših
+ * zapisih je datum rojstva pogosto prazen.
+ */
+export function oznakaIgralca(
+  p: IgralecZaOznako,
+  { klub = false }: { klub?: boolean } = {},
+): string {
+  const ime = (p.full_name ?? '').trim() || '(brez imena)'
+  const letnica = p.birth_year ? ` (${p.birth_year})` : ''
+  const pripis = klub && p.club ? ` — ${p.club}` : ''
+  return `${ime}${letnica}${pripis}`
+}

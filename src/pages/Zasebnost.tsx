@@ -40,7 +40,7 @@ export default function Zasebnost() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-1">Zasebnost in piškotki</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 24. 8. 2026.
+        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 25. 8. 2026.
       </p>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-sm text-amber-900">
@@ -145,7 +145,10 @@ export default function Zasebnost() {
               </tr>
               <tr>
                 <td className="px-3 py-2">Fotografija</td>
-                <td className="px-3 py-2">prepoznavnost na profilu in v seznamu članov kluba; ni obvezna</td>
+                <td className="px-3 py-2">
+                  prepoznavnost na profilu in v seznamu članov kluba ter obveščanje javnosti;
+                  ni obvezna, podlaga je podpisano soglasje (glej spodaj)
+                </td>
                 <td className="px-3 py-2 text-gray-500">javno</td>
               </tr>
               <tr>
@@ -165,8 +168,21 @@ export default function Zasebnost() {
         </p>
         <p>
           Pravna podlaga za obdelavo je <strong>člansko razmerje in vodenje tekmovanj</strong>.
-          Obdelava torej ne temelji na vaši privolitvi, zato je tudi ne morete preklicati;
+          Ta obdelava ne temelji na vaši privolitvi, zato je tudi ne morete preklicati;
           lahko pa uveljavljate pravice, naštete spodaj.
+        </p>
+        <p>
+          <strong>Izjema je obveščanje javnosti.</strong> S podpisom na obrazcu
+          <em> Evidenca in registracija igralcev po klubih</em> igralka oziroma igralec
+          soglaša, da sme Balinarska zveza Slovenije njegovo ime in priimek, letnico
+          rojstva in fotografije uporabljati za obveščanje javnosti — na svoji spletni
+          strani, na družbenih omrežjih in v tiskanih izdajah.
+        </p>
+        <p>
+          Ker ta del stoji na <strong>privolitvi</strong>, ga je za razliko od zgornjega
+          mogoče <strong>preklicati</strong>. Preklic velja za naprej in ne vpliva na
+          objave, ki so že bile narejene, niti na rezultate in zapisnike tekem — ti so del
+          vodenja tekmovanj in ne obveščanja javnosti.
         </p>
       </Razdelek>
 
@@ -184,6 +200,11 @@ export default function Zasebnost() {
           Podatki mladoletnih so zaščiteni enako kot vsi ostali; javno se prikazujeta ime
           in klub ter letnica rojstva, tako kot pri članih. Fotografija ni obvezna in je
           nihče ne naloži sam — doda jo skrbnik zveze; če je naložena, je javno vidna.
+        </p>
+        <p>
+          Soglasje za objavo fotografij je pri mladoletnem članu del iste privolitve, ki jo
+          ob registraciji podpišejo <strong>starši oziroma skrbniki</strong>, in ga je
+          mogoče preklicati enako kot pri polnoletnih.
         </p>
       </Razdelek>
 

@@ -10,6 +10,7 @@ import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
+import { oznakaIgralca } from '../../lib/playerNames'
 
 type Tab = 'registrations' | 'draw' | 'knockout'
 
@@ -992,7 +993,7 @@ export default function TournamentEdit() {
                         <option value="">Izberi igralca...</option>
                         {players.map(p => (
                           <option key={p.id} value={p.id} disabled={isPair && !addForm.guest2 && p.id === addForm.player2}>
-                            {p.full_name}{p.club ? ` — ${p.club}` : ''}
+                            {oznakaIgralca(p, { klub: true })}
                           </option>
                         ))}
                       </select>
@@ -1038,7 +1039,7 @@ export default function TournamentEdit() {
                           <option value="">Izberi partnerja...</option>
                           {players.map(p => (
                             <option key={p.id} value={p.id} disabled={!addForm.guest1 && p.id === addForm.player1}>
-                              {p.full_name}{p.club ? ` — ${p.club}` : ''}
+                              {oznakaIgralca(p, { klub: true })}
                             </option>
                           ))}
                         </select>
@@ -1129,7 +1130,7 @@ export default function TournamentEdit() {
                               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                               {players.map(p => (
                                 <option key={p.id} value={p.id} disabled={p.id === editForm.player2}>
-                                  {p.full_name}{p.club ? ` — ${p.club}` : ''}
+                                  {oznakaIgralca(p, { klub: true })}
                                 </option>
                               ))}
                             </select>
@@ -1142,7 +1143,7 @@ export default function TournamentEdit() {
                               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                               {players.map(p => (
                                 <option key={p.id} value={p.id} disabled={p.id === editForm.player1}>
-                                  {p.full_name}{p.club ? ` — ${p.club}` : ''}
+                                  {oznakaIgralca(p, { klub: true })}
                                 </option>
                               ))}
                             </select>

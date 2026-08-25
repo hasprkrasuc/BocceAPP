@@ -16,6 +16,7 @@ import { DEFAULT_DISCIPLINES, BLOCK_LABELS } from '../../engines/leagueDisciplin
 import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../lib/matchDate'
 import { useAuth } from '../../contexts/AuthContext'
 import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
+import { oznakaIgralca } from '../../lib/playerNames'
 import { najdiKlub, predlagajPovezave, type KlubZaUjemanje } from '../../engines/ujemanjeKlubov'
 import KlubskiGrb from '../../components/KlubskiGrb'
 import {
@@ -105,7 +106,7 @@ export default function LeagueAdmin() {
   const [klubi, setKlubi] = useState<(KlubZaUjemanje & { logo_url: string | null })[]>([])
   const [povezujem, setPovezujem] = useState(false)
   const [fixtures, setFixtures] = useState<LeagueFixture[]>([])
-  const [players, setPlayers] = useState<Pick<UserProfile, 'id' | 'full_name' | 'club'>[]>([])
+  const [players, setPlayers] = useState<Pick<UserProfile, 'id' | 'full_name' | 'club' | 'birth_year'>[]>([])
   const [disciplines, setDisciplines] = useState<LeagueSeasonDiscipline[]>([])
   const [tab, setTab] = useState<'teams' | 'fixtures' | 'discipline'>('teams')
   const [showCreate, setShowCreate] = useState(false)
@@ -156,8 +157,8 @@ export default function LeagueAdmin() {
     // Igralcev je vec kot 1000, PostgREST pa toliko vrne na poizvedbo. Brez
     // stranjenja sta spustna menija (vodja ekipe in dodajanje igralca) tiho
     // izpuscala zadnjih nekaj sto igralcev po abecedi.
-    fetchAllRows<Pick<UserProfile, 'id' | 'full_name' | 'club'>>((od, doVkljucno) =>
-      supabase.from('users').select('id, full_name, club').order('full_name').range(od, doVkljucno))
+    fetchAllRows<Pick<UserProfile, 'id' | 'full_name' | 'club' | 'birth_year'>>((od, doVkljucno) =>
+      supabase.from('users').select('id, full_name, club, birth_year').order('full_name').range(od, doVkljucno))
       .then(setPlayers)
       .catch(e => setMessage(`⚠ Seznama igralcev ni bilo mogoče naložiti: ${(e as Error).message}`))
   }, [])
@@ -1485,7 +1486,7 @@ export default function LeagueAdmin() {
                   <select value={teamForm.captain_id} onChange={setTeamField('captain_id')}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                     <option value="">Brez</option>
-                    {players.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                    {players.map(p => <option key={p.id} value={p.id}>{oznakaIgralca(p, { klub: true })}</option>)}
                   </select>
                 </div>
                 <button type="submit" disabled={loading}
@@ -1563,7 +1564,7 @@ export default function LeagueAdmin() {
                         onChange={e => { if (e.target.value) addPlayerToTeam(team.id, e.target.value); e.target.value = '' }}>
                         <option value="">+ Dodaj igralca</option>
                         {players.filter(p => !team.league_team_players?.some(tp => tp.player_id === p.id))
-                          .map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                          .map(p => <option key={p.id} value={p.id}>{oznakaIgralca(p, { klub: true })}</option>)}
                       </select>
                     </div>
                   </div>
