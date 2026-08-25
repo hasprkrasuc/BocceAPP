@@ -194,15 +194,21 @@ function preberiRojstvo(row: unknown[], idx: number): { birthDate: string | null
 }
 
 /**
- * Razčleni EMŠO. Za polnovreden EMŠO štejemo izključno natanko 13 števk; vse
- * drugo (zakrito, okrnjeno, brez vodilne ničle) gre v ostanek, ki ključ ni.
+ * Razčleni uradno oznako osebe. Za polnovredno štejemo natanko 13 števk
+ * (slovenski EMŠO) ali natanko 11 (tuja oznaka, hrvaški OIB); vse drugo
+ * (zakrito, okrnjeno, brez vodilne ničle) gre v ostanek, ki ključ ni.
+ *
+ * Brez 11-mestne možnosti bi OIB tujca pristal med ostanki maske in nikoli v
+ * stolpcu `emso` — igralca torej ne bi bilo mogoče ujeti po njegovi oznaki.
  */
 function preberiEmso(row: unknown[], idx: number): { emso: string | null; emsoSuffix: string | null } {
   const tekst = cellText(row, idx)
   if (tekst === '') return { emso: null, emsoSuffix: null }
 
   const cifre = normalizeEmso(tekst)
-  if (!jeZamaskirano(tekst) && cifre.length === 13) return { emso: cifre, emsoSuffix: null }
+  if (!jeZamaskirano(tekst) && (cifre.length === 13 || cifre.length === 11)) {
+    return { emso: cifre, emsoSuffix: null }
+  }
 
   const ostanek = cifre.slice(-NAJKRAJSI_OSTANEK)
   return { emso: null, emsoSuffix: ostanek.length === NAJKRAJSI_OSTANEK ? ostanek : null }

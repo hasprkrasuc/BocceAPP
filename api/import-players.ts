@@ -34,7 +34,7 @@ function zoziKandidate<T extends { emso: string | null; license_number: string |
 function emsoNasprotuje(obstojeci: string | null, uvozeni: string | null): boolean {
   if (!obstojeci || !uvozeni) return false
   const stari = normalizeEmso(obstojeci)
-  if (!/^\d{13}$/.test(stari)) return false
+  if (!/^(\d{11}|\d{13})$/.test(stari)) return false
   return stari !== normalizeEmso(uvozeni)
 }
 
@@ -135,11 +135,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         let prevClubId: string | null = null
 
-        // Strežnik je meja zaupanja, a preverja le OBLIKO (13 števk) — kontrolne števke
-        // ne preverjamo več: neveljavna kontrolna števka je pri realnih podatkih pogosto
-        // le tipkarska napaka kluba (ponovi se vsako sezono), zato je sprejeta in le opozorilo
-        // v predogledu, ne blokada. Pravi nesmisel (napačna dolžina/nedigitalni znaki) še vedno zavrnemo.
-        if (p.emso && !/^\d{13}$/.test(normalizeEmso(p.emso))) throw new Error('Neveljaven EMŠO (mora biti natanko 13 števk)')
+        // Strežnik je meja zaupanja, a preverja le OBLIKO — kontrolne števke ne
+        // preverjamo: neveljavna je pri realnih podatkih pogosto le tipkarska napaka
+        // kluba (ponovi se vsako sezono), zato je sprejeta in le opozorilo v predogledu,
+        // ne blokada. Pravi nesmisel (napačna dolžina/nedigitalni znaki) še vedno zavrnemo.
+        //
+        // Dolžini sta DVE: 13 števk je slovenski EMŠO, 11 pa tuja oznaka (hrvaški OIB).
+        // Tujci nastopajo v naših ligah in slovenskega EMŠO nimajo — doslej je njihova
+        // vrstica ob uvozu padla z napako in jih sploh ni bilo mogoče uvoziti.
+        if (p.emso && !/^(\d{11}|\d{13})$/.test(normalizeEmso(p.emso))) {
+          throw new Error('Neveljaven EMŠO (13 števk, tuja oznaka 11)')
+        }
 
         // Ključi po vrsti, od najmočnejšega proti najšibkejšemu; prvi zadetek obvelja.
         // Enako kot v predogledu (src/lib/playerImport/matchPlayers.ts).
