@@ -5,6 +5,7 @@ import type { UserProfile, UserRole } from '../../types'
 import { ROLE_LABELS, ROLE_COLORS, ROLE_ORDER } from '../../lib/roles'
 import ImageUpload from '../../components/ImageUpload'
 import { isGenericEmail } from '../../lib/genericEmail'
+import { opozoriloOEmso } from '../../lib/playerImport/emso'
 
 /** Stolpcev v tabeli — za colSpan razširjene vrstice. */
 const STOLPCEV = 7
@@ -336,6 +337,32 @@ export default function UserAdmin() {
                             </p>
                           </div>
                         </div>
+                        {/* Uradni podatki. Samo prikaz: EMŠO je z RLS zaprt na
+                            lastno vrstico in admina, popravlja pa se ob uvozu iz
+                            evidence, ki je vir resnice. */}
+                        <div className="mt-6 pt-4 border-t border-bocce-green/20">
+                          <h3 className="text-sm font-medium text-gray-700 mb-2">Uradni podatki</h3>
+                          <dl className="grid sm:grid-cols-3 gap-4 text-sm">
+                            <div>
+                              <dt className="text-xs text-gray-500">EMŠO</dt>
+                              <dd className="font-mono text-gray-800 select-all">{u.emso ?? '—'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-gray-500">Datum rojstva</dt>
+                              <dd className="text-gray-800">{u.date_of_birth ?? '—'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-gray-500">Številka licence</dt>
+                              <dd className="font-mono text-gray-800">{u.license_number ?? '—'}</dd>
+                            </div>
+                          </dl>
+                          {opozoriloOEmso(u.emso, u.date_of_birth) && (
+                            <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                              ⚠ {opozoriloOEmso(u.emso, u.date_of_birth)}
+                            </p>
+                          )}
+                        </div>
+
                         {/* Prijava — pot nazaj za tistega, ki je pozabil geslo. */}
                         <div className="mt-6 pt-4 border-t border-bocce-green/20">
                           <h3 className="text-sm font-medium text-gray-700 mb-2">Prijava</h3>
