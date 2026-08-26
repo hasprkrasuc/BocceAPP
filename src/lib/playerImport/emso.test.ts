@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'vitest'
-import { isValidEmso, normalizeEmso, isValidOib, isValidPersonalId } from './emso'
+import {
+  isValidEmso, normalizeEmso, isValidOib, isValidPersonalId,
+  datumIzEmso, opozoriloOEmso,
+} from './emso'
 
 describe('normalizeEmso', () => {
   test('število v niz z vodilnimi ničlami do 13 mest', () => {
@@ -72,5 +75,68 @@ describe('isValidPersonalId', () => {
     expect(isValidPersonalId('1.70196E+12')).toBe(false)
     expect(isValidPersonalId('2908967500')).toBe(false)
     expect(isValidPersonalId(null)).toBe(false)
+  })
+})
+
+describe('datumIzEmso', () => {
+  test('prebere datum iz prvih sedmih števk', () => {
+    expect(datumIzEmso('2006010500031')).toBe('2010-06-20')
+    expect(datumIzEmso('0806009500108')).toBe('2009-06-08')
+  })
+
+  test('trimestna letnica loči stoletji', () => {
+    // 9xx je 19xx, 0xx pa 20xx.
+    expect(datumIzEmso('1203967500080')).toBe('1967-03-12')
+    expect(datumIzEmso('2510008505042')).toBe('2008-10-25')
+  })
+
+  test('nemogoč datum vrne null, ne prevaljenega v naslednji mesec', () => {
+    // Date bi 31. februar tiho premaknil na 2. ali 3. marec.
+    expect(datumIzEmso('3102000500017')).toBeNull()
+    expect(datumIzEmso('0013000500017')).toBeNull()
+  })
+
+  test('tuja oznaka nima kodiranega datuma', () => {
+    expect(datumIzEmso('12345678903')).toBeNull()
+    expect(datumIzEmso(null)).toBeNull()
+  })
+})
+
+describe('opozoriloOEmso', () => {
+  test('pravilen EMŠO z ujemajočim datumom ne opozarja', () => {
+    expect(opozoriloOEmso('0806009500108', '2009-06-08')).toBeNull()
+  })
+
+  test('slovenska oblika datuma ne sproži lažnega opozorila', () => {
+    // V bazi sta obe obliki; brez razčlenitve bi vsaka d.m.yyyy lažno opozarjala.
+    expect(opozoriloOEmso('0806009500108', '08.06.2009')).toBeNull()
+  })
+
+  test('neujemanje datuma pove obe vrednosti', () => {
+    // Natanko primer, zaradi katerega je to opozorilo nastalo: ena sama napačna števka.
+    const o = opozoriloOEmso('0806009500108', '2009-06-06')
+    expect(o).toMatch(/2009-06-08/)
+    expect(o).toMatch(/2009-06-06/)
+  })
+
+  test('neveljavna kontrolna števka se javi pred primerjavo datuma', () => {
+    expect(opozoriloOEmso('0606009500108', '2009-06-06')).toMatch(/kontrolna števka/i)
+  })
+
+  test('pokvarjen zapis pove, koliko števk je', () => {
+    expect(opozoriloOEmso('2908967500', '1976-08-29')).toMatch(/10 števk/)
+  })
+
+  test('tuja oznaka z veljavno kontrolno ne opozarja, čeprav datuma ne kodira', () => {
+    expect(opozoriloOEmso('12345678903', '1965-12-04')).toBeNull()
+  })
+
+  test('brez EMŠO ni opozorila', () => {
+    expect(opozoriloOEmso(null, '2009-06-08')).toBeNull()
+    expect(opozoriloOEmso('', '2009-06-08')).toBeNull()
+  })
+
+  test('brez datuma rojstva se preveri samo oblika in kontrolna', () => {
+    expect(opozoriloOEmso('0806009500108', null)).toBeNull()
   })
 })
