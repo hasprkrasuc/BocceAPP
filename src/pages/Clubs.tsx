@@ -3,19 +3,11 @@ import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import type { Club, UserProfile } from '../types'
+import { razvrstiKlube, type ClanstvoVLigi } from '../engines/klubiPoLigah'
 
 // ──────────────────────────────────────────────────────────────
 // CLUB LIST
 // ──────────────────────────────────────────────────────────────
-
-const TIER_CONFIG: { key: string; label: string }[] = [
-  { key: 'super_liga',     label: 'Super liga' },
-  { key: '1_liga',         label: '1. liga' },
-  { key: '1_liga_clanice', label: '1. liga — članice' },
-  { key: '2_liga_vzhod',   label: '2. liga — vzhod' },
-  { key: '2_liga_zahod',   label: '2. liga — zahod' },
-  { key: 'obz',            label: 'OBZ in ostalo' },
-]
 
 function ClubCard({ c }: { c: Club }) {
   return (
@@ -41,11 +33,27 @@ function ClubCard({ c }: { c: Club }) {
 
 export function ClubList() {
   const [clubs, setClubs] = useState<Club[]>([])
+  /** Ekipe klubov v sezonah, ki niso zaključene — po njih se razvrsti seznam. */
+  const [clanstva, setClanstva] = useState<ClanstvoVLigi[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('clubs').select('*').order('name')
-      .then(({ data }) => { setClubs((data ?? []) as Club[]); setLoading(false) })
+    // Razvrstitev se izpelje iz tekoče sezone in NE iz stolpca clubs.tier: ta se
+    // ob prestopih ni popravljal in je bil pri 20 klubih napačen (Velenje
+    // Premogovnik in Planina Ajdovščina sta si mesti celo zamenjala).
+    Promise.all([
+      supabase.from('clubs').select('*').order('name'),
+      supabase.from('league_teams')
+        .select('club_id, league_seasons!inner(tier, category, status)')
+        .not('club_id', 'is', null)
+        .neq('league_seasons.status', 'completed'),
+    ]).then(([{ data: c }, { data: t }]) => {
+      setClubs((c ?? []) as Club[])
+      setClanstva(((t ?? []) as unknown as Array<{
+        club_id: string; league_seasons: { tier: string | null; category: string | null }
+      }>).map(r => ({ club_id: r.club_id, tier: r.league_seasons?.tier ?? null, category: r.league_seasons?.category ?? null })))
+      setLoading(false)
+    })
   }, [])
 
   if (loading) {
@@ -59,14 +67,7 @@ export function ClubList() {
     )
   }
 
-  const byTier: Record<string, Club[]> = {}
-  for (const c of clubs) {
-    const tier = (c as Club & { tier?: string }).tier ?? 'obz'
-    if (!byTier[tier]) byTier[tier] = []
-    byTier[tier].push(c)
-  }
-
-  const sections = TIER_CONFIG.filter(t => byTier[t.key]?.length)
+  const sections = razvrstiKlube(clubs, clanstva)
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -76,14 +77,14 @@ export function ClubList() {
         <div className="text-center py-16 text-gray-400 italic">Ni registriranih klubov</div>
       ) : (
         <div className="space-y-10">
-          {sections.map(({ key, label }) => (
+          {sections.map(({ key, label, klubi }) => (
             <section key={key}>
               <h2 className="text-lg font-semibold text-gray-700 mb-3 pb-1 border-b border-gray-200">
                 {label}
-                <span className="ml-2 text-sm font-normal text-gray-400">({byTier[key].length})</span>
+                <span className="ml-2 text-sm font-normal text-gray-400">({klubi.length})</span>
               </h2>
               <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {byTier[key].map(c => <ClubCard key={c.id} c={c} />)}
+                {klubi.map(c => <ClubCard key={c.id} c={c} />)}
               </div>
             </section>
           ))}
