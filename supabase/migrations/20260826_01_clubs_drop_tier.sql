@@ -1,0 +1,36 @@
+-- Odstrani public.clubs.tier.
+--
+-- Stolpec je hranil eno samo ligo na klub. Vzdrževal se je ročno in se ob
+-- prestopih ni popravljal, zato je bil zavajajoč na dva načina:
+--
+--   1) Bil je NAPAČEN. Na dan 26. 8. 2026 je bilo med 79 klubi z ekipo v
+--      tekoči sezoni 8 takih, katerih zapisani `tier` ni ustrezal NOBENI
+--      ligi, ki jo klub dejansko igra. Velenje Premogovnik in Planina
+--      Ajdovščina sta si mesti celo zamenjala (super_liga <-> 1_liga).
+--
+--   2) Strukturno ni mogel biti pravilen. Klub igra v več ligah hkrati —
+--      takih je 12 od 79 (npr. Kolektor Idrija: 2. liga zahod, U14 in U18).
+--      En sam text stolpec tega ne more zapisati.
+--
+-- Vir resnice je league_teams -> league_seasons(tier, category, status);
+-- preslikavo v razdelke dela src/engines/klubiPoLigah.ts. Od PR #127 se
+-- seznam klubov razvršča po njej in stolpca ne bere nihče več.
+--
+-- Preverjeno pred pisanjem te migracije (produkcija, 26. 8. 2026):
+--   - koda: v src/ in api/ ni nobenega branja ali pisanja clubs.tier
+--     (Club v src/types.ts polja sploh ne razglaša; ClubAdmin ga ne pošilja,
+--     api/import-players.ts ga ob ustvarjanju kluba ne nastavi)
+--   - pg_depend: noben pogled ne visi na tem stolpcu
+--   - pg_indexes: na clubs ni indeksa nad tier
+--   - pg_constraint: nad tier ni omejitve (tudi CHECK ne)
+--   - pg_proc: nobena funkcija ga ne omenja
+--   - pg_policies: nobena politika RLS ga ne omenja
+--
+-- Idempotentno: `if exists` -> ponovni zagon je no-op.
+--
+-- POZOR: podatki stolpca se z izpustom izgubijo. Povratek je v
+-- supabase/rollback/20260826_01_clubs_drop_tier_ROLLBACK.sql — stolpec vrne
+-- in ga napolni iz tekoče sezone, torej s PRAVILNIMI vrednostmi, ne s
+-- prejšnjimi (ki so bile pri 8 klubih napačne).
+
+alter table public.clubs drop column if exists tier;
