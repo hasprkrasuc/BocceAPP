@@ -13,7 +13,10 @@ import { GENERIC_EMAIL_DOMAINS } from '../lib/genericEmail'
 // pri `npm run typecheck`, tu pa jih ni nobene.
 import apiSource from '../../api/user-merge.ts?raw'
 import engineSource from './zdruzitevUporabnikov.ts?raw'
-import migracija from '../../supabase/migrations/20260826_02_zdruzi_uporabnika.sql?raw'
+// Vedno NAJNOVEJŠA različica funkcije: 20260826_03 zamenja celotno telo iz _02.
+// Ob naslednji spremembi funkcije popravi tudi to pot, sicer test preverja
+// datoteko, ki v bazi ne velja več.
+import migracija from '../../supabase/migrations/20260826_03_zdruzi_uporabnika_prenese_emso.sql?raw'
 
 /** Besedilo med `const <ime> = [` in pripadajočim `]`, brez odvečnih presledkov. */
 function seznam(source: string, ime: string, oznaka: string): string {
@@ -56,7 +59,7 @@ describe('api/user-merge.ts <-> src — sinhronizacija podvojenih seznamov', () 
   })
 })
 
-describe('SKLICI <-> migracija 20260826_02', () => {
+describe('SKLICI <-> migracija zdruzi_uporabnika', () => {
   test('vsak sklic iz motorja migracija tudi zares prestavi', () => {
     const manjkajo = SKLICI
       .filter(s => !migracija.includes(`'${kljucSklica(s)}'`))
@@ -77,5 +80,16 @@ describe('SKLICI <-> migracija 20260826_02', () => {
   test('migracija zavrne oba primera, ki bi pokvarila zapisan rezultat', () => {
     expect(migracija, 'manjka zavrnitev skupne prijave na turnir').toContain('sama s seboj')
     expect(migracija, 'manjka zavrnitev skupne postave v zapisniku').toContain('postavila dvakrat')
+  })
+
+  test('EMŠO in licenco funkcija PRESTAVI, ne le pobriše', () => {
+    // Prvotna različica ju je samo izpraznila in prepis prepustila aplikaciji.
+    // Če bi prepis spodletel, bi bili vrednosti izgubljeni z obeh zapisov —
+    // vrstni red prestavi -> prepiši -> pobriši je ščitil vse razen njiju.
+    expect(
+      migracija,
+      'funkcija EMŠO le briše; prenesti ga mora v isti transakciji',
+    ).toContain('coalesce(emso, v_emso)')
+    expect(migracija).toContain('coalesce(license_number, v_licenca)')
   })
 })
