@@ -6,6 +6,7 @@ import { ROLE_LABELS, ROLE_COLORS, ROLE_ORDER } from '../../lib/roles'
 import ImageUpload from '../../components/ImageUpload'
 import { isGenericEmail } from '../../lib/genericEmail'
 import { opozoriloOEmso } from '../../lib/playerImport/emso'
+import { preveriZdruzitev } from '../../engines/zdruzitevUporabnikov'
 
 /** Stolpcev v tabeli — za colSpan razširjene vrstice. */
 const STOLPCEV = 7
@@ -26,6 +27,9 @@ export default function UserAdmin() {
   /** Enkrat prikazano geslo po ponastavitvi. Nikjer se ne shrani. */
   const [novoGeslo, setNovoGeslo] = useState<string | null>(null)
   const [novNaslov, setNovNaslov] = useState('')
+  /** Iskalni niz in izbrani drugi zapis pri združevanju podvojenih oseb. */
+  const [iskanjeZdruzi, setIskanjeZdruzi] = useState('')
+  const [zdruziZ, setZdruziZ] = useState<UserProfile | null>(null)
 
   useEffect(() => { load() }, [])
   useEffect(() => {
@@ -180,10 +184,66 @@ export default function UserAdmin() {
     }
   }
 
+  /**
+   * Združitev dveh zapisov iste osebe.
+   *
+   * Uvoz igralcev ustvari drugi zapis za človeka, ki v bazi že je, kadar ga v
+   * evidenci nima po čem ujeti — brez e-naslova, EMŠO in datuma rojstva. Tako
+   * so nastali Mohinski, Vehovec, Šumi in Brus.
+   *
+   * Katerega obdržati, izbere človek in ne aplikacija: odjemalec ne ve, koliko
+   * sklicev nosi kateri zapis, prestavitev pa je varna v obe smeri, ker jo v eni
+   * transakciji opravi funkcija `zdruzi_uporabnika`.
+   */
+  async function zdruzi(keep: UserProfile, drop: UserProfile) {
+    const presoja = preveriZdruzitev(keep, drop)
+    if (presoja.napake.length > 0) {
+      setVrsticaMsg(`❌ ${presoja.napake.join(' ')}`)
+      return
+    }
+    const opozorila = presoja.opozorila.length > 0
+      ? presoja.opozorila.map(o => `⚠ ${o}`).join('\n\n') + '\n\n'
+      : ''
+    if (!window.confirm(
+      'Združiti zapisa?\n\n' +
+      `OSTANE:  ${keep.full_name} · ${keep.email ?? 'brez naslova'}\n` +
+      `POBRIŠE: ${drop.full_name} · ${drop.email ?? 'brez naslova'}\n\n` +
+      opozorila +
+      'Članstva v ekipah, prijave na turnirje, sodniške vloge in postave v zapisnikih ' +
+      'se prestavijo na obdržani zapis. Prazna polja obdržanega se napolnijo s podatki ' +
+      'opuščenega. Tega ni mogoče razveljaviti.'
+    )) return
+
+    setVrsticaBusy(true); setVrsticaMsg(null)
+    try {
+      const res = await fetch('/api/user-merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await zeton()}` },
+        body: JSON.stringify({ keepId: keep.id, dropId: drop.id }),
+      })
+      const json = await res.json()
+      if (!res.ok && res.status !== 207) throw new Error(json.error || 'Združitev ni uspela')
+      setZdruziZ(null)
+      setIskanjeZdruzi('')
+      await load()
+      const prevzeto = (json.prevzeto as string[] | undefined) ?? []
+      const dodatek = prevzeto.length > 0 ? ` Prevzeto z opuščenega: ${prevzeto.join(', ')}.` : ''
+      setVrsticaMsg(json.warning
+        ? `⚠ ${json.warning}`
+        : `✓ Zapisa združena.${dodatek}`)
+    } catch (e) {
+      setVrsticaMsg(`❌ ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setVrsticaBusy(false)
+    }
+  }
+
   function preklopiUrejanje(userId: string) {
     setVrsticaMsg(null)
     setNovoGeslo(null)   // geslo ne sme obviseti na zaslonu pri drugem človeku
     setNovNaslov('')
+    setIskanjeZdruzi('')
+    setZdruziZ(null)
     setUrejam(prej => (prej === userId ? null : userId))
   }
 
@@ -412,6 +472,90 @@ export default function UserAdmin() {
                               <p className="text-xs text-green-800 mt-1">
                                 Staro geslo je neveljavno. Ob prvi prijavi ga bo moral zamenjati.
                               </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Združitev podvojenih zapisov iste osebe. */}
+                        <div className="mt-6 pt-4 border-t border-bocce-green/20">
+                          <h3 className="text-sm font-medium text-gray-700 mb-1">Združi z drugim zapisom</h3>
+                          <p className="text-xs text-gray-500 mb-3">
+                            Kadar je ista oseba v bazi dvakrat. Poišči drugi zapis, nato izberi,
+                            kateri ostane — sklici se prestavijo nanj, drugi se pobriše.
+                          </p>
+
+                          <input
+                            type="search"
+                            value={iskanjeZdruzi}
+                            onChange={e => { setIskanjeZdruzi(e.target.value); setZdruziZ(null) }}
+                            disabled={vrsticaBusy}
+                            placeholder="Ime drugega zapisa..."
+                            className="w-full max-w-sm border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-50"
+                          />
+
+                          {/* Zadetki. Omejeni na osem — seznam ima ~1400 vrstic. */}
+                          {iskanjeZdruzi.trim().length >= 2 && !zdruziZ && (
+                            <div className="mt-2 max-w-sm border border-gray-200 rounded-lg divide-y divide-gray-100 bg-white">
+                              {users
+                                .filter(k => k.id !== u.id &&
+                                  (k.full_name ?? '').toLowerCase().includes(iskanjeZdruzi.trim().toLowerCase()))
+                                .slice(0, 8)
+                                .map(k => (
+                                  <button key={k.id} onClick={() => setZdruziZ(k)}
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-bocce-green/5">
+                                    <span className="font-medium text-gray-800">{k.full_name}</span>
+                                    <span className="block text-xs text-gray-400">
+                                      {k.club ?? 'brez kluba'} · {k.email ?? 'brez naslova'}
+                                    </span>
+                                  </button>
+                                ))}
+                              {users.filter(k => k.id !== u.id &&
+                                (k.full_name ?? '').toLowerCase().includes(iskanjeZdruzi.trim().toLowerCase())
+                              ).length === 0 && (
+                                <p className="px-3 py-2 text-sm text-gray-400 italic">Ni zadetkov</p>
+                              )}
+                            </div>
+                          )}
+
+                          {zdruziZ && (
+                            <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
+                              <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                                {([[u, 'Ta zapis'], [zdruziZ, 'Izbrani zapis']] as const).map(([z, naslov]) => (
+                                  <div key={naslov}>
+                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{naslov}</p>
+                                    <p className="font-medium text-gray-800">{z.full_name}</p>
+                                    <dl className="mt-1 space-y-0.5 text-xs text-gray-500">
+                                      <div>Naslov: <span className="text-gray-700">{z.email ?? '—'}</span></div>
+                                      <div>Klub: <span className="text-gray-700">{z.club ?? '—'}</span></div>
+                                      <div>EMŠO: <span className="font-mono text-gray-700">{z.emso ?? '—'}</span></div>
+                                      <div>Rojen: <span className="text-gray-700">{z.date_of_birth ?? '—'}</span></div>
+                                      <div>Licenca: <span className="font-mono text-gray-700">{z.license_number ?? '—'}</span></div>
+                                      <div>Vloga: <span className="text-gray-700">{ROLE_LABELS[z.role]}</span></div>
+                                    </dl>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {preveriZdruzitev(u, zdruziZ).opozorila.map((o, idx) => (
+                                <p key={idx} className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                                  ⚠ {o}
+                                </p>
+                              ))}
+
+                              <div className="mt-4 flex flex-wrap gap-2 items-center">
+                                <button onClick={() => zdruzi(u, zdruziZ)} disabled={vrsticaBusy}
+                                  className="bg-bocce-green text-white rounded-lg px-3 py-2 text-sm hover:opacity-90 disabled:opacity-50">
+                                  Obdrži ta zapis
+                                </button>
+                                <button onClick={() => zdruzi(zdruziZ, u)} disabled={vrsticaBusy}
+                                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                                  Obdrži izbrani zapis
+                                </button>
+                                <button onClick={() => setZdruziZ(null)} disabled={vrsticaBusy}
+                                  className="text-xs text-gray-500 hover:underline disabled:opacity-50">
+                                  prekliči
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
