@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { tockeDiscipline, stanjeZapisnika } from '../../engines/zapisnikStanje'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -42,14 +43,6 @@ function evalPlayer(s: PlayerStats, useRule: boolean) {
     return { maxAllowed: e.maxAllowed, atMax: s.count >= e.maxAllowed, countViolation: e.countViolation, anyViolation: !e.ok }
   }
   return { maxAllowed: 3, atMax: s.count >= 3, countViolation: s.count > 3, anyViolation: s.hasAllTechTypes || s.count > 3 }
-}
-
-function calcPoints(h: string, a: string): [0 | 1 | 2, 0 | 1 | 2] | null {
-  if (!h || !a) return null
-  const hn = Number(h), an = Number(a)
-  if (hn > an) return [2, 0]
-  if (an > hn) return [0, 2]
-  return [1, 1]   // izenačeno — vsaka ekipa dobi 1 točko
 }
 
 function emptyForm(n: number): DisciplineForm {
@@ -315,13 +308,19 @@ export default function LeagueMatchScoresheet() {
       await supabase.from('league_match_results').update(resultData).eq('id', resultId)
     }
     await supabase.from('league_match_discipline_results').delete().eq('match_result_id', resultId)
-    let homeTotal = 0, awayTotal = 0, homePunt = 0, awayPunt = 0
+
+    // Vsota in status se izpeljeta iz motorja, ne sproti med vstavljanjem:
+    // zapisnik se odpre tudi PRED tekmo (postave, igrišče, datum) in tedaj se
+    // rezultat ne sme zapisati. Prej je vsako shranjevanje označilo tekmo za
+    // odigrano z 0:0 — tako je nastalo deset takih, med njimi Super Liga s
+    // termini v prihodnosti, ki so stale v lestvici kot odigrane.
+    const stanje = stanjeZapisnika(
+      disciplines.map(d => forms[d.id]).filter(Boolean) as { homeScore: string; awayScore: string }[],
+    )
+
     const inserts = disciplines.map(disc => {
       const f = forms[disc.id]; if (!f) return null
-      const pts = calcPoints(f.homeScore, f.awayScore)
-      if (pts) { homeTotal += pts[0]; awayTotal += pts[1] }
-      if (f.homeScore) homePunt += Number(f.homeScore)
-      if (f.awayScore) awayPunt += Number(f.awayScore)
+      const pts = tockeDiscipline(f.homeScore, f.awayScore)
       const homePlayers = f.homePlayers.filter(Boolean)
       if (disc.has_reserve && f.homeReserve) homePlayers.push(`R: ${f.homeReserve}`)
       const awayPlayers = f.awayPlayers.filter(Boolean)
@@ -339,11 +338,20 @@ export default function LeagueMatchScoresheet() {
       const { error } = await supabase.from('league_match_discipline_results').insert(inserts)
       if (error) { setMessage(`❌ ${error.message}`); setSaving(false); return }
     }
+    // Kadar ni vpisana nobena disciplina, rezultat NAMENOMA izpraznimo in tekmo
+    // vrnemo med razporejene. Tako se popravi tudi zapisnik, ki je bil prej
+    // pomotoma označen za odigranega: ob prvem ponovnem shranjevanju se očisti.
     await supabase.from('league_fixtures').update({
-      home_score: homeTotal, away_score: awayTotal, status: 'completed',
+      home_score: stanje.tocke?.domaci ?? null,
+      away_score: stanje.tocke?.gostje ?? null,
+      status: stanje.status,
       scheduled_date: matchDate || null, venue: venue || null,
     }).eq('id', fixtureId)
-    setMessage(`✓ Zapisnik shranjen — Točke: ${homeTotal}:${awayTotal} · Punte: ${homePunt}:${awayPunt}`)
+
+    setMessage(stanje.tocke
+      ? `✓ Zapisnik shranjen — Točke: ${stanje.tocke.domaci}:${stanje.tocke.gostje}` +
+        ` · Punte: ${stanje.punti.domaci}:${stanje.punti.gostje}`
+      : '✓ Shranjeno (postave, igrišče, datum). Rezultat se bo vpisal, ko vneseš prvo disciplino.')
     setSaving(false)
   }
 
@@ -353,7 +361,7 @@ export default function LeagueMatchScoresheet() {
   let runHome = 0, runAway = 0, runHomePunt = 0, runAwayPunt = 0
   for (const disc of disciplines) {
     const f = forms[disc.id]; if (!f) continue
-    const pts = calcPoints(f.homeScore, f.awayScore)
+    const pts = tockeDiscipline(f.homeScore, f.awayScore)
     if (pts) { runHome += pts[0]; runAway += pts[1] }
     if (f.homeScore) runHomePunt += Number(f.homeScore)
     if (f.awayScore) runAwayPunt += Number(f.awayScore)
@@ -582,7 +590,7 @@ export default function LeagueMatchScoresheet() {
               <div className="space-y-2">
                 {blocks[blockNum].map(disc => {
                   const f = forms[disc.id]; if (!f) return null
-                  const pts = calcPoints(f.homeScore, f.awayScore)
+                  const pts = tockeDiscipline(f.homeScore, f.awayScore)
                   const isTech = TECHNICAL_TYPES.includes(disc.discipline_type as DisciplineType)
 
                   return (

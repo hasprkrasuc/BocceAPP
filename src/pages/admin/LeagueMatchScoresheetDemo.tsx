@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { tockeDiscipline } from '../../engines/zapisnikStanje'
 import { Link } from 'react-router-dom'
 import { BLOCK_LABELS } from '../../engines/leagueDisciplines'
 import { getAutoPlayground, getBlok4Playground, BLOK4_DISCIPLINES } from '../../engines/leaguePlaygrounds'
@@ -63,14 +64,6 @@ const INIT_FORMS: Record<string, DisciplineForm> = {
   d8:  { homeScore: '',   awayScore: '',   homePlayers: ['', ''],         awayPlayers: ['', ''],         homeReserve: '',  awayReserve: '' },
   d9:  { homeScore: '',   awayScore: '',   homePlayers: [''],             awayPlayers: [''],             homeReserve: '',  awayReserve: '' },
   d10: { homeScore: '',   awayScore: '',   homePlayers: [''],             awayPlayers: [''],             homeReserve: '',  awayReserve: '' },
-}
-
-function calcPoints(h: string, a: string): [0 | 1 | 2, 0 | 1 | 2] | null {
-  if (!h || !a) return null
-  const hn = Number(h), an = Number(a)
-  if (hn > an) return [2, 0]
-  if (an > hn) return [0, 2]
-  return [1, 1]   // izenačeno
 }
 
 function computeStats(forms: Record<string, DisciplineForm>, side: 'home' | 'away'): Record<string, PlayerStats> {
@@ -181,7 +174,7 @@ export default function LeagueMatchScoresheetDemo() {
   let runHome = 0, runAway = 0, runHomePunt = 0, runAwayPunt = 0
   for (const disc of DEMO_DISCIPLINES) {
     const f = forms[disc.id]; if (!f) continue
-    const pts = calcPoints(f.homeScore, f.awayScore)
+    const pts = tockeDiscipline(f.homeScore, f.awayScore)
     if (pts) { runHome += pts[0]; runAway += pts[1] }
     if (f.homeScore) runHomePunt += Number(f.homeScore)
     if (f.awayScore) runAwayPunt += Number(f.awayScore)
@@ -383,7 +376,7 @@ export default function LeagueMatchScoresheetDemo() {
             <div className="space-y-2">
               {blocks[blockNum].map(disc => {
                 const f = forms[disc.id]; if (!f) return null
-                const pts = calcPoints(f.homeScore, f.awayScore)
+                const pts = tockeDiscipline(f.homeScore, f.awayScore)
                 const playground = BLOK4_DISCIPLINES.includes(disc.name)
                   ? getBlok4Playground(disc.name, drawBlok4)
                   : getAutoPlayground(disc.name, drawNatancno)
