@@ -8,23 +8,19 @@
  * kode in baze, ne domneva. Če se to kdaj spremeni (dodana analitika, nov
  * javni stolpec), je treba popraviti tudi to stran.
  *
- * Kar še manjka, je označeno z <Dopolni>. Trije taki podatki so ostali in vsi
- * trije zahtevajo odločitev zveze, ne kode:
- *   - e-naslov za vprašanja o osebnih podatkih,
- *   - koliko časa po prenehanju članstva se podatki še hranijo,
- *   - razdelitev vlog med obema upravljavcema (26. člen).
+ * Trije podatki so bili dolgo odprti, ker jih ni mogla določiti koda, ampak
+ * zveza. 27. 8. 2026 jih je določil lastnik projekta:
+ *   - kontaktni naslov za vprašanja o osebnih podatkih je info@bzs.si,
+ *   - podatki se po prenehanju članstva hranijo še pet let (toliko je splošni
+ *     zastaralni rok po Obligacijskem zakoniku),
+ *   - po 26. členu zveza določa namene obdelave, s.p. pa skrbi za tehnično
+ *     izvedbo in varnost; zahtevo posameznika mora sprejeti katerikoli od njiju.
+ *
+ * Vse troje so zaveze do posameznika, ne opis kode. Če se katera spremeni,
+ * je treba spremeniti tudi dogovor med upravljavcema, ne le to stran.
  */
 
 import { Link } from 'react-router-dom'
-
-/** Podatek, ki ga mora dopolniti upravljavec; vidno označen, da se ne spregleda. */
-function Dopolni({ children }: { children: React.ReactNode }) {
-  return (
-    <mark className="bg-amber-100 text-amber-900 px-1 rounded border border-amber-200">
-      {children}
-    </mark>
-  )
-}
 
 function Razdelek({ naslov, children }: { naslov: string; children: React.ReactNode }) {
   return (
@@ -40,7 +36,7 @@ export default function Zasebnost() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-1">Zasebnost in piškotki</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 25. 8. 2026.
+        Kako BalinarApp ravna z osebnimi podatki. Zadnja sprememba: 27. 8. 2026.
       </p>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-sm text-amber-900">
@@ -98,11 +94,18 @@ export default function Zasebnost() {
         <p>
           Za vprašanja o osebnih podatkih so na voljo <strong>Simon Maljevac</strong>,{' '}
           <strong>Gašper Kraševec</strong> in <strong>Samo Vehovec</strong>; pišete jim
-          lahko na <Dopolni>[e-naslov za vprašanja o osebnih podatkih]</Dopolni>.
+          lahko na <a href="mailto:info@bzs.si" className="text-bocce-green hover:underline font-medium">info@bzs.si</a>.
         </p>
         <p>
-          <Dopolni>[Kdo od upravljavcev za kaj odgovarja — dogovor po 26. členu Splošne
-          uredbe.]</Dopolni>
+          Balinarska zveza Slovenije določa, kateri podatki se zbirajo in za kakšne
+          namene — vodenje članstva, registracija igralcev in izvedba tekmovanj.
+          Gašper Kraševec s.p. skrbi za tehnično delovanje aplikacije, za njeno
+          varnost in za obdelavo v skladu z navodili zveze.
+        </p>
+        <p>
+          Svoje pravice lahko uveljavljate pri kateremkoli od obeh upravljavcev; vsak
+          od njiju je dolžan zahtevo obravnavati ali jo posredovati drugemu. Za vsebino
+          evidence odgovarja zveza, za varnost sistema s.p.
         </p>
       </Razdelek>
 
@@ -221,7 +224,7 @@ export default function Zasebnost() {
       <Razdelek naslov="Kako dolgo jih hranimo">
         <p>
           Osebne podatke hranimo, dokler traja članstvo, in po njegovem prenehanju še{' '}
-          <Dopolni>[koliko časa]</Dopolni>. Nato jih izbrišemo ali nepovratno anonimiziramo.
+          <strong>pet let</strong>. Nato jih izbrišemo ali nepovratno anonimiziramo.
         </p>
         <p>
           <strong>Tekmovalni rezultati ostanejo.</strong> Uvrstitve, izidi in zapisniki
@@ -243,7 +246,7 @@ export default function Zasebnost() {
           Del tega lahko opravite sami: na strani{' '}
           <Link to="/profil" className="text-bocce-green hover:underline font-medium">Moj profil</Link>{' '}
           lahko svoje podatke pregledate, popravite in prenesete v datoteki.
-          Za izbris ali karkoli drugega pišite na <Dopolni>[e-naslov]</Dopolni>.
+          Za izbris ali karkoli drugega pišite na <a href="mailto:info@bzs.si" className="text-bocce-green hover:underline font-medium">info@bzs.si</a>.
         </p>
         <p>
           Če menite, da z vašimi podatki ne ravnamo pravilno, se lahko pritožite
