@@ -68,7 +68,19 @@ export interface Par<T extends ZapisZaPrimerjavo> {
   za: string[]
   /** Kaj govori proti — prikaže se človeku pred odločitvijo. */
   proti: string[]
+  /** Človek je že potrdil, da NISTA ista oseba (tabela preverjeni_dvojniki). */
+  preverjen: boolean
 }
+
+/**
+ * Enolični ključ para, neodvisen od vrstnega reda.
+ *
+ * Isti vrstni red mora veljati tudi v bazi — omejitev `id_a < id_b` v tabeli
+ * preverjeni_dvojniki. Brez tega bi par lahko obstajal dvakrat, enkrat v vsaki
+ * smeri, in bi ga utišanje v eni pustilo vidnega v drugi.
+ */
+export const kljucPara = (a: string, b: string): string =>
+  a < b ? `${a}:${b}` : `${b}:${a}`
 
 const VRSTNI_RED: Record<Zanesljivost, number> = {
   verjeten: 0, mozen: 1, malo_verjeten: 2,
@@ -104,7 +116,7 @@ const jePodmnozica = (manjsi: string[], vecji: Set<string>): boolean =>
  * ničesar — prav to je najpogostejše stanje in prav zato dvojniki nastajajo.
  */
 export function presodiPar<T extends ZapisZaPrimerjavo>(
-  a: T, b: T, ujemanje: VrstaUjemanja,
+  a: T, b: T, ujemanje: VrstaUjemanja, preverjen = false,
 ): Par<T> {
   const za: string[] = []
   const proti: string[] = []
@@ -133,7 +145,7 @@ export function presodiPar<T extends ZapisZaPrimerjavo>(
     : aPrazen !== bPrazen ? 'verjeten'
     : 'mozen'
 
-  return { a, b, zanesljivost, ujemanje, za, proti }
+  return { a, b, zanesljivost, ujemanje, za, proti, preverjen }
 }
 
 /**
@@ -149,7 +161,11 @@ export function presodiPar<T extends ZapisZaPrimerjavo>(
  * Zapisi z eno samo besedo imena (ali brez) so izpuščeni: »Skala« bi se ujela
  * z vsako »Skala Hrast«, kar ni ujemanje osebe, ampak šum.
  */
-export function poisciDvojnike<T extends ZapisZaPrimerjavo>(zapisi: T[]): Par<T>[] {
+export function poisciDvojnike<T extends ZapisZaPrimerjavo>(
+  zapisi: T[],
+  /** Ključi parov, za katere je človek že potrdil, da nista ista oseba. */
+  preverjeni: ReadonlySet<string> = new Set(),
+): Par<T>[] {
   const pripravljeni = zapisi
     .map(z => ({ z, t: zetoni(z.full_name) }))
     .filter(x => x.t.length >= 2)
@@ -186,11 +202,17 @@ export function poisciDvojnike<T extends ZapisZaPrimerjavo>(zapisi: T[]): Par<T>
       // Vrstni red v paru: prazni zapis gre na drugo mesto, ker je predlog
       // vedno »obdrži polnega«.
       const [prvi, drugi] = jePrazenZapis(x.z) && !jePrazenZapis(y.z) ? [y.z, x.z] : [x.z, y.z]
-      pari.push(presodiPar(prvi, drugi, xVY && yVX ? 'isti_nabor' : 'podmnozica'))
+      pari.push(presodiPar(
+        prvi, drugi,
+        xVY && yVX ? 'isti_nabor' : 'podmnozica',
+        preverjeni.has(kljucPara(prvi.id, drugi.id)),
+      ))
     }
   })
 
+  // Preverjeni gredo na dno ne glede na zanesljivost: nekdo jih je že pogledal.
   return pari.sort((p, q) =>
+    Number(p.preverjen) - Number(q.preverjen) ||
     VRSTNI_RED[p.zanesljivost] - VRSTNI_RED[q.zanesljivost] ||
     (p.a.full_name ?? '').localeCompare(q.a.full_name ?? '', 'sl'))
 }
