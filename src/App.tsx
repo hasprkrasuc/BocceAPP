@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, Link } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { ProtectedRoute, AdminRoute, LeagueAdminRoute } from './components/ProtectedRoute'
+import { ProtectedRoute, AdminRoute, LeagueAdminRoute, ClubAdminRoute } from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
 import ErrorBoundary from './components/ErrorBoundary'
 import ChangePassword from './pages/ChangePassword'
@@ -36,6 +36,7 @@ const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const TournamentAdmin = lazy(() => import('./pages/admin/TournamentAdmin'))
 const TournamentEdit = lazy(() => import('./pages/admin/TournamentEdit'))
 const LeagueAdmin = lazy(() => import('./pages/admin/LeagueAdmin'))
+const MojKlub = lazy(() => import('./pages/admin/MojKlub'))
 const DoubleRegAdmin = lazy(() => import('./pages/admin/DoubleRegAdmin'))
 const ClubAdmin = lazy(() => import('./pages/admin/ClubAdmin'))
 const UserAdmin = lazy(() => import('./pages/admin/UserAdmin'))
@@ -149,6 +150,7 @@ export default function App() {
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />
               <Route path="/admin/liga/tekma/:fixtureId" element={<OldScoresheetRedirect />} />
               <Route path="/admin/liga/demo" element={<AdminRoute><LeagueMatchScoresheetDemo /></AdminRoute>} />
+              <Route path="/admin/moj-klub" element={<ClubAdminRoute><MojKlub /></ClubAdminRoute>} />
               <Route path="/admin/klubi" element={<AdminRoute><ClubAdmin /></AdminRoute>} />
               <Route path="/admin/uporabniki" element={<AdminRoute><UserAdmin /></AdminRoute>} />
               <Route path="/admin/gosti" element={<AdminRoute><GuestAdmin /></AdminRoute>} />

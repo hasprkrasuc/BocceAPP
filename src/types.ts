@@ -426,6 +426,10 @@ export interface AuthContextValue {
   isLeagueAdmin: boolean
   /** Sezone, katerih admin je; globalni admin ima lahko prazno. */
   managedSeasonIds: string[]
+  /** Skrbi za vsaj en klub (ni nujno globalni admin). */
+  isClubAdmin: boolean
+  /** Klubi, katerih skrbnik je; globalni admin ima lahko prazno. */
+  managedClubIds: string[]
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, fullName: string, club: string) => Promise<void>
   signOut: () => Promise<void>

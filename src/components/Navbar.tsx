@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { sl } from '../i18n/sl'
 
 export default function Navbar() {
-  const { user, profile, isAdmin, signOut } = useAuth()
+  const { user, profile, isAdmin, isClubAdmin, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -58,6 +58,21 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
+
+            {/* Klubski skrbnik ni globalni admin in do /admin nima dostopa;
+                brez te povezave v svoj klub sploh ne bi prišel. */}
+            {!isAdmin && isClubAdmin && (
+              <Link
+                to="/admin/moj-klub"
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive('/admin/moj-klub')
+                    ? 'bg-bocce-gold text-white'
+                    : 'text-bocce-gold-light hover:bg-bocce-gold hover:text-white'
+                }`}
+              >
+                Moj klub
+              </Link>
+            )}
 
             {isAdmin && (
               <Link
@@ -140,6 +155,15 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
+            {!isAdmin && isClubAdmin && (
+              <Link
+                to="/admin/moj-klub"
+                onClick={() => setMenuOpen(false)}
+                className="block px-3 py-2 rounded-md text-sm font-medium text-bocce-gold-light hover:bg-bocce-green"
+              >
+                Moj klub
+              </Link>
+            )}
             {isAdmin && (
               <Link
                 to="/admin"
