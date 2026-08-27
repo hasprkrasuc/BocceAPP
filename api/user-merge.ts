@@ -97,7 +97,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Obdržani in opuščeni zapis sta ista vrstica' })
   }
 
-  const POLJA = 'id, full_name, email, emso, date_of_birth, license_number, gender, club_id, photo_url, role'
+  // `club` je tu zato, ker potuje skupaj s `club_id` (glej patch spodaj) —
+  // brez njega bi ga prevzem povezave postavil na null in besedilo izbrisal.
+  const POLJA = 'id, full_name, email, emso, date_of_birth, license_number, gender, club_id, club, photo_url, role'
 
   try {
     const { data: zapisi, error: zErr } = await admin
@@ -134,6 +136,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         patch[polje] = opusti[polje]
         prevzeto.push(opis)
       }
+    }
+
+    // club_id in club POTUJETA SKUPAJ — glej isto pravilo in razlago v
+    // src/engines/zdruzitevUporabnikov.ts. Besedilo je klub, kakor ga je
+    // zapisal obrazec, in se od imena povezanega kluba pogosto razlikuje;
+    // če prevzamemo povezavo brez besedila, zapis kaže na en klub, piše pa
+    // drug. Prožilec sync_user_club tega ne popravi: besedilo zapolni le,
+    // kadar je prazno.
+    if (patch.club_id !== undefined) {
+      patch.club = opusti.club ?? null
     }
     if (rang(opusti.role) > rang(obdrzi.role)) {
       patch.role = opusti.role
