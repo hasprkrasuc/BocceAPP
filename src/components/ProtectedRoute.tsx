@@ -32,6 +32,23 @@ export function LeagueAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * Klubski skrbnik: globalni admin ALI skrbnik vsaj enega kluba.
+ *
+ * Enako kot pri ligaškem: zapora tu je le udobje. Resnično mejo postavljata
+ * pogled `club_members` in straža v api/club-member.ts, ki ju odjemalec ne
+ * more obiti — kdor bi pot odprl na silo, bi videl prazen seznam.
+ */
+export function ClubAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAdmin, isClubAdmin, loading } = useAuth()
+  const location = useLocation()
+
+  if (loading) return <Spinner />
+  if (!user) return <Navigate to="/prijava" state={{ from: location }} replace />
+  if (!isAdmin && !isClubAdmin) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isAdmin, loading } = useAuth()
   const location = useLocation()
