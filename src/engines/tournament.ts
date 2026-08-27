@@ -17,8 +17,7 @@
 
 import type {
   MatchType, MatchStage, GroupSize, TeamDescriptor, MatchTemplate,
-  MatchResultEntry, GroupMatch, KnockoutBracketResult, KnockoutMatchEntry,
-  GroupQualifier, TournamentRegistration, GroupDistribution,
+  MatchResultEntry, GroupMatch, TournamentRegistration, GroupDistribution,
 } from '../types'
 
 export const BYE_SCORE = 6
@@ -277,75 +276,10 @@ export function getGroupQualifiers<T>(
   return out
 }
 
-// ────────────────────────────────────────────────────────────────
-// KNOCKOUT BRACKET BUILDER
-// ────────────────────────────────────────────────────────────────
-export function buildKnockoutBracket(groupQualifiers: GroupQualifier[]): KnockoutBracketResult {
-  const pos1 = groupQualifiers.filter(q => q.position === 1).sort((a, b) => a.groupNumber - b.groupNumber)
-  const pos2 = groupQualifiers.filter(q => q.position === 2).sort((a, b) => a.groupNumber - b.groupNumber)
-
-  const n = pos1.length
-  const bracket: Array<{ teamA: GroupQualifier['team']; teamB: GroupQualifier['team'] }> = []
-
-  for (let i = 0; i < Math.floor(n / 2); i++) {
-    const j = n - 1 - i
-    bracket.push({ teamA: pos1[i]?.team ?? null, teamB: pos2[j]?.team ?? null })
-    bracket.push({ teamA: pos2[i]?.team ?? null, teamB: pos1[j]?.team ?? null })
-  }
-
-  const firstStage: MatchStage = bracket.length > 8 ? 'r16' : bracket.length > 4 ? 'qf' : 'sf'
-
-  const knockoutMatches: KnockoutMatchEntry[] = bracket.map((pair, i) => ({
-    stage: firstStage,
-    matchNumber: i + 1,
-    teamA: pair.teamA,
-    teamB: pair.teamB,
-    scoreA: null, scoreB: null, winner: null, played: false,
-  }))
-
-  return { firstStage, matches: knockoutMatches, totalTeams: bracket.length }
-}
-
-// ────────────────────────────────────────────────────────────────
-// KNOCKOUT STAGE PROGRESSION
-// ────────────────────────────────────────────────────────────────
-export function nextKnockoutStage(
-  currentStage: MatchStage,
-  currentMatches: KnockoutMatchEntry[],
-): { stage: MatchStage; matches: KnockoutMatchEntry[] } | null {
-  const stageOrder: MatchStage[] = ['r64', 'r32', 'r16', 'qf', 'sf', 'final']
-  const idx = stageOrder.indexOf(currentStage)
-  if (idx === -1 || idx === stageOrder.length - 1) return null
-
-  const nextStage = stageOrder[idx + 1]
-  const winners = currentMatches
-    .sort((a, b) => a.matchNumber - b.matchNumber)
-    .map(m => m.winner)
-
-  const matches: KnockoutMatchEntry[] = []
-  for (let i = 0; i < winners.length; i += 2) {
-    matches.push({
-      stage: nextStage,
-      matchNumber: Math.floor(i / 2) + 1,
-      teamA: winners[i] ?? null,
-      teamB: winners[i + 1] ?? null,
-      scoreA: null, scoreB: null, winner: null, played: false,
-    })
-  }
-
-  if (currentStage === 'sf') {
-    const sfLosers = currentMatches.map(m => m.loser ?? null)
-    matches.push({
-      stage: 'third_place',
-      matchNumber: 1,
-      teamA: sfLosers[0] ?? null,
-      teamB: sfLosers[1] ?? null,
-      scoreA: null, scoreB: null, winner: null, played: false,
-    })
-  }
-
-  return { stage: nextStage, matches }
-}
+// Gradnja izločilne mreže in napredovanje krogov: glej src/engines/knockout.ts
+// (buildBracketFromFirstRound + firstStageForSize). Stari različici tu
+// (buildKnockoutBracket, nextKnockoutStage) sta imeli napačno poimenovanje
+// krogov (16 ekip → "četrtfinale" namesto "osmina finala") in sta odstranjeni.
 
 // ────────────────────────────────────────────────────────────────
 // HELPERS
