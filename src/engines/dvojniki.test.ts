@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { poisciDvojnike, presodiPar, zetoni, jePrazenZapis, type ZapisZaPrimerjavo } from './dvojniki'
+import { poisciDvojnike, presodiPar, zetoni, jePrazenZapis, kljucPara, type ZapisZaPrimerjavo } from './dvojniki'
 
 function z(over: Partial<ZapisZaPrimerjavo> & { id: string; full_name: string }): ZapisZaPrimerjavo {
   return { emso: null, date_of_birth: null, license_number: null, birth_year: null, club: null, ...over }
@@ -177,6 +177,28 @@ describe('iskanje po seznamu', () => {
     expect(poisciDvojnike(veliko)).toHaveLength(0)
   })
 
+  test('preverjeni pari so označeni in gredo na dno', () => {
+    const preverjeni = new Set([kljucPara('l1', 'l2')])
+    const pari = poisciDvojnike([
+      z({ id: 'l1', full_name: 'Ivan Ličan', emso: '0101964500001', birth_year: 1964 }),
+      z({ id: 'l2', full_name: 'IVAN LIČAN', emso: '0101961500002', birth_year: 1961 }),
+      z({ id: 'n1', full_name: 'Ana Novak' }),
+      z({ id: 'n2', full_name: 'ANA NOVAK' }),
+    ], preverjeni)
+    expect(pari).toHaveLength(2)
+    expect(pari[0].preverjen).toBe(false)
+    expect(pari[1].preverjen).toBe(true)
+    expect(pari[1].a.full_name).toMatch(/Ličan/i)
+  })
+
+  test('brez seznama preverjenih ni noben par označen', () => {
+    const pari = poisciDvojnike([
+      z({ id: 'a', full_name: 'Ana Novak' }),
+      z({ id: 'b', full_name: 'ANA NOVAK' }),
+    ])
+    expect(pari[0].preverjen).toBe(false)
+  })
+
   test('pogosto ime ne potegne v par vseh, ki ga nosijo', () => {
     const pari = poisciDvojnike([
       z({ id: 'a', full_name: 'Ivan Novak' }),
@@ -184,5 +206,16 @@ describe('iskanje po seznamu', () => {
       z({ id: 'c', full_name: 'Ivan Horvat' }),
     ])
     expect(pari).toHaveLength(0)
+  })
+})
+
+describe('ključ para', () => {
+  test('je neodvisen od vrstnega reda', () => {
+    expect(kljucPara('b', 'a')).toBe(kljucPara('a', 'b'))
+  })
+
+  test('manjši id je vedno prvi — enako kot omejitev id_a < id_b v bazi', () => {
+    expect(kljucPara('b', 'a')).toBe('a:b')
+    expect(kljucPara('a', 'b')).toBe('a:b')
   })
 })

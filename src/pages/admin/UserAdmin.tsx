@@ -7,7 +7,7 @@ import ImageUpload from '../../components/ImageUpload'
 import { isGenericEmail } from '../../lib/genericEmail'
 import { opozoriloOEmso } from '../../lib/playerImport/emso'
 import { preveriZdruzitev } from '../../engines/zdruzitevUporabnikov'
-import { poisciDvojnike, type Zanesljivost } from '../../engines/dvojniki'
+import { poisciDvojnike, kljucPara, type Zanesljivost } from '../../engines/dvojniki'
 
 const OZNAKA_ZANESLJIVOSTI: Record<Zanesljivost, { besedilo: string; barva: string }> = {
   verjeten:      { besedilo: 'verjeten',       barva: 'bg-red-100 text-red-700' },
@@ -19,7 +19,7 @@ const OZNAKA_ZANESLJIVOSTI: Record<Zanesljivost, { besedilo: string; barva: stri
 const STOLPCEV = 7
 
 export default function UserAdmin() {
-  const { isAdmin, isSuperAdmin } = useAuth()
+  const { isAdmin, isSuperAdmin, profile } = useAuth()
   const [users, setUsers] = useState<UserProfile[]>([])
   const [klubi, setKlubi] = useState<{ id: string; name: string }[]>([])
   const [search, setSearch] = useState('')
@@ -40,11 +40,17 @@ export default function UserAdmin() {
   /** Odprt seznam samodejno najdenih dvojnikov. */
   const [dvojnikiOdprti, setDvojnikiOdprti] = useState(false)
   const [tudiMaloVerjetni, setTudiMaloVerjetni] = useState(false)
+  /** Ključi parov, za katere je admin potrdil, da nista ista oseba. */
+  const [preverjeni, setPreverjeni] = useState<ReadonlySet<string>>(new Set())
+  const [tudiPreverjeni, setTudiPreverjeni] = useState(false)
 
   useEffect(() => { load() }, [])
   useEffect(() => {
     if (!isAdmin) return
     supabase.from('clubs').select('id, name').order('name').then(({ data }) => setKlubi(data ?? []))
+    supabase.from('preverjeni_dvojniki').select('id_a, id_b').then(({ data }) => {
+      setPreverjeni(new Set((data ?? []).map(r => kljucPara(r.id_a as string, r.id_b as string))))
+    })
   }, [isAdmin])
 
   async function load() {
@@ -252,9 +258,36 @@ export default function UserAdmin() {
    * Kandidati za združitev. Motor pri 1448 zapisih porabi ~25 ms, a useMemo
    * poskrbi, da se to ne ponovi ob vsakem tipkanju v iskalnik.
    */
-  const dvojniki = useMemo(() => poisciDvojnike(users), [users])
-  const zaPrikaz = dvojniki.filter(p => tudiMaloVerjetni || p.zanesljivost !== 'malo_verjeten')
-  const maloVerjetnih = dvojniki.length - dvojniki.filter(p => p.zanesljivost !== 'malo_verjeten').length
+  const dvojniki = useMemo(() => poisciDvojnike(users, preverjeni), [users, preverjeni])
+  const odprti = dvojniki.filter(p => !p.preverjen)
+  const zaPrikaz = dvojniki.filter(p =>
+    (tudiPreverjeni || !p.preverjen) &&
+    (tudiMaloVerjetni || p.zanesljivost !== 'malo_verjeten'))
+  const maloVerjetnih = odprti.filter(p => p.zanesljivost === 'malo_verjeten').length
+  const preverjenihSkupaj = dvojniki.length - odprti.length
+
+  /**
+   * Označi par kot preverjen ali oznako umakne.
+   *
+   * Zapis je last PARA in ne osebe: Ivan Ličan (1964) ni dvojnik Ivana Ličana
+   * (1961), lahko pa se jutri pojavi tretji zapis, ki JE njegov dvojnik.
+   * Vrstni red id-jev je urejen, ker ga baza tako zahteva (id_a < id_b).
+   */
+  async function oznaciPreverjen(aId: string, bId: string, preverjen: boolean) {
+    const [id_a, id_b] = aId < bId ? [aId, bId] : [bId, aId]
+    const kljuc = kljucPara(aId, bId)
+    setVrsticaMsg(null)
+    const { error } = preverjen
+      ? await supabase.from('preverjeni_dvojniki').insert({ id_a, id_b, oznacil: profile?.id ?? null })
+      : await supabase.from('preverjeni_dvojniki').delete().eq('id_a', id_a).eq('id_b', id_b)
+    if (error) { setVrsticaMsg(`❌ ${error.message}`); return }
+    setPreverjeni(prej => {
+      const nov = new Set(prej)
+      if (preverjen) nov.add(kljuc)
+      else nov.delete(kljuc)
+      return nov
+    })
+  }
 
   /**
    * Odpre par v urejanju prvega zapisa z drugim že izbranim. Iskalnik nastavimo
@@ -316,7 +349,10 @@ export default function UserAdmin() {
             <span className="text-sm font-medium text-gray-700">
               Možni dvojniki
               <span className="ml-2 text-xs font-normal text-gray-400">
-                ({zaPrikaz.length}{maloVerjetnih > 0 && !tudiMaloVerjetni && ` · ${maloVerjetnih} skritih`})
+                ({zaPrikaz.length}
+                {maloVerjetnih > 0 && !tudiMaloVerjetni && ` · ${maloVerjetnih} malo verjetnih`}
+                {preverjenihSkupaj > 0 && !tudiPreverjeni && ` · ${preverjenihSkupaj} preverjenih`}
+                {(maloVerjetnih > 0 && !tudiMaloVerjetni) || (preverjenihSkupaj > 0 && !tudiPreverjeni) ? ' skritih' : ''})
               </span>
             </span>
             <span className="text-xs text-bocce-green">{dvojnikiOdprti ? 'Zapri' : 'Pokaži'}</span>
@@ -341,6 +377,11 @@ export default function UserAdmin() {
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${OZNAKA_ZANESLJIVOSTI[p.zanesljivost].barva}`}>
                         {OZNAKA_ZANESLJIVOSTI[p.zanesljivost].besedilo}
                       </span>
+                      {p.preverjen && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
+                          preverjeno — nista ista oseba
+                        </span>
+                      )}
                       <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
                         {[p.a, p.b].map((u, idx) => (
                           <div key={u.id}>
@@ -353,10 +394,25 @@ export default function UserAdmin() {
                         ))}
                       </div>
                     </div>
-                    <button onClick={() => odpriPar(p.a, p.b)}
-                      className="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 whitespace-nowrap">
-                      Odpri združitev
-                    </button>
+                    <div className="flex flex-col gap-1.5 items-end">
+                      {p.preverjen ? (
+                        <button onClick={() => oznaciPreverjen(p.a.id, p.b.id, false)}
+                          className="text-xs text-bocce-green hover:underline whitespace-nowrap">
+                          Vrni med možne
+                        </button>
+                      ) : (
+                        <>
+                          <button onClick={() => odpriPar(p.a, p.b)}
+                            className="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 whitespace-nowrap">
+                            Odpri združitev
+                          </button>
+                          <button onClick={() => oznaciPreverjen(p.a.id, p.b.id, true)}
+                            className="text-xs text-gray-500 hover:underline whitespace-nowrap">
+                            Nista ista oseba
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {p.proti.length > 0 && (
@@ -369,14 +425,24 @@ export default function UserAdmin() {
                 </div>
               ))}
 
-              {maloVerjetnih > 0 && (
-                <button onClick={() => setTudiMaloVerjetni(v => !v)}
-                  className="text-xs text-bocce-green hover:underline">
-                  {tudiMaloVerjetni
-                    ? 'Skrij malo verjetne'
-                    : `Pokaži še ${maloVerjetnih} malo verjetnih`}
-                </button>
-              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {maloVerjetnih > 0 && (
+                  <button onClick={() => setTudiMaloVerjetni(v => !v)}
+                    className="text-xs text-bocce-green hover:underline">
+                    {tudiMaloVerjetni
+                      ? 'Skrij malo verjetne'
+                      : `Pokaži še ${maloVerjetnih} malo verjetnih`}
+                  </button>
+                )}
+                {preverjenihSkupaj > 0 && (
+                  <button onClick={() => setTudiPreverjeni(v => !v)}
+                    className="text-xs text-bocce-green hover:underline">
+                    {tudiPreverjeni
+                      ? 'Skrij preverjene'
+                      : `Pokaži ${preverjenihSkupaj} preverjenih`}
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
