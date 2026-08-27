@@ -23,6 +23,23 @@ interface DisciplineForm {
 
 interface RosterPlayer { playerId: string; name: string }
 
+/** Vodja, licenciran za to ekipo (tabela team_leaders). */
+interface Vodja { userId: string; name: string }
+
+/** Karton s tekme. `id` je prazen, dokler ni shranjen. */
+interface Karton {
+  id: string
+  side: 'home' | 'away'
+  playerId: string
+  /** Uporabi se, kadar kartonirani ni v postavi (vodja, gost). */
+  playerName: string
+  color: 'rumen' | 'rdec'
+  reason: string
+}
+
+const PRAZEN_KARTON = (side: 'home' | 'away'): Karton =>
+  ({ id: '', side, playerId: '', playerName: '', color: 'rumen', reason: '' })
+
 interface PlayerStats {
   count: number
   techTypes: Set<DisciplineType>
@@ -149,6 +166,16 @@ export default function LeagueMatchScoresheet() {
   const [allUsers, setAllUsers] = useState<Pick<UserProfile, 'id' | 'full_name'>[]>([])
   const [matchDate, setMatchDate] = useState('')
   const [venue, setVenue] = useState('')
+  /** Vodji ekip in kandidati zanje — licencirani za to ekipo v tem tekmovanju. */
+  const [homeLeaders, setHomeLeaders] = useState<Vodja[]>([])
+  const [awayLeaders, setAwayLeaders] = useState<Vodja[]>([])
+  const [homeLeaderId, setHomeLeaderId] = useState('')
+  const [awayLeaderId, setAwayLeaderId] = useState('')
+  /** Opombe in pripombe sta LOČENI polji: opomba je sodnikov zapis o poteku,
+      pripomba pa ugovor ekipe, ki sproži postopek pri zvezi. */
+  const [notes, setNotes] = useState('')
+  const [objections, setObjections] = useState('')
+  const [kartoni, setKartoni] = useState<Karton[]>([])
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
@@ -191,6 +218,23 @@ export default function LeagueMatchScoresheet() {
     setHomeRoster(toRoster(f.home_team?.league_team_players))
     setAwayRoster(toRoster(f.away_team?.league_team_players))
 
+    // Vodje, licencirani za TI DVE ekipi. Ker league_teams visi na sezoni,
+    // vezava na ekipo že pomeni pravo tekmovanje — filtrirati po njem ni treba.
+    const fx2 = fx as LeagueFixture
+    const { data: vodjeData } = await supabase
+      .from('team_leaders')
+      .select('league_team_id, user:users(id, full_name)')
+      .in('league_team_id', [fx2.home_team_id, fx2.away_team_id].filter(Boolean) as string[])
+    const vodje = (vodjeData ?? []) as unknown as Array<{
+      league_team_id: string; user: { id: string; full_name: string | null } | null
+    }>
+    const zaEkipo = (teamId: string | null): Vodja[] => vodje
+      .filter(v => v.league_team_id === teamId && v.user)
+      .map(v => ({ userId: v.user!.id, name: v.user!.full_name ?? '(brez imena)' }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'sl'))
+    setHomeLeaders(zaEkipo(fx2.home_team_id))
+    setAwayLeaders(zaEkipo(fx2.away_team_id))
+
     const { data: discs } = await supabase
       .from('league_season_disciplines').select('*')
       .eq('season_id', (fx as LeagueFixture & { season_id: string }).season_id).order('order_num')
@@ -199,8 +243,25 @@ export default function LeagueMatchScoresheet() {
 
     const initForms: Record<string, DisciplineForm> = {}
     if (existing) {
-      const res = existing as LeagueMatchResult
+      const res = existing as LeagueMatchResult & {
+        home_leader_id?: string | null; away_leader_id?: string | null
+        notes?: string | null; objections?: string | null
+      }
       setExistingResultId(res.id)
+      setHomeLeaderId(res.home_leader_id ?? '')
+      setAwayLeaderId(res.away_leader_id ?? '')
+      setNotes(res.notes ?? '')
+      setObjections(res.objections ?? '')
+
+      const { data: kartData } = await supabase
+        .from('match_cards').select('*').eq('match_result_id', res.id).order('created_at')
+      setKartoni(((kartData ?? []) as Array<{
+        id: string; side: 'home' | 'away'; player_id: string | null
+        player_name: string | null; color: 'rumen' | 'rdec'; reason: string | null
+      }>).map(k => ({
+        id: k.id, side: k.side, playerId: k.player_id ?? '',
+        playerName: k.player_name ?? '', color: k.color, reason: k.reason ?? '',
+      })))
       for (const disc of discList) {
         const dr = (res.discipline_results ?? []).find(r => r.discipline_id === disc.id) as LeagueMatchDisciplineResult | undefined
         if (dr) {
@@ -299,6 +360,10 @@ export default function LeagueMatchScoresheet() {
     const resultData = {
       fixture_id: fixtureId,
       draw_natancno_field: null, draw_blok4: null,
+      home_leader_id: homeLeaderId || null,
+      away_leader_id: awayLeaderId || null,
+      notes: notes.trim() || null,
+      objections: objections.trim() || null,
     }
     if (!resultId) {
       const { data, error } = await supabase.from('league_match_results').insert(resultData).select().single()
@@ -338,6 +403,24 @@ export default function LeagueMatchScoresheet() {
       const { error } = await supabase.from('league_match_discipline_results').insert(inserts)
       if (error) { setMessage(`❌ ${error.message}`); setSaving(false); return }
     }
+    // Kartoni: enako kot discipline — pobrišemo in vpišemo znova. Prazne vrstice
+    // (brez osebe) izpustimo; CHECK match_cards_ima_osebo bi jih tako ali tako
+    // zavrnil, a bolje je, da do baze sploh ne pridejo.
+    await supabase.from('match_cards').delete().eq('match_result_id', resultId)
+    const kartoniZaVpis = kartoni
+      .filter(k => k.playerId || k.playerName.trim())
+      .map(k => ({
+        match_result_id: resultId,
+        player_id: k.playerId || null,
+        player_name: k.playerId ? null : k.playerName.trim(),
+        side: k.side, color: k.color,
+        reason: k.reason.trim() || null,
+      }))
+    if (kartoniZaVpis.length) {
+      const { error } = await supabase.from('match_cards').insert(kartoniZaVpis)
+      if (error) { setMessage(`❌ Kartoni: ${error.message}`); setSaving(false); return }
+    }
+
     // Kadar ni vpisana nobena disciplina, rezultat NAMENOMA izpraznimo in tekmo
     // vrnemo med razporejene. Tako se popravi tudi zapisnik, ki je bil prej
     // pomotoma označen za odigranega: ob prvem ponovnem shranjevanju se očisti.
@@ -561,6 +644,42 @@ export default function LeagueMatchScoresheet() {
               <RosterColumn roster={homeRoster} stats={homeStats} label={fixture.home_team?.club_name ?? 'Domači'} />
               <RosterColumn roster={awayRoster} stats={awayStats} label={fixture.away_team?.club_name ?? 'Gostje'} />
             </div>
+
+            {/* Vodji ekip. Ponudijo se le tisti, ki so za to ekipo licencirani
+                po evidenci zveze — vezava na league_teams že pomeni pravo
+                tekmovanje, saj ekipa visi na sezoni s svojim tierjem. */}
+            <div className="mt-5 pt-4 border-t border-gray-100 grid sm:grid-cols-2 gap-6">
+              {([
+                ['home', fixture.home_team?.club_name ?? 'Domači', homeLeaders, homeLeaderId, setHomeLeaderId],
+                ['away', fixture.away_team?.club_name ?? 'Gostje', awayLeaders, awayLeaderId, setAwayLeaderId],
+              ] as const).map(([stran, klub, kandidati, izbran, nastavi]) => (
+                <div key={stran}>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Vodja ekipe — {klub}
+                  </label>
+                  {canEdit ? (
+                    <>
+                      <select value={izbran} onChange={e => nastavi(e.target.value)}
+                        disabled={kandidati.length === 0}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-50">
+                        <option value="">— izberi —</option>
+                        {kandidati.map(v => <option key={v.userId} value={v.userId}>{v.name}</option>)}
+                      </select>
+                      {kandidati.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-700">
+                          Za to ekipo ni vpisanega nobenega licenciranega vodje.
+                          Vpiše jih administrator zveze.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-700">
+                      {kandidati.find(v => v.userId === izbran)?.name ?? '—'}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
             {violations.length > 0 && (
               <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 space-y-1">
                 {violations.map((v, i) => <p key={i} className="text-xs text-red-600">⚠ {v}</p>)}
@@ -659,16 +778,144 @@ export default function LeagueMatchScoresheet() {
         </div>
       )}
 
+      {/* ── Kartoni ──────────────────────────────────────────────────────
+          Svoja tabela in ne prosto besedilo: karton se pripiše OSEBI in se
+          šteje čez sezono (suspenz po treh rumenih). Kot besedilo v zapisniku
+          bi bili nešteti in neiskani. */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4 zapisnik-blok">
+        <h2 className="text-sm font-semibold text-gray-700 mb-1">Kartoni</h2>
+        <p className="text-xs text-gray-400 mb-3">
+          Kartonirani je praviloma igralec iz postave. Kadar gre za vodjo ali koga,
+          ki v postavi ne nastopa, pusti izbirnik prazen in vpiši ime.
+        </p>
+
+        {kartoni.length === 0 && (
+          <p className="text-sm text-gray-400 italic mb-3">Ni kartonov.</p>
+        )}
+
+        <div className="space-y-3">
+          {kartoni.map((k, i) => {
+            const roster = k.side === 'home' ? homeRoster : awayRoster
+            const posodobi = (sprem: Partial<Karton>) =>
+              setKartoni(v => v.map((x, j) => (j === i ? { ...x, ...sprem } : x)))
+            return (
+              <div key={i} className="grid sm:grid-cols-12 gap-2 items-start border border-gray-100 rounded-lg p-3">
+                <select value={k.side} disabled={!canEdit}
+                  onChange={e => posodobi({ side: e.target.value as 'home' | 'away', playerId: '' })}
+                  className="sm:col-span-2 border border-gray-300 rounded px-2 py-1.5 text-xs bg-white disabled:opacity-60">
+                  <option value="home">{fixture.home_team?.club_name ?? 'Domači'}</option>
+                  <option value="away">{fixture.away_team?.club_name ?? 'Gostje'}</option>
+                </select>
+
+                <select value={k.playerId} disabled={!canEdit}
+                  onChange={e => posodobi({ playerId: e.target.value, playerName: '' })}
+                  className="sm:col-span-3 border border-gray-300 rounded px-2 py-1.5 text-xs bg-white disabled:opacity-60">
+                  <option value="">— zunaj postave —</option>
+                  {roster.map(p => <option key={p.playerId} value={p.playerId}>{p.name}</option>)}
+                </select>
+
+                {!k.playerId && (
+                  <input value={k.playerName} disabled={!canEdit}
+                    onChange={e => posodobi({ playerName: e.target.value })}
+                    placeholder="Ime in priimek"
+                    className="sm:col-span-3 border border-gray-300 rounded px-2 py-1.5 text-xs disabled:opacity-60" />
+                )}
+
+                <select value={k.color} disabled={!canEdit}
+                  onChange={e => posodobi({ color: e.target.value as 'rumen' | 'rdec' })}
+                  className={`sm:col-span-2 border rounded px-2 py-1.5 text-xs font-medium disabled:opacity-60 ${
+                    k.color === 'rdec' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                  <option value="rumen">Rumen</option>
+                  <option value="rdec">Rdeč</option>
+                </select>
+
+                <input value={k.reason} disabled={!canEdit}
+                  onChange={e => posodobi({ reason: e.target.value })}
+                  placeholder="Razlog"
+                  className={`${k.playerId ? 'sm:col-span-4' : 'sm:col-span-1'} border border-gray-300 rounded px-2 py-1.5 text-xs disabled:opacity-60`} />
+
+                {canEdit && (
+                  <button onClick={() => setKartoni(v => v.filter((_, j) => j !== i))}
+                    className="sm:col-span-1 text-xs text-red-500 hover:text-red-700 px-2 py-1.5 no-print">
+                    odstrani
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {canEdit && (
+          <div className="flex gap-2 mt-3 no-print">
+            <button onClick={() => setKartoni(v => [...v, PRAZEN_KARTON('home')])}
+              className="text-xs border border-gray-300 rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-50">
+              + Karton domačim
+            </button>
+            <button onClick={() => setKartoni(v => [...v, PRAZEN_KARTON('away')])}
+              className="text-xs border border-gray-300 rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-50">
+              + Karton gostom
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Opombe in pripombe ───────────────────────────────────────────
+          Ločeni polji namenoma: opomba je sodnikov zapis o poteku (zamuda,
+          dež, okvara), pripomba pa ugovor ekipe zoper sojenje ali izid in
+          sproži postopek pri zvezi. Zlito v eno polje bi se ugovor izgubil
+          med opažanji. */}
+      <div className="grid sm:grid-cols-2 gap-4 mb-4">
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 zapisnik-blok">
+          <h2 className="text-sm font-semibold text-gray-700 mb-1">Opombe</h2>
+          <p className="text-xs text-gray-400 mb-2">Potek tekme — zamuda, vreme, stanje igrišča.</p>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} disabled={!canEdit} rows={4}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-60 disabled:bg-gray-50" />
+        </div>
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 zapisnik-blok">
+          <h2 className="text-sm font-semibold text-gray-700 mb-1">Pripombe</h2>
+          <p className="text-xs text-gray-400 mb-2">Ugovor ekipe zoper sojenje ali izid. Sproži postopek pri zvezi.</p>
+          <textarea value={objections} onChange={e => setObjections(e.target.value)} disabled={!canEdit} rows={4}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-60 disabled:bg-gray-50" />
+        </div>
+      </div>
+
+      {/* ── Podpisi ──────────────────────────────────────────────────────
+          Prazna mesta za tisk: zapisnik se natisne in podpiše na papir.
+          Na zaslonu so bleda, na tiskanem listu pa dajo črto za podpis. */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4 zapisnik-blok">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Podpisi</h2>
+        <div className="grid sm:grid-cols-2 gap-x-8 gap-y-6">
+          {[
+            ['Glavni sodnik', allUsers.find(u => u.id === chiefJudgeUserId)?.full_name ?? ''],
+            ['Sodnik', ''],
+            [`Vodja ekipe — ${fixture.home_team?.club_name ?? 'domači'}`,
+              homeLeaders.find(v => v.userId === homeLeaderId)?.name ?? ''],
+            [`Vodja ekipe — ${fixture.away_team?.club_name ?? 'gostje'}`,
+              awayLeaders.find(v => v.userId === awayLeaderId)?.name ?? ''],
+          ].map(([oznaka, ime], i) => (
+            <div key={i}>
+              <div className="h-10 border-b border-gray-400" />
+              <p className="text-xs text-gray-500 mt-1">{oznaka}</p>
+              {ime && <p className="text-xs text-gray-700 font-medium">{ime}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {message && (
-        <div className={`mb-4 px-4 py-3 rounded-lg text-sm border ${message.startsWith('❌') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+        <div className={`mb-4 px-4 py-3 rounded-lg text-sm border no-print ${message.startsWith('❌') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
           {message}
         </div>
       )}
 
-      <div className="flex gap-3 justify-end">
+      <div className="flex gap-3 justify-end no-print">
         <Link to={backToFixtures} className="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-lg text-sm hover:bg-gray-50">
           ← Nazaj na tekme
         </Link>
+        <button onClick={() => window.print()}
+          className="border border-gray-300 text-gray-600 px-5 py-2.5 rounded-lg text-sm hover:bg-gray-50">
+          Natisni
+        </button>
         {canEdit && (
           <button onClick={save} disabled={saving || disciplines.length === 0}
             className="bg-bocce-green text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-bocce-green-light disabled:opacity-50 transition-colors">

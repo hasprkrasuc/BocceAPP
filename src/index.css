@@ -20,3 +20,42 @@
     display: none;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────
+   TISK ZAPISNIKA
+   Zapisnik se natisne in podpiše na papir — podpisi so edini razlog,
+   da tiskalna postavitev sploh obstaja. Zaslon zanjo ni bil narejen,
+   zato je treba skriti vse, kar na listu nima kaj iskati: navigacijo,
+   gumbe in sporočila o shranjevanju.
+
+   `.no-print` je oznaka za posamezne gumbe znotraj zapisnika;
+   navigacijo in nogo skrijemo po elementu, da ni treba spreminjati
+   komponent, ki z zapisnikom nimajo zveze.
+   ────────────────────────────────────────────────────────────── */
+@media print {
+  nav, footer, .no-print { display: none !important; }
+
+  /* Barvne podlage in obrobe požrejo toner, na listu pa ne povedo nič. */
+  body { background: #fff !important; }
+
+  .zapisnik-blok {
+    border: 1px solid #999 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  /* Vnosna polja naj se natisnejo kot črte, ne kot okvirčki z ozadjem. */
+  input, textarea, select {
+    border: none !important;
+    border-bottom: 1px solid #999 !important;
+    background: transparent !important;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* Podpisna mesta morajo ostati prazna in dovolj visoka za roko. */
+  .zapisnik-blok .h-10 { height: 2.5rem !important; }
+
+  @page { margin: 12mm; }
+}

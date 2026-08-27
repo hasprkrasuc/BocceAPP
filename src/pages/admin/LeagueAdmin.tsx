@@ -116,6 +116,16 @@ export default function LeagueAdmin() {
     berger_mirror: false, double_round: false,
   })
   const [teamForm, setTeamForm] = useState<TeamForm>({ club_name: '', short_name: '', captain_id: '' })
+  /**
+   * Licencirani vodje ekip (tabela team_leaders). To NI isto kot `captain_id`
+   * zgoraj: kapetan je eden, licenciranih vodij je lahko več, njihov vir pa je
+   * evidenca zveze. Zapisnik v spustnem seznamu ponudi prav te.
+   */
+  const [vodje, setVodje] = useState<Array<{ league_team_id: string; user_id: string; full_name: string | null }>>([])
+  const [vodjeZa, setVodjeZa] = useState<string | null>(null)
+  const [iskanjeVodje, setIskanjeVodje] = useState('')
+  const [zadetkiVodij, setZadetkiVodij] = useState<Array<{ id: string; full_name: string | null; club: string | null }>>([])
+  const [vodjeBusy, setVodjeBusy] = useState(false)
   const [scoreEditing, setScoreEditing] = useState<ScoreEditing>({})
   const [phase2Draft, setPhase2Draft] = useState<Phase2Draft | null>(null)
   const [splitDraft, setSplitDraft] = useState<SplitDraft | null>(null)
@@ -252,6 +262,46 @@ export default function LeagueAdmin() {
       .order('draw_number', { ascending: true, nullsFirst: false })
       .order('club_name')
     setTeams((data ?? []) as LeagueTeam[])
+    await loadVodje((data ?? []).map(t => (t as LeagueTeam).id))
+  }
+
+  /** Licencirani vodje za ekipe te sezone. */
+  async function loadVodje(teamIds: string[]) {
+    if (teamIds.length === 0) { setVodje([]); return }
+    const { data } = await supabase
+      .from('team_leaders').select('league_team_id, user_id, user:users(full_name)')
+      .in('league_team_id', teamIds)
+    setVodje(((data ?? []) as unknown as Array<{
+      league_team_id: string; user_id: string; user: { full_name: string | null } | null
+    }>).map(v => ({ league_team_id: v.league_team_id, user_id: v.user_id, full_name: v.user?.full_name ?? null })))
+  }
+
+  /** Kandidati za vodjo se iščejo med VSEMI uporabniki: vodja ni nujno igralec te ekipe. */
+  async function poisciVodjo(niz: string) {
+    setIskanjeVodje(niz)
+    if (niz.trim().length < 2) { setZadetkiVodij([]); return }
+    const { data } = await supabase.from('users').select('id, full_name, club')
+      .ilike('full_name', `%${niz.trim()}%`).order('full_name').limit(8)
+    setZadetkiVodij(data ?? [])
+  }
+
+  async function dodajVodjo(teamId: string, userId: string) {
+    setVodjeBusy(true)
+    const { error } = await supabase.from('team_leaders').insert({ league_team_id: teamId, user_id: userId })
+    setVodjeBusy(false)
+    if (error) { setMessage(`⚠ ${error.message}`); return }
+    setIskanjeVodje(''); setZadetkiVodij([])
+    await loadVodje(teams.map(t => t.id))
+  }
+
+  async function odvzemiVodjo(teamId: string, userId: string, ime: string | null) {
+    if (!window.confirm(`Odvzeti vodenje ekipe uporabniku ${ime ?? ''}?`)) return
+    setVodjeBusy(true)
+    const { error } = await supabase.from('team_leaders')
+      .delete().eq('league_team_id', teamId).eq('user_id', userId)
+    setVodjeBusy(false)
+    if (error) { setMessage(`⚠ ${error.message}`); return }
+    await loadVodje(teams.map(t => t.id))
   }
 
   async function loadFixtures() {
@@ -1550,6 +1600,64 @@ export default function LeagueAdmin() {
                         return <span className="text-xs text-gray-400">ni ujemanja po imenu</span>
                       })()}
                     </div>
+
+                    {/* Licencirani vodje ekipe. NAMENOMA ločeno od `captain_id`
+                        zgoraj: kapetan je eden, licenciranih vodij je lahko več
+                        (v evidenci zveze jih ima ena ekipa do šest). Zapisnik v
+                        spustnem seznamu ponudi prav te. */}
+                    {(() => {
+                      const moji = vodje.filter(v => v.league_team_id === team.id)
+                      const odprto = vodjeZa === team.id
+                      return (
+                        <div className="mb-3 border-t border-gray-100 pt-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-medium text-gray-500">Licencirani vodje:</span>
+                            {moji.length === 0 && (
+                              <span className="text-xs text-gray-400 italic">
+                                {selectedSeason.tier === 'obz' ? 'ni vpisanih (v OBZ ligah niso obvezni)' : 'ni vpisanih'}
+                              </span>
+                            )}
+                            {moji.map(v => (
+                              <span key={v.user_id}
+                                className="flex items-center gap-1 bg-bocce-green/10 text-bocce-green text-xs px-2 py-1 rounded-full">
+                                {v.full_name ?? '(neznano ime)'}
+                                <button onClick={() => odvzemiVodjo(team.id, v.user_id, v.full_name)}
+                                  disabled={vodjeBusy}
+                                  className="text-bocce-green/60 hover:text-red-500 ml-1 disabled:opacity-50">×</button>
+                              </span>
+                            ))}
+                            <button
+                              onClick={() => { setVodjeZa(p => (p === team.id ? null : team.id)); setIskanjeVodje(''); setZadetkiVodij([]) }}
+                              className="text-xs text-bocce-green hover:underline">
+                              {odprto ? 'zapri' : '+ dodaj'}
+                            </button>
+                          </div>
+
+                          {odprto && (
+                            <div className="mt-2">
+                              <input type="search" value={iskanjeVodje}
+                                onChange={e => poisciVodjo(e.target.value)} disabled={vodjeBusy}
+                                placeholder="Išči po imenu..."
+                                className="w-full max-w-xs border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-50" />
+                              {zadetkiVodij.length > 0 && (
+                                <div className="mt-1 max-w-xs border border-gray-200 rounded-lg divide-y divide-gray-100 bg-white">
+                                  {zadetkiVodij
+                                    .filter(k => !moji.some(v => v.user_id === k.id))
+                                    .map(k => (
+                                      <button key={k.id} onClick={() => dodajVodjo(team.id, k.id)}
+                                        disabled={vodjeBusy}
+                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-bocce-green/5 disabled:opacity-50">
+                                        <span className="text-gray-800">{k.full_name}</span>
+                                        <span className="block text-xs text-gray-400">{k.club ?? 'brez kluba'}</span>
+                                      </button>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                     <div className="flex flex-wrap gap-2 mb-2">
                       {team.league_team_players?.map(p => (
                         <span key={p.id} className="flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-full">
