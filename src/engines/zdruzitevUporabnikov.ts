@@ -106,6 +106,8 @@ export interface ZapisZaZdruzitev {
   license_number?: string | null
   gender?: string | null
   club_id: string | null
+  /** Klub, kot je zapisan na obrazcu — ni nujno enak imenu povezanega kluba. */
+  club?: string | null
   photo_url?: string | null
   role: UserRole
   created_at?: string | null
@@ -169,7 +171,7 @@ const PRENOSLJIVA = [
   ['photo_url', 'fotografija'],
 ] as const
 
-type Prenosljivo = (typeof PRENOSLJIVA)[number][0]
+type Prenosljivo = (typeof PRENOSLJIVA)[number][0] | 'club'
 
 const prazno = (v: unknown): boolean => v === null || v === undefined || v === ''
 
@@ -197,6 +199,21 @@ export function zdruzenaPolja(obdrzan: ZapisZaZdruzitev, opusceni: ZapisZaZdruzi
       patch[polje] = opusceni[polje] as string
       prevzeto.push(opis)
     }
+  }
+
+  // club_id in club POTUJETA SKUPAJ. Besedilno polje je klub, kakor ga je
+  // zapisal obrazec, in se od imena povezanega kluba pri 1055 od 1319
+  // uporabnikov razlikuje — največkrat kot okrajšava (»BŠK BUDNIČAR« proti
+  // »BALINARSKI ŠPORTNI KLUB BUDNIČAR«). To samo po sebi ni napaka.
+  //
+  // Napaka nastane ob združitvi: če prevzamemo povezavo, ne pa besedila,
+  // zapis kaže na en klub, piše pa drug. Tako je Jože Zadnik 27. 8. 2026
+  // ostal z besedilom »OBZ Sežana« in povezavo na BISTRC.
+  //
+  // Prožilec sync_user_club tega ne reši — besedilo zapolni le, kadar je
+  // prazno, obstoječega pa nikoli ne popravi.
+  if (patch.club_id !== undefined) {
+    patch.club = opusceni.club ?? null
   }
 
   // Vloga: nižja se ob združitvi ne sme povoziti višje. Kdor je bil sodnik v

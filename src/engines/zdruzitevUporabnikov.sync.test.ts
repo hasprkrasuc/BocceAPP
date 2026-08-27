@@ -51,6 +51,16 @@ describe('api/user-merge.ts <-> src — sinhronizacija podvojenih seznamov', () 
     ).toEqual([...ROLE_ORDER])
   })
 
+  test('obe strani prevzameta besedilo kluba skupaj s povezavo', () => {
+    // Če pravilo obstaja le v motorju, združitev prek aplikacije pusti zapis,
+    // ki kaže na en klub, piše pa drugega (primer Jože Zadnik, 27. 8. 2026).
+    for (const [vir, oznaka] of [[engineSource, 'motor'], [apiSource, 'api']] as const) {
+      expect(vir, `manjka pravilo club↔club_id v ${oznaka}`).toContain('patch.club_id !== undefined')
+    }
+    // Strežnik mora stolpec tudi prebrati, sicer ga prevzem postavi na null.
+    expect(apiSource, 'api/user-merge.ts ne bere stolpca club').toMatch(/club_id, club,/)
+  })
+
   test('GENERIC_EMAIL_DOMAINS se ujema s src/lib/genericEmail.ts', () => {
     expect(
       nizi(seznam(apiSource, 'GENERIC_EMAIL_DOMAINS', 'api/user-merge.ts')),

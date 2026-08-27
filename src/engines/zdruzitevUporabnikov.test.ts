@@ -15,6 +15,7 @@ function z(over: Partial<ZapisZaZdruzitev> & { id: string }): ZapisZaZdruzitev {
     license_number: null,
     gender: null,
     club_id: null,
+    club: null,
     photo_url: null,
     role: 'player',
     created_at: '2026-01-01T00:00:00Z',
@@ -164,6 +165,32 @@ describe('zlivanje podatkov', () => {
     const obdrzan = z({ id: 'a', email: 'a@balinar.app' })
     const opusceni = z({ id: 'b', email: 'b@bocceapp.si' })
     expect(zdruzenaPolja(obdrzan, opusceni).naslov).toBeNull()
+  })
+
+  test('klub in povezava potujeta skupaj', () => {
+    // Jože Zadnik, 27. 8. 2026: obdržani je prevzel club_id na BISTRC,
+    // besedilo pa je ostalo »OBZ Sežana« — zapis je kazal na en klub, pisalo
+    // pa je drugega. Prožilec sync_user_club tega ne reši, ker besedilo
+    // zapolni le, kadar je prazno.
+    const obdrzan = z({ id: 'a', club_id: null, club: 'OBZ Sežana' })
+    const opusceni = z({ id: 'b', club_id: 'klub-bistrc', club: 'BISTRC' })
+    const { patch } = zdruzenaPolja(obdrzan, opusceni)
+    expect(patch.club_id).toBe('klub-bistrc')
+    expect(patch.club).toBe('BISTRC')
+  })
+
+  test('brez prevzema povezave se besedilo kluba ne dotakne', () => {
+    const obdrzan = z({ id: 'a', club_id: 'klub-a', club: 'Klub A' })
+    const opusceni = z({ id: 'b', club_id: 'klub-b', club: 'Klub B' })
+    expect(zdruzenaPolja(obdrzan, opusceni).patch.club).toBeUndefined()
+  })
+
+  test('prevzem povezave brez besedila na opuščenem besedilo izprazni', () => {
+    // Bolje prazno kot napačno: prazno polje prožilec sync_user_club ob
+    // naslednjem zapisu napolni z imenom povezanega kluba.
+    const obdrzan = z({ id: 'a', club_id: null, club: 'OBZ Sežana' })
+    const opusceni = z({ id: 'b', club_id: 'klub-bistrc', club: null })
+    expect(zdruzenaPolja(obdrzan, opusceni).patch.club).toBeNull()
   })
 
   test('brez česa za prenesti je patch prazen', () => {
