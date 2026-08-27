@@ -429,10 +429,15 @@ export function LeagueDetail() {
     if (!id) return
     const [{ data: s }, { data: t }, { data: f }] = await Promise.all([
       supabase.from('league_seasons').select('*').eq('id', id).single(),
+      // captain:users MORA imenovati tuji ključ. Odkar obstaja `team_leaders`
+      // (sestavljen primarni ključ league_team_id + user_id), PostgREST to
+      // tabelo prepozna kot vezno in vidi DVE poti od league_teams do users:
+      // neposredni captain_id in vez prek vodij. Brez imena ključa vrne 300
+      // Multiple Choices, poizvedba pade in seznam ekip ostane prazen.
       // Klub je vgnezden zaradi logotipa. Klubov je na sezono kvečjemu toliko
       // kot ekip, zato embed ne podvaja ničesar občutnega — za razliko od ekip
       // v tekmah spodaj.
-      supabase.from('league_teams').select(`*, club:clubs(id, name, logo_url), captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`).eq('season_id', id),
+      supabase.from('league_teams').select(`*, club:clubs(id, name, logo_url), captain:users!league_teams_captain_id_fkey(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`).eq('season_id', id),
       // Brez vgnezdenih ekip: sezona ima ~9 ekip, tekem pa ~80, zato je embed
       // prinesel isto ekipo do 160-krat (izmerjeno 71 KB → 35 KB). Ekipe so že
       // naložene v poizvedbi nad to vrstico; spodaj jih pripnemo po id-ju, zato

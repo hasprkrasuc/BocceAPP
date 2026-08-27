@@ -254,13 +254,26 @@ export default function LeagueAdmin() {
 
   async function loadTeams() {
     if (!selectedSeason) return
-    const { data } = await supabase.from('league_teams')
+    const { data, error } = await supabase.from('league_teams')
       // Izrecni stolpci namesto users(*): občutljivih stolpcev vloga
       // authenticated ne sme brati, zvezdica bi vrnila 401.
-      .select(`*, club:clubs(id, name, logo_url), captain:users(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`)
+      //
+      // captain:users MORA imenovati tuji ključ. Odkar obstaja `team_leaders`
+      // (sestavljen primarni ključ league_team_id + user_id), PostgREST to
+      // tabelo prepozna kot vezno in vidi DVE poti od league_teams do users:
+      // neposredni captain_id in vez prek vodij. Brez imena ključa vrne 300
+      // Multiple Choices, poizvedba pade in seznam ekip ostane prazen.
+      .select(`*, club:clubs(id, name, logo_url), captain:users!league_teams_captain_id_fkey(${USER_PUBLIC_COLS}), league_team_players(*, player:users(${USER_PUBLIC_COLS}))`)
       .eq('season_id', selectedSeason.id)
       .order('draw_number', { ascending: true, nullsFirst: false })
       .order('club_name')
+    // Napake ne pogoltnemo: prav tiho prazen seznam je 27. 8. 2026 skril vse
+    // ekipe državnih lig, dokler ni nekdo opazil, da jih ni.
+    if (error) {
+      setMessage(`⚠ Ekip ni bilo mogoče naložiti: ${error.message}`)
+      setTeams([]); setVodje([])
+      return
+    }
     setTeams((data ?? []) as LeagueTeam[])
     await loadVodje((data ?? []).map(t => (t as LeagueTeam).id))
   }
