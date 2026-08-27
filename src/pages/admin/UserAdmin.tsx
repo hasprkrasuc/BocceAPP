@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { UserProfile, UserRole } from '../../types'
@@ -7,6 +7,13 @@ import ImageUpload from '../../components/ImageUpload'
 import { isGenericEmail } from '../../lib/genericEmail'
 import { opozoriloOEmso } from '../../lib/playerImport/emso'
 import { preveriZdruzitev } from '../../engines/zdruzitevUporabnikov'
+import { poisciDvojnike, type Zanesljivost } from '../../engines/dvojniki'
+
+const OZNAKA_ZANESLJIVOSTI: Record<Zanesljivost, { besedilo: string; barva: string }> = {
+  verjeten:      { besedilo: 'verjeten',       barva: 'bg-red-100 text-red-700' },
+  mozen:         { besedilo: 'možen',          barva: 'bg-amber-100 text-amber-800' },
+  malo_verjeten: { besedilo: 'malo verjeten',  barva: 'bg-gray-100 text-gray-500' },
+}
 
 /** Stolpcev v tabeli — za colSpan razširjene vrstice. */
 const STOLPCEV = 7
@@ -30,6 +37,9 @@ export default function UserAdmin() {
   /** Iskalni niz in izbrani drugi zapis pri združevanju podvojenih oseb. */
   const [iskanjeZdruzi, setIskanjeZdruzi] = useState('')
   const [zdruziZ, setZdruziZ] = useState<UserProfile | null>(null)
+  /** Odprt seznam samodejno najdenih dvojnikov. */
+  const [dvojnikiOdprti, setDvojnikiOdprti] = useState(false)
+  const [tudiMaloVerjetni, setTudiMaloVerjetni] = useState(false)
 
   useEffect(() => { load() }, [])
   useEffect(() => {
@@ -238,6 +248,30 @@ export default function UserAdmin() {
     }
   }
 
+  /**
+   * Kandidati za združitev. Motor pri 1448 zapisih porabi ~25 ms, a useMemo
+   * poskrbi, da se to ne ponovi ob vsakem tipkanju v iskalnik.
+   */
+  const dvojniki = useMemo(() => poisciDvojnike(users), [users])
+  const zaPrikaz = dvojniki.filter(p => tudiMaloVerjetni || p.zanesljivost !== 'malo_verjeten')
+  const maloVerjetnih = dvojniki.length - dvojniki.filter(p => p.zanesljivost !== 'malo_verjeten').length
+
+  /**
+   * Odpre par v urejanju prvega zapisa z drugim že izbranim. Iskalnik nastavimo
+   * na ime, ker bi bila vrstica sicer lahko skrita za trenutnim filtrom in bi se
+   * urejanje odprlo nevidno.
+   */
+  function odpriPar(a: UserProfile, b: UserProfile) {
+    setRoleFilter('all')
+    setSearch(a.full_name ?? '')
+    setVrsticaMsg(null)
+    setNovoGeslo(null)
+    setNovNaslov('')
+    setIskanjeZdruzi('')
+    setZdruziZ(b)
+    setUrejam(a.id)
+  }
+
   function preklopiUrejanje(userId: string) {
     setVrsticaMsg(null)
     setNovoGeslo(null)   // geslo ne sme obviseti na zaslonu pri drugem človeku
@@ -269,6 +303,82 @@ export default function UserAdmin() {
       {error && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           Vloge ni bilo mogoče spremeniti: {error}
+        </div>
+      )}
+
+      {/* Samodejno najdeni dvojniki. Ime določa le, kdo pride v poštev; odloča
+          razločevalec (svoj EMŠO, letnica), zato so pari razvrščeni po
+          zanesljivosti in malo verjetni privzeto skriti. */}
+      {isAdmin && dvojniki.length > 0 && (
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <button onClick={() => setDvojnikiOdprti(o => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50">
+            <span className="text-sm font-medium text-gray-700">
+              Možni dvojniki
+              <span className="ml-2 text-xs font-normal text-gray-400">
+                ({zaPrikaz.length}{maloVerjetnih > 0 && !tudiMaloVerjetni && ` · ${maloVerjetnih} skritih`})
+              </span>
+            </span>
+            <span className="text-xs text-bocce-green">{dvojnikiOdprti ? 'Zapri' : 'Pokaži'}</span>
+          </button>
+
+          {dvojnikiOdprti && (
+            <div className="border-t border-gray-100 px-4 py-3 space-y-3">
+              <p className="text-xs text-gray-500">
+                Ujemanje imena samo po sebi ne pomeni dvojnika — Ivan Ličan in Igor Turk sta
+                v istem klubu vsak po dva različna človeka. Odloča razločevalec: kdor ima
+                svoj EMŠO ali drugo letnico, je svoja oseba.
+              </p>
+
+              {zaPrikaz.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-2">
+                  Ni parov, ki bi jih kazalo pogledati.
+                </p>
+              ) : zaPrikaz.map(p => (
+                <div key={`${p.a.id}:${p.b.id}`} className="rounded-lg border border-gray-200 p-3">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${OZNAKA_ZANESLJIVOSTI[p.zanesljivost].barva}`}>
+                        {OZNAKA_ZANESLJIVOSTI[p.zanesljivost].besedilo}
+                      </span>
+                      <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                        {[p.a, p.b].map((u, idx) => (
+                          <div key={u.id}>
+                            <span className="font-medium text-gray-800">{u.full_name}</span>
+                            <span className="block text-xs text-gray-400">
+                              {u.club ?? 'brez kluba'} · r. {u.birth_year ?? '?'}
+                              {idx === 1 && !u.emso && !u.date_of_birth && !u.license_number && ' · prazen zapis'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <button onClick={() => odpriPar(p.a, p.b)}
+                      className="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 whitespace-nowrap">
+                      Odpri združitev
+                    </button>
+                  </div>
+
+                  {p.proti.length > 0 && (
+                    <ul className="mt-2 space-y-0.5">
+                      {p.proti.map((r, i) => (
+                        <li key={i} className="text-xs text-amber-800">⚠ {r}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+
+              {maloVerjetnih > 0 && (
+                <button onClick={() => setTudiMaloVerjetni(v => !v)}
+                  className="text-xs text-bocce-green hover:underline">
+                  {tudiMaloVerjetni
+                    ? 'Skrij malo verjetne'
+                    : `Pokaži še ${maloVerjetnih} malo verjetnih`}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
