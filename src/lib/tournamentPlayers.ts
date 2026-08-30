@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { fetchAllRows } from './fetchAllRows'
 import type { UserProfile } from '../types'
 
 /**
@@ -9,41 +10,44 @@ import type { UserProfile } from '../types'
  * seznam filtrira `role = 'player'` — npr. igralec-sodnik ali igralec, ki je
  * hkrati administrator kluba.
  *
- * PostgREST privzeto vrne največ 1000 vrstic, zato registrirane igralce beremo
- * po straneh. Rezultat je urejen po imenu.
+ * OBE poizvedbi morata brati po straneh. PostgREST vrne največ 1000 vrstic in
+ * ostalih ne omeni — dobiš krnjen seznam brez napake. Branje postav je bilo
+ * nekoč napisano kot en sam `select` brez stranjenja; 29. 8. 2026 je imela
+ * tabela 4054 vrstic, prebralo se jih je 1000, in sodnik Branko Sedej, ki
+ * igra v štirih ekipah, se na prvenstvu ni dal izbrati. Ker ima tabela indeks
+ * na `player_id`, vrstni red ni bil niti vrstni red vpisa — odrezalo je po
+ * id-ju, torej naključno glede na to, kdo manjka.
+ *
+ * `fetchAllRows` napako vrže naprej; klicatelj naj jo pokaže. Krnjen seznam je
+ * slabši od napake, ker ga nihče ne opazi.
  */
 export async function loadTournamentPlayers(
   // birth_year namesto date_of_birth: poln datum je občutljiv, za starostne
   // kategorije pa zadošča letnik.
   columns = 'id, full_name, club, club_id, birth_year',
 ): Promise<UserProfile[]> {
-  const pageSize = 1000
-  const all: UserProfile[] = []
+  // 1) Vsi z vlogo 'player'.
+  const all = await fetchAllRows<UserProfile>((od, doVkljucno) =>
+    supabase.from('users').select(columns).eq('role', 'player')
+      .order('full_name').range(od, doVkljucno) as never)
 
-  // 1) Vsi z vlogo 'player' (po straneh).
-  for (let from = 0; ; from += pageSize) {
+  // 2) Člani ligaških postav, ki jih 1) ne zajame (druga primarna vloga).
+  //    Urejenost po `player_id` ni okras: brez stabilnega vrstnega reda lahko
+  //    stranjenje vrstice podvoji ali preskoči.
+  const postave = await fetchAllRows<{ player_id: string }>((od, doVkljucno) =>
+    supabase.from('league_team_players').select('player_id')
+      .order('player_id').range(od, doVkljucno) as never)
+
+  const ze = new Set(all.map(p => p.id))
+  const manjkajo = [...new Set(postave.map(r => r.player_id))].filter(id => id && !ze.has(id))
+
+  // `in` z več sto vrednostmi razbijemo na kose, da URL ne preraste omejitve.
+  for (let i = 0; i < manjkajo.length; i += 300) {
     const { data, error } = await supabase
       .from('users')
       .select(columns)
-      .eq('role', 'player')
-      .order('full_name')
-      .range(from, from + pageSize - 1)
-    if (error) break
-    const batch = (data ?? []) as unknown as UserProfile[]
-    all.push(...batch)
-    if (batch.length < pageSize) break
-  }
-
-  // 2) Člani ligaških postav, ki jih 1) ne zajame (druga primarna vloga).
-  const { data: rosterRows } = await supabase.from('league_team_players').select('player_id')
-  const have = new Set(all.map(p => p.id))
-  const missing = [...new Set(((rosterRows ?? []) as Array<{ player_id: string }>).map(r => r.player_id))]
-    .filter(id => id && !have.has(id))
-  for (let i = 0; i < missing.length; i += 300) {
-    const { data } = await supabase
-      .from('users')
-      .select(columns)
-      .in('id', missing.slice(i, i + 300))
+      .in('id', manjkajo.slice(i, i + 300))
+    if (error) throw error
     all.push(...((data ?? []) as unknown as UserProfile[]))
   }
 
