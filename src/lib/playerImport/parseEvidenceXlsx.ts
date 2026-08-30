@@ -281,6 +281,9 @@ export function parseEvidenceRows(rows: unknown[][]): ParseResult {
       addressPostal: null,
       addressCity: null,
       sportNumber: toNullable(cellText(row, cols.sportnaSt)),
+      // Izvoz iz evidence zveze stolpca "Reg. št." nima — ta je le na obrazcih
+      // območnih zvez.
+      regNumber: null,
       email: toNullable(cellText(row, cols.eposta).toLowerCase()),
       sourceClub,
       sourceCompetition,

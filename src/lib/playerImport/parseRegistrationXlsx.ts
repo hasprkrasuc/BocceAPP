@@ -83,6 +83,7 @@ interface ColumnIndexes {
   datum: number
   emso: number
   sportnaSt: number
+  regSt: number
   drzava: number
   drzavljanstvo: number
   ulica: number
@@ -103,6 +104,10 @@ function findColumnIndexes(headerRow: unknown[]): ColumnIndexes {
   const datum = indexOfLabel('datum')
   const emso = indexOfLabel('emšo')
   const sportnaSt = indexOfLabel('športna št.')
+  // Obrazci OBMOČNIH zvez imajo namesto "Športna št." stolpec "Reg. št.".
+  // To NI ista številka — glej komentar pri ParsedPlayer.regNumber.
+  const regSt = ['reg. št.', 'reg.št.', 'reg št.', 'reg. st.']
+    .map(indexOfLabel).find(i => i >= 0) ?? -1
   const drzava = indexOfLabel('država')
   const drzavljanstvo = indexOfLabel('državljanstvo')
   const ulica = indexOfLabel('ulica')
@@ -128,6 +133,7 @@ function findColumnIndexes(headerRow: unknown[]): ColumnIndexes {
     datum,
     emso,
     sportnaSt,
+    regSt,
     drzava,
     drzavljanstvo,
     ulica,
@@ -210,6 +216,7 @@ export function parseRegistrationRows(rows: unknown[][]): ParseResult {
       addressPostal: toNullable(cellText(row, cols.postna)),
       addressCity: toNullable(cellText(row, cols.addressCity)),
       sportNumber: toNullable(cellText(row, cols.sportnaSt)),
+      regNumber: toNullable(cellText(row, cols.regSt)),
       email: null,             // obrazec e-naslovov iz aplikacije ne vsebuje
       sourceClub: null,        // klub je v glavi obrazca, ne v vrstici
       sourceCompetition: null, // obrazec je seznam vseh registriranih, ne po tekmovanjih

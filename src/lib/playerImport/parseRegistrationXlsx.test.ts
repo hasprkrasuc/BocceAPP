@@ -150,3 +150,38 @@ describe('parseRegistrationRows — robustnost', () => {
     expect(result.players.some((p) => p.lastName === 'VODJA')).toBe(false)
   })
 })
+
+/**
+ * Obrazci OBMOČNIH zvez imajo namesto "Športna št." stolpec "Reg. št.".
+ * Ni ista številka: 29. 8. 2026 sta bili zliti v `license_number` in dve
+ * različni osebi iz različnih klubov sta dobili isto vrednost (3472, 3473).
+ * Odtlej gre Reg. št. v svoje polje in v svoj stolpec `users.obz_reg_number`.
+ */
+describe('Reg. št. z obrazcev območnih zvez', () => {
+  const obzVrstice: unknown[][] = [
+    ['EVIDENCA IN REGISTRACIJA IGRALCEV PO KLUBIH ZA SEZONO 2026/27'],
+    ['Območna balinarska zveza:', '', 'Ljubljana'],
+    ['Balinarski klub:', '', 'BK PRIMER OBZ'],
+    [],
+    ['Klub', 'Ime', '', 'Priimek', 'Reg. št.', 'Spol', 'Datum', 'EMŠO', 'Kraj ', 'Država',
+     'Državljanstvo', 'Ulica', 'Hišna', 'Poštna', 'Kraj ', 'E-', 'Podpis'],
+    ['BK PRIMER OBZ', 'JANEZ', '', 'PRIMEROV', '3472', 'M', '1.1.1990', '0101990500011',
+     'LJUBLJANA', 'SLO', 'SLO', 'ULICA', 1, 1000, 'LJUBLJANA', '', ''],
+  ]
+
+  const r = parseRegistrationRows(obzVrstice)
+
+  test('prebere Reg. št. v regNumber', () => {
+    expect(r.players[0].regNumber).toBe('3472')
+  })
+
+  test('sportNumber ostane prazen — obrazec stolpca Športna št. nima', () => {
+    expect(r.players[0].sportNumber).toBeNull()
+  })
+
+  test('obrazec BZS deluje naprej: Športna št. gre v sportNumber, regNumber ostane prazen', () => {
+    // `rows` zgoraj je obrazec BZS s stolpcem "Športna št.".
+    const bzs = parseRegistrationRows(rows)
+    expect(bzs.players.every(p => p.regNumber === null)).toBe(true)
+  })
+})

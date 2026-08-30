@@ -32,6 +32,18 @@ export interface ParsedPlayer {
    */
   sportNumber: string | null
   /**
+   * Registrska številka OBMOČNE zveze ("Reg. št." na obrazcih OBZ).
+   *
+   * NI ista stvar kot `sportNumber`. 29. 8. 2026 sta bili zliti v en stolpec,
+   * ker se razpona ujemata — in dve različni osebi iz različnih klubov sta
+   * dobili isto številko (3472: Tonejc/Mengeš in Matović/Tivoli; 3473:
+   * Kandare/Mengeš in Pavlić/Tivoli). Gre za ločeni zaporedji.
+   *
+   * Zato gre v svoj stolpec `users.obz_reg_number` in se NE uporablja za
+   * ujemanje igralcev: ista številka lahko pripada dvema osebama.
+   */
+  regNumber: string | null
+  /**
    * E-naslov iz aplikacije, kadar ga izvoz nosi s sabo (stolpec "e-mail
    * balinar.app"). Najmočnejši možni ključ: naslov je nastal pri nas in je
    * enoličen, zato ujemanje po njem ni ugibanje, ampak istovetnost.

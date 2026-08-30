@@ -116,3 +116,32 @@ describe('api/import-players.ts <-> src/lib/playerImport — sinhronizacija podv
     ).toEqual([])
   })
 })
+
+/**
+ * Reg. št. območne zveze in športna številka nista isto.
+ *
+ * 29. 8. 2026 sta bili zliti v `license_number`, ker se razpona ujemata.
+ * Posledica: dve različni osebi iz različnih klubov sta dobili isto številko
+ * (3472 — Tonejc/Mengeš in Matović/Tivoli; 3473 — Kandare/Mengeš in
+ * Pavlić/Tivoli). Gre za ločeni zaporedji, ki se prekrivata.
+ *
+ * Ta test drži narazen dvoje, kar je enkrat že zdrsnilo skupaj.
+ */
+describe('obz_reg_number ostane ločen od license_number', () => {
+  test('uvoz piše regNumber v obz_reg_number', () => {
+    expect(apiSource).toMatch(/\['obz_reg_number',\s*p\.regNumber\]/)
+  })
+
+  test('uvoz piše sportNumber v license_number, ne regNumber', () => {
+    expect(apiSource).toMatch(/\['license_number',\s*p\.sportNumber\]/)
+    expect(apiSource).not.toMatch(/\['license_number',\s*p\.regNumber\]/)
+  })
+
+  test('regNumber se NE uporablja za ujemanje igralcev', () => {
+    // Ista Reg. št. lahko pripada dvema osebama, zato kot razlikovalec ne sme
+    // nastopati — sicer bi uvoz posodobil napačen zapis.
+    const ujemanje = apiSource.slice(apiSource.indexOf('matchByNameAndBirthYear('))
+    const klic = ujemanje.slice(0, ujemanje.indexOf(')') + 1)
+    expect(klic).not.toContain('regNumber')
+  })
+})

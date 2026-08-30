@@ -817,6 +817,7 @@ function AddSinglePlayer({ seasonId, teamId, newTeamName, clubId, clubName }: Ad
       addressPostal: null,
       addressCity: null,
       sportNumber: null,
+      regNumber: null,
       email: null,
       sourceClub: null,
       sourceCompetition: null,
