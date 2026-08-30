@@ -66,8 +66,34 @@ describe('branje tabele users', () => {
   })
 
   test('USER_PUBLIC_COLS ne vsebuje občutljivih stolpcev', () => {
-    const obcutljivi = ['emso', 'email', 'phone', 'address', 'license_number', 'citizenship', 'birth_city', 'date_of_birth']
+    const obcutljivi = ['emso', 'email', 'phone', 'address', 'license_number', 'obz_reg_number',
+                        'citizenship', 'birth_city', 'date_of_birth']
     const najdeni = obcutljivi.filter(s => USER_PUBLIC_COLS.split(',').includes(s))
     expect(najdeni, `USER_PUBLIC_COLS je namenjen JAVNEMU branju: ${najdeni.join(', ')}`).toEqual([])
+  })
+})
+
+/**
+ * `obz_reg_number` (migracija 20260830_01) je registrska številka območne
+ * zveze. Ni isto kot `license_number` — 29. 8. 2026 sem ju ob uvozu zlil in
+ * dve različni osebi iz različnih klubov sta dobili isto številko. Stolpec je
+ * enako občutljiv kot licenčna številka: sme ga videti lastnik profila in
+ * admin prek `users_sensitive`, javne strani pa ne.
+ */
+describe('obz_reg_number ostane občutljiv', () => {
+  const migracija = readFileSync(
+    path.resolve(here, '../../supabase/migrations/20260830_01_users_obz_reg_number.sql'), 'utf8')
+
+  test('migracija ga odvzame anon in authenticated', () => {
+    expect(migracija).toMatch(/revoke\s+select\s*\(\s*obz_reg_number\s*\)\s+on\s+public\.users\s+from\s+anon,\s*authenticated/i)
+  })
+
+  test('migracija ga doda v users_sensitive', () => {
+    const pogled = migracija.slice(migracija.indexOf('create view public.users_sensitive'))
+    expect(pogled).toContain('u.obz_reg_number')
+  })
+
+  test('ni v USER_PUBLIC_COLS', () => {
+    expect(USER_PUBLIC_COLS.split(',')).not.toContain('obz_reg_number')
   })
 })

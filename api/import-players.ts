@@ -223,6 +223,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // postane najzanesljivejši ključ za ujemanje pri zamaskiranih izvozih,
           // kjer sta EMŠO in datum rojstva zakrita.
           ['license_number', p.sportNumber],
+          // Reg. št. z obrazcev OBMOČNIH zvez gre v svoj stolpec. Zlita z
+          // license_number je 29. 8. 2026 dvema različnima osebama iz različnih
+          // klubov dala isto številko (3472, 3473) — gre za ločeni zaporedji.
+          // Za ujemanje igralcev se NE uporablja, prav zato.
+          ['obz_reg_number', p.regNumber],
           ['birth_city', p.birthCity], ['birth_country', p.birthCountry], ['citizenship', p.citizenship],
           ['address_street', p.addressStreet], ['address_house', p.addressHouse],
           ['address_postal', p.addressPostal], ['address_city', p.addressCity],
