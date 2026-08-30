@@ -257,7 +257,15 @@ export default function TournamentEdit() {
     if (players.length > 0) return
     // Vsi z vlogo 'player' + člani ligaških postav z drugo vlogo (sodniki/admini,
     // ki tudi igrajo) — sicer bi manjkali na seznamu.
-    const all = await loadTournamentPlayers()
+    // Napake ne pogoltnemo: prazen ali krnjen seznam igralcev je videti kot
+    // "tega igralca ni", ne kot okvara.
+    let all
+    try {
+      all = await loadTournamentPlayers()
+    } catch (e) {
+      setError(`Seznama igralcev ni bilo mogoče naložiti: ${(e as Error).message}`)
+      return
+    }
     // Mladinske serije/turnirji: pokaži le igralce letnika 2008 ali mlajše.
     // Igralci brez znane letnice se izpustijo, ker starosti ni mogoče preveriti.
     // birth_year je izpeljan v bazi iz date_of_birth (ISO ali pikčasti BZS zapis).

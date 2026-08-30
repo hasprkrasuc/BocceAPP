@@ -234,8 +234,13 @@ export function TournamentDetail() {
 
   async function loadPlayers() {
     // Vključi tudi igralce-sodnike/admine, ki so v ligaških postavah.
-    const all = await loadTournamentPlayers('id, full_name, club')
-    setPlayers(all as PlayerOption[])
+    // Napako pokažemo: krnjen seznam je videti kot "tega igralca ni".
+    try {
+      const all = await loadTournamentPlayers('id, full_name, club')
+      setPlayers(all as PlayerOption[])
+    } catch (e) {
+      setRegError(`Seznama igralcev ni bilo mogoče naložiti: ${(e as Error).message}`)
+    }
   }
 
   async function handleRegister() {
