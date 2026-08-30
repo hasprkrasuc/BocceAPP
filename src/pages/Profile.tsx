@@ -10,6 +10,7 @@ import {
 } from '../engines/doubleRegistration'
 import { ROLE_LABELS } from '../lib/roles'
 import AccountLoginSection from '../components/AccountLoginSection'
+import PlayerStats from '../components/PlayerStats'
 import { sestaviIzvoz, imeDatoteke } from '../lib/mojiPodatki'
 
 interface JudgeFixture extends LeagueFixture {
@@ -188,7 +189,7 @@ export default function Profile() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-2">Moj profil</h1>
       <p className="text-sm text-gray-500 mb-6">{user?.email}</p>
 
@@ -239,6 +240,21 @@ export default function Profile() {
           </p>
         </div>
       )}
+      {/* Statistika — ista komponenta kot javna kartica igralca, da se izpisa
+          ne razideta. Prikaže se vsem, ne le vlogi `player`: kdor sodi ali
+          administrira in ob tem igra, ima vlogo sodnika, statistiko pa vseeno. */}
+      {user && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <h2 className="text-lg font-bold text-gray-800">Moja statistika</h2>
+            <Link to={`/igraci/${user.id}`} className="text-sm text-bocce-green hover:underline">
+              Moja javna kartica →
+            </Link>
+          </div>
+          <PlayerStats playerId={user.id} />
+        </div>
+      )}
+
       <AccountLoginSection />
 
       {/* Pravice posameznika (GDPR) */}
