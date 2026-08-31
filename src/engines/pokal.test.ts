@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   pariPrvegaKroga, pokalniPajek, prostiVPrvemKrogu, tekmePrvegaKroga,
-  POKAL_VELIKOST, type PokalEkipa,
+  pokalniDomacin, rangLige, POKAL_VELIKOST, RANG_NEZNAN, type PokalEkipa,
 } from './pokal'
 
 /**
@@ -170,6 +170,49 @@ describe('napake v žrebu se ujamejo', () => {
 
   test('velikost, ki ni potenca dvojke', () => {
     expect(() => pariPrvegaKroga([{ teamId: 'A', drawNumber: 1 }], 47)).toThrow(/potenca/)
+  })
+})
+
+describe('domačin pokalne tekme', () => {
+  test('rang članskih lig: Super liga 1, 1. liga 2, obe 2. ligi 3, OBZ 4', () => {
+    expect(rangLige('super_liga', 'men')).toBe(1)
+    expect(rangLige('1_liga', 'men')).toBe(2)
+    expect(rangLige('2_liga_vzhod', 'men')).toBe(3)
+    expect(rangLige('2_liga_zahod', 'men')).toBe(3)
+    expect(rangLige('obz', 'men')).toBe(4)
+  })
+
+  test('ženske in mladinske lige ranga ne določajo', () => {
+    // Pokal je člansko tekmovanje — ekipa v ženski Super ligi kluba ne
+    // naredi »prvoligaškega« za moški pokal.
+    expect(rangLige('super_liga', 'women')).toBeNull()
+    expect(rangLige('obz', 'u18')).toBeNull()
+    expect(rangLige('obz', 'u14')).toBeNull()
+  })
+
+  test('sezona brez ranga (pokal, neznan tier) ne določa ranga', () => {
+    expect(rangLige(null, 'men')).toBeNull()
+    expect(rangLige('karkoli', 'men')).toBeNull()
+  })
+
+  test('nižje rangirana ekipa je domačin, ne glede na žrebni vrstni red', () => {
+    const rang = new Map([['superligaš', 1], ['območni', 4]])
+    expect(pokalniDomacin('superligaš', 'območni', rang)).toEqual(['območni', 'superligaš'])
+    expect(pokalniDomacin('območni', 'superligaš', rang)).toEqual(['območni', 'superligaš'])
+  })
+
+  test('pri enakem rangu ostane žrebni vrstni red', () => {
+    const rang = new Map([['A', 3], ['B', 3]])
+    expect(pokalniDomacin('A', 'B', rang)).toEqual(['A', 'B'])
+    expect(pokalniDomacin('B', 'A', rang)).toEqual(['B', 'A'])
+  })
+
+  test('ekipa brez ranga šteje kot najnižja in je domačin', () => {
+    const rang = new Map([['prvoligaš', 2]])
+    expect(RANG_NEZNAN).toBeGreaterThan(4)
+    expect(pokalniDomacin('prvoligaš', 'neznan', rang)).toEqual(['neznan', 'prvoligaš'])
+    // Dve neznani: oba RANG_NEZNAN, ostane žrebni vrstni red.
+    expect(pokalniDomacin('X', 'Y', rang)).toEqual(['X', 'Y'])
   })
 })
 
