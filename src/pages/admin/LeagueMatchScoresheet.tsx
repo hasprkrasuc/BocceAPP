@@ -9,6 +9,7 @@ import { evaluatePlayerLineup, seasonUsesBlock2Rule, type LineupDisc } from '../
 import { formatMatchDateTime } from '../../lib/matchDate'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
 import KlubskiGrb from '../../components/KlubskiGrb'
+import { vrsticeSodnikov } from '../../lib/podpisiZapisnika'
 
 const TECHNICAL_TYPES: DisciplineType[] = ['stafeta', 'hitrostno', 'natancno']
 
@@ -164,6 +165,10 @@ export default function LeagueMatchScoresheet() {
   const [chiefJudgeUserId, setChiefJudgeUserId] = useState<string>('')
   const [judgeUserIds, setJudgeUserIds] = useState<string[]>([])
   const [allUsers, setAllUsers] = useState<Pick<UserProfile, 'id' | 'full_name'>[]>([])
+  /** Imena delegiranih sodnikov za blok s podpisi (id -> ime). Ločeno od
+      `allUsers`, ker se tisti seznam naloži samo adminom — brez tega bi na
+      natisnjenem zapisniku sodnik, ki ni admin, ostal brez imena. */
+  const [sodnikiImena, setSodnikiImena] = useState<Record<string, string>>({})
   const [matchDate, setMatchDate] = useState('')
   const [venue, setVenue] = useState('')
   /** Vodji ekip in kandidati zanje — licencirani za to ekipo v tem tekmovanju. */
@@ -185,6 +190,20 @@ export default function LeagueMatchScoresheet() {
   // zato ga naložimo ločeno in šele ko je admin status znan — s tem se anonimnim/navadnim
   // obiskovalcem ta poizvedba sploh ne izvede.
   useEffect(() => { if (isAdmin) loadJudgeCandidates() }, [isAdmin])
+
+  // Imena delegiranih sodnikov se berejo po id-jih, zato jih sme videti vsak,
+  // ki zapisnik odpre — poizvedba ne izda seznama vseh sodnikov.
+  useEffect(() => {
+    const idji = [chiefJudgeUserId, ...judgeUserIds].filter(Boolean)
+    if (idji.length === 0) { setSodnikiImena({}); return }
+    let opusceno = false
+    supabase.from('users').select('id, full_name').in('id', idji).then(({ data, error }) => {
+      if (opusceno || error) return
+      setSodnikiImena(Object.fromEntries(
+        (data ?? []).map(u => [u.id as string, (u.full_name as string | null) ?? ''])))
+    })
+    return () => { opusceno = true }
+  }, [chiefJudgeUserId, judgeUserIds.join(',')])
 
   async function loadJudgeCandidates() {
     const { data: usersData } = await supabase
@@ -886,8 +905,7 @@ export default function LeagueMatchScoresheet() {
         <h2 className="text-sm font-semibold text-gray-700 mb-4">Podpisi</h2>
         <div className="grid sm:grid-cols-2 gap-x-8 gap-y-6">
           {[
-            ['Glavni sodnik', allUsers.find(u => u.id === chiefJudgeUserId)?.full_name ?? ''],
-            ['Sodnik', ''],
+            ...vrsticeSodnikov(chiefJudgeUserId, judgeUserIds, sodnikiImena),
             [`Vodja ekipe — ${fixture.home_team?.club_name ?? 'domači'}`,
               homeLeaders.find(v => v.userId === homeLeaderId)?.name ?? ''],
             [`Vodja ekipe — ${fixture.away_team?.club_name ?? 'gostje'}`,
