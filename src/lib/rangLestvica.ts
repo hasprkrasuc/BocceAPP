@@ -142,6 +142,11 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   const { data: seasons, error: sErr } = await supabase
     .from('league_seasons')
     .select('id, name, tier, category, year, status, win_points, draw_points, loss_points, rounds_count')
+    // Pokal se ne šteje v rang. Tekmovanje združuje Super ligo, obe drugi ligi
+    // in območne lige, `calculateRang` pa je vezan na eno raven (`tier`), ki je
+    // pri pokalu NULL. Brez tega bi pokalne tekme padle v izračun z neznano
+    // ravnjo in tiho popačile lestvico.
+    .neq('format', 'pokal')
     .gte('year', currentYear - 2)
     .order('year', { ascending: false })
   if (sErr) throw sErr

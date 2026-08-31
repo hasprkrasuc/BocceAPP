@@ -22,6 +22,7 @@ export default function Navbar() {
     { to: '/prvenstva', label: sl.nav.championships },
     { to: '/serije', label: sl.nav.series, activeOn: ['/serija'] },
     { to: '/liga', label: sl.nav.league },
+    { to: '/pokal', label: sl.nav.cup },
     { to: '/statistika', label: sl.nav.statistics },
     { to: '/arhiv', label: sl.nav.archive },
     { to: '/rang', label: sl.nav.ranking },

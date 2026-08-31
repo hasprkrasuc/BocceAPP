@@ -168,7 +168,11 @@ export function LeagueList() {
   const [open, setOpen] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    supabase.from('league_seasons').select('*, league_teams(count)').order('year', { ascending: false })
+    // Pokal je tudi sezona (format 'pokal'), a ni liga — nima lestvice ne
+    // kolobarja in ima svojo stran /pokal. Brez tega bi se pojavil med ligami
+    // s prazno tabelo.
+    supabase.from('league_seasons').select('*, league_teams(count)').neq('format', 'pokal')
+      .order('year', { ascending: false })
       .then(({ data }) => {
         const list = (data ?? []) as SeasonWithCount[]
         setSeasons(list)
