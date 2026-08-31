@@ -145,7 +145,7 @@ export default function App() {
               <Route path="/profil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
               {/* Admin */}
-              <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+              <Route path="/admin" element={<LeagueAdminRoute><AdminDashboard /></LeagueAdminRoute>} />
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
               <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
               <Route path="/admin/liga" element={<LeagueAdminRoute><LeagueAdmin /></LeagueAdminRoute>} />

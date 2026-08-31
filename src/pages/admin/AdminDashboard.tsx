@@ -1,8 +1,12 @@
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function AdminDashboard() {
-  const { isSuperAdmin } = useAuth()
+  const { isAdmin, isSuperAdmin } = useAuth()
+
+  // Ligaški admin (ni globalni) sme samo do administracije svoje lige — plošča
+  // z ostalimi karticami mu ne pripada, zato ga pošljemo naravnost tja.
+  if (!isAdmin) return <Navigate to="/admin/liga" replace />
 
   const cards = [
     {

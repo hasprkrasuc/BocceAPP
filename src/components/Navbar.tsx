@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { sl } from '../i18n/sl'
 
 export default function Navbar() {
-  const { user, profile, isAdmin, isClubAdmin, signOut } = useAuth()
+  const { user, profile, isAdmin, isClubAdmin, isLeagueAdmin, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -75,9 +75,9 @@ export default function Navbar() {
               </Link>
             )}
 
-            {isAdmin && (
+            {(isAdmin || isLeagueAdmin) && (
               <Link
-                to="/admin"
+                to={isAdmin ? '/admin' : '/admin/liga'}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isActive('/admin')
                     ? 'bg-bocce-gold text-white'
@@ -165,9 +165,9 @@ export default function Navbar() {
                 Moj klub
               </Link>
             )}
-            {isAdmin && (
+            {(isAdmin || isLeagueAdmin) && (
               <Link
-                to="/admin"
+                to={isAdmin ? '/admin' : '/admin/liga'}
                 onClick={() => setMenuOpen(false)}
                 className="block px-3 py-2 rounded-md text-sm font-medium text-bocce-gold-light hover:bg-bocce-green"
               >
