@@ -12,6 +12,7 @@ import { Login, Signup } from './pages/Auth'
 import PozabljenoGeslo from './pages/PozabljenoGeslo'
 import NovoGeslo from './pages/NovoGeslo'
 import Profile from './pages/Profile'
+import Pokal from './pages/Pokal'
 import { TournamentList, TournamentDetail } from './pages/Tournament'
 import { LeagueList, LeagueDetail } from './pages/League'
 import { ClubList, ClubDetail } from './pages/Clubs'
@@ -122,6 +123,7 @@ export default function App() {
               <Route path="/prvenstva/:id" element={<TournamentDetail />} />
               <Route path="/liga" element={<LeagueList />} />
               <Route path="/liga/:id" element={<LeagueDetail />} />
+              <Route path="/pokal" element={<Pokal />} />
               <Route path="/statistika" element={<Statistics />} />
               <Route path="/arhiv" element={<Archive />} />
               <Route path="/rang" element={<LeagueRanking />} />

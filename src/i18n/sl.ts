@@ -6,6 +6,7 @@ export const sl = {
     championships: 'Državna prvenstva',
     series: 'Serije',
     league: 'Državne lige',
+    cup: 'Pokal BZS',
     statistics: 'Statistika',
     archive: 'Arhiv',
     ranking: 'Rang lestvica',
