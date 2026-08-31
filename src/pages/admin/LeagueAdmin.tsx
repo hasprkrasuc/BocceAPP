@@ -140,6 +140,8 @@ export default function LeagueAdmin() {
   const [newLeagueAdminId, setNewLeagueAdminId] = useState('')
   /** Predlog najboljših štirih za končnico (id-ji po mestih 1..4). */
   const [koncnicaDraft, setKoncnicaDraft] = useState<string[] | null>(null)
+  /** Oblika končnice pri območnih ligah: final four turnir ali seriji na dve dobljeni. */
+  const [koncnicaOblika, setKoncnicaOblika] = useState<'turnir' | 'serija'>('turnir')
   /** Disciplinski rezultati — nujni za pravilno uvrstitev ob izenačenju (razlika iger).
    *  Nalagajo se SAMO za format='groups' (drugje jih ta stran ne potrebuje). */
   const [matchResults, setMatchResults] = useState<MatchResultWithDisc[]>([])
@@ -973,16 +975,30 @@ export default function LeagueAdmin() {
     setLoading(false)
   }
 
-  // ─── Končnica na dve dobljeni tekmi (samo Super liga) ───
+  // ─── Končnica najboljših štirih ───
+  //
+  // Super liga igra serije na dve dobljeni tekmi, mladinski ligi (U18, U14)
+  // enodnevni final four turnir. Območne lige smejo izbrati eno ali drugo —
+  // oblika ni zapisana v bazi, ampak jo določi admin ob generiranju; obstoječa
+  // končnica jo izda sama (serija ima v polfinalu tri tekme, turnir eno).
 
   const jeSuperLiga = selectedSeason?.tier === 'super_liga' && selectedSeason?.format === 'flat'
   /** Mladinski ligi končata z enodnevnim turnirjem najboljših štirih, ne s serijami. */
   const jeMladinska = (selectedSeason?.category === 'u18' || selectedSeason?.category === 'u14')
     && selectedSeason?.format === 'flat'
-  const koncnicaTekme = fixtures.filter(f => f.group_label === 'SF1' || f.group_label === 'SF2' || f.group_label === 'F')
-  const imaPolfinale = koncnicaTekme.some(f => f.group_label !== 'F')
+  /** Območna liga: obliko končnice (turnir ali seriji) izbere admin. */
+  const jeObmocna = selectedSeason?.tier === 'obz' && selectedSeason?.format === 'flat' && !jeMladinska
+  const koncnicaTekme = fixtures.filter(f =>
+    f.group_label === 'SF1' || f.group_label === 'SF2' || f.group_label === 'F' || f.group_label === '3M')
+  const imaPolfinale = koncnicaTekme.some(f => f.group_label === 'SF1' || f.group_label === 'SF2')
   const imaFinale = koncnicaTekme.some(f => f.group_label === 'F')
   const imaTurnirZakljucek = koncnicaTekme.some(f => f.group_label === '3M')
+  // Že ustvarjena končnica izda svojo obliko — izbirnik pri območni ligi se
+  // uskladi z njo, da gumbi ne kažejo druge oblike, kot je v razporedu.
+  const sf1TekemObstojecih = koncnicaTekme.filter(f => f.group_label === 'SF1').length
+  useEffect(() => {
+    if (sf1TekemObstojecih > 0) setKoncnicaOblika(sf1TekemObstojecih > 1 ? 'serija' : 'turnir')
+  }, [selectedSeason?.id, sf1TekemObstojecih])
   const rednePreostale = selectedSeason
     ? fixtures.filter(f => !f.group_label && f.round_number <= selectedSeason.rounds_count && f.status !== 'completed').length
     : 0
@@ -1020,7 +1036,9 @@ export default function LeagueAdmin() {
     }
 
     setLoading(true)
-    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).in('group_label', ['SF1', 'SF2'])
+    // Poleg polfinalov pobriši tudi morebitni finale (in tekmo za 3. mesto iz
+    // druge oblike končnice): nov polfinale ju tako ali tako razveljavi.
+    await supabase.from('league_fixtures').delete().eq('season_id', selectedSeason.id).in('group_label', ['SF1', 'SF2', 'F', '3M'])
     for (const t of tekme) {
       await supabase.from('league_fixtures').insert({
         season_id: selectedSeason.id, round_number: t.round_number,
@@ -1877,8 +1895,27 @@ export default function LeagueAdmin() {
                     Število kol ni nastavitev — izračuna se iz razporeda ob generiranju.
                   </p>
 
-                  {/* ZAKLJUČNI TURNIR — U18 in U14 */}
-                  {jeMladinska && fixtures.length > 0 && (
+                  {/* KONČNICA — območna liga izbere obliko */}
+                  {jeObmocna && fixtures.length > 0 && (
+                    <div className="border-t border-gray-200 pt-5 mb-2 flex items-center gap-3 flex-wrap">
+                      <span className="text-sm font-semibold text-gray-700">Končnica najboljših štirih:</span>
+                      <select value={koncnicaOblika}
+                        onChange={e => setKoncnicaOblika(e.target.value as 'turnir' | 'serija')}
+                        disabled={loading}
+                        className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                        <option value="turnir">Final four turnir (ena tekma, finale + za 3. mesto)</option>
+                        <option value="serija">Na dve dobljeni tekmi (serije kot v Super ligi)</option>
+                      </select>
+                      {koncnicaTekme.length > 0 && (
+                        <span className="text-xs text-gray-400">
+                          Končnica že obstaja — ob zamenjavi oblike jo nov polfinale nadomesti.
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ZAKLJUČNI TURNIR — U18, U14 in območne lige z izbiro "turnir" */}
+                  {(jeMladinska || (jeObmocna && koncnicaOblika === 'turnir')) && fixtures.length > 0 && (
                     <div className="border-t border-gray-200 pt-5 mb-6">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
                         <button onClick={odpriKoncnicoPredlog} disabled={loading || !matchResultsLoaded}
@@ -1934,8 +1971,8 @@ export default function LeagueAdmin() {
                     </div>
                   )}
 
-                  {/* KONČNICA — samo Super liga */}
-                  {jeSuperLiga && fixtures.length > 0 && (
+                  {/* KONČNICA NA DVE DOBLJENI — Super liga in območne lige z izbiro "serija" */}
+                  {(jeSuperLiga || (jeObmocna && koncnicaOblika === 'serija')) && fixtures.length > 0 && (
                     <div className="border-t border-gray-200 pt-5 mb-6">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
                         <button onClick={odpriKoncnicoPredlog} disabled={loading || !matchResultsLoaded}
