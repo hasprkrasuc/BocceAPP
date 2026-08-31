@@ -25,11 +25,15 @@ import {
   KONCNICA_FAZE, type KoncnicaFaza,
 } from '../../engines/koncnica'
 import type { LeagueSeason, LeagueTeam, LeagueFixture, LeagueSeasonStatus, LeagueSeasonFormat, LeagueCategory, LeagueTier, LeagueSeasonDiscipline, UserProfile, DisciplineType } from '../../types'
+import { POKAL_VELIKOST } from '../../engines/pokal'
 
 const FORMAT_LABELS: Record<LeagueSeasonFormat, string> = {
   flat: 'Raven round robin',
   groups: 'Skupine 2×6 + nadaljevalni',
   split: 'Razdelitev 10 (9 kol + 5)',
+  // Pokal razporeda ne generira: pari izhajajo iz žrebanih številk (glej
+  // src/engines/pokal.ts), tu se ureja samo ekipe in discipline zapisnika.
+  pokal: 'Pokal (izločilno)',
 }
 
 /** Predlog razdelitve po 9 kolih: po pet ekip v vsaki skupini. */
@@ -69,6 +73,7 @@ const LEAGUE_COLUMNS: Array<{ label: string; match: (s: LeagueSeason) => boolean
   { label: '2. liga zahod', match: s => s.tier === '2_liga_zahod' },
   { label: '2. liga vzhod', match: s => s.tier === '2_liga_vzhod' },
   { label: 'Območne lige', match: s => s.tier === 'obz' },
+  { label: 'Pokal', match: s => s.format === 'pokal' },
   { label: 'U18', match: s => s.category === 'u18' },
   { label: 'U14', match: s => s.category === 'u14' },
 ]
@@ -1574,9 +1579,17 @@ export default function LeagueAdmin() {
                             </select>
                           </label>
                         )}
-                        <label className="flex items-center gap-1 text-xs text-gray-500" title={selectedSeason.format === 'groups' ? 'Žrebna št. (1-6 znotraj skupine)' : 'Žrebana številka'}>
+                        <label className="flex items-center gap-1 text-xs text-gray-500" title={
+                          selectedSeason.format === 'groups' ? 'Žrebna št. (1-6 znotraj skupine)'
+                            : selectedSeason.format === 'pokal' ? `Mesto v pajku (1-${POKAL_VELIKOST})`
+                            : 'Žrebana številka'}>
                           <span className="font-mono text-gray-400">#</span>
-                          <input type="number" min={1} max={selectedSeason.format === 'groups' ? 6 : teams.length}
+                          {/* Pri pokalu je zgornja meja velikost PAJKA, ne število ekip:
+                              47 ekip zaseda mesta do 64, prosta mesta ostanejo prazna. */}
+                          <input type="number" min={1} max={
+                            selectedSeason.format === 'groups' ? 6
+                              : selectedSeason.format === 'pokal' ? POKAL_VELIKOST
+                              : teams.length}
                             value={team.draw_number ?? ''}
                             onChange={e => changeDrawNumber(team.id, e.target.value)}
                             className="w-12 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center focus:ring-2 focus:ring-bocce-green outline-none"
@@ -1990,6 +2003,16 @@ export default function LeagueAdmin() {
                     </div>
                   )}
                 </>
+              ) : selectedSeason.format === 'pokal' ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-4">
+                  <p className="text-sm text-gray-700 font-medium mb-1">Razporeda ni treba generirati</p>
+                  <p className="text-sm text-gray-500">
+                    Pokalni pari izhajajo iz žrebanih številk: ekipa z mestom 1 igra proti mestu 2,
+                    3 proti 4 in tako naprej. Zapisnik posamezne tekme se ustvari na strani{' '}
+                    <Link to="/pokal" className="text-bocce-green hover:underline">Pokal BZS</Link>,
+                    ko sta obe ekipi znani. Tu se ureja samo ekipe in discipline zapisnika.
+                  </p>
+                </div>
               ) : selectedSeason.format === 'split' ? (
                 <>
                   {/* FAZA 1: 10 ekip enokrožno */}
