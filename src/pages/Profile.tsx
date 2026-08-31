@@ -21,6 +21,38 @@ interface JudgeFixture extends LeagueFixture {
 
 type ProfileForm = Pick<UserProfile, 'full_name' | 'phone' | 'club' | 'license_number' | 'date_of_birth'>
 
+/**
+ * Ena sodniška tekma na profilu. Glavni sodnik zapisnik ureja, delegirani
+ * sodnik ga bere — razlika je samo v gumbu, zato ena komponenta za oboje.
+ */
+function SodniskaTekma({ f, glavni }: { f: JudgeFixture; glavni: boolean }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-800 truncate">
+          {f.home_team?.club_name} – {f.away_team?.club_name}
+        </p>
+        <p className="text-xs text-gray-400">
+          {f.season?.name}{f.scheduled_date ? ` · ${new Date(f.scheduled_date).toLocaleDateString('sl-SI')}` : ''} · {f.round_number}. kolo
+        </p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {f.status === 'completed' && (
+          <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+            {f.home_score} : {f.away_score}
+          </span>
+        )}
+        <Link to={`/liga/tekma/${f.id}`}
+          className={glavni
+            ? 'flex items-center gap-1 bg-bocce-green text-white text-xs px-3 py-1.5 rounded-lg hover:bg-bocce-green-light transition-colors'
+            : 'text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors'}>
+          {glavni ? '✏ Uredi zapisnik' : 'Oglej zapisnik'}
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 export default function Profile() {
   const { user, profile, updateProfile } = useAuth()
   const [form, setForm] = useState<ProfileForm>({
@@ -56,10 +88,19 @@ export default function Profile() {
   useEffect(() => {
     if (!user) return
     const select = '*, home_team:league_teams!league_fixtures_home_team_id_fkey(club_name), away_team:league_teams!league_fixtures_away_team_id_fkey(club_name), season:league_seasons(name)'
+    // Najnovejša tekma zgoraj. `nullsFirst: false` ni okras: Postgres pri
+    // padajočem vrstnem redu privzeto postavi NULL na vrh, zato bi tekme brez
+    // razporeda pristale nad odigranimi.
+    const poDatumu = { ascending: false, nullsFirst: false } as const
     Promise.all([
-      supabase.from('league_fixtures').select(select).eq('chief_judge_id', user.id).order('scheduled_date'),
-      supabase.from('league_fixtures').select(select).contains('judge_ids', [user.id]).order('scheduled_date'),
-    ]).then(([{ data: chief }, { data: judgeOf }]) => {
+      supabase.from('league_fixtures').select(select).eq('chief_judge_id', user.id)
+        .order('scheduled_date', poDatumu),
+      supabase.from('league_fixtures').select(select).contains('judge_ids', [user.id])
+        .order('scheduled_date', poDatumu),
+    ]).then(([{ data: chief, error: e1 }, { data: judgeOf, error: e2 }]) => {
+      // Napake ne požiramo — prazen seznam je videti kot "nimam nobene tekme".
+      const napaka = e1 ?? e2
+      if (napaka) { setError(`Sodniških tekem ni bilo mogoče naložiti: ${napaka.message}`); return }
       setChiefFixtures((chief ?? []) as JudgeFixture[])
       setJudgeFixtures((judgeOf ?? []) as JudgeFixture[])
     })
@@ -282,68 +323,26 @@ export default function Profile() {
       {(chiefFixtures.length > 0 || judgeFixtures.length > 0) && (
         <div className="mt-6">
           <h2 className="text-lg font-bold text-gray-800 mb-3">Moje sodniške tekme</h2>
-
-          {chiefFixtures.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Kot glavni sodnik</p>
-              <div className="space-y-2">
-                {chiefFixtures.map(f => (
-                  <div key={f.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {f.home_team?.club_name} – {f.away_team?.club_name}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {f.season?.name}{f.scheduled_date ? ` · ${new Date(f.scheduled_date).toLocaleDateString('sl-SI')}` : ''} · {f.round_number}. kolo
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {f.status === 'completed' && (
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                          {f.home_score} : {f.away_score}
-                        </span>
-                      )}
-                      <Link to={`/liga/tekma/${f.id}`}
-                        className="flex items-center gap-1 bg-bocce-green text-white text-xs px-3 py-1.5 rounded-lg hover:bg-bocce-green-light transition-colors">
-                        ✏ Uredi zapisnik
-                      </Link>
-                    </div>
+          {/* Dva stolpca: obe vlogi sta vidni hkrati. Stolpec se izriše tudi
+              prazen, da naslova ostaneta poravnana in je jasno, da tekem v
+              tisti vlogi ni — ne da jih stran ni naložila. */}
+          <div className="grid md:grid-cols-2 gap-x-6 gap-y-4">
+            {([
+              ['Kot glavni sodnik', chiefFixtures, true],
+              ['Kot sodnik', judgeFixtures, false],
+            ] as const).map(([naslov, tekme, glavni]) => (
+              <div key={naslov}>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{naslov}</p>
+                {tekme.length > 0 ? (
+                  <div className="space-y-2">
+                    {tekme.map(f => <SodniskaTekma key={f.id} f={f} glavni={glavni} />)}
                   </div>
-                ))}
+                ) : (
+                  <p className="text-sm text-gray-400 italic">Ni tekem v tej vlogi.</p>
+                )}
               </div>
-            </div>
-          )}
-
-          {judgeFixtures.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Kot sodnik</p>
-              <div className="space-y-2">
-                {judgeFixtures.map(f => (
-                  <div key={f.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {f.home_team?.club_name} – {f.away_team?.club_name}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {f.season?.name}{f.scheduled_date ? ` · ${new Date(f.scheduled_date).toLocaleDateString('sl-SI')}` : ''} · {f.round_number}. kolo
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {f.status === 'completed' && (
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                          {f.home_score} : {f.away_score}
-                        </span>
-                      )}
-                      <Link to={`/liga/tekma/${f.id}`}
-                        className="text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
-                        Oglej zapisnik
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
       {/* ── Dvojna registracija — samo prikaz statusa ──────── */}
