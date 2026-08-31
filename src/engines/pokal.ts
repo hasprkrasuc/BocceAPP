@@ -143,6 +143,49 @@ export function pokalniPajek(
   }))
 }
 
+// ────────────────────────────────────────────────────────────────
+// DOMAČIN POKALNE TEKME
+//
+// Pravilo BZS: ekipa iz NIŽJEGA ranga (nižje lige) je vedno domačin — pokal
+// naj malim klubom pripelje velike na domače igrišče. Rang se izpelje iz
+// tega, kje ima klub ekipo v tekoči sezoni; pri enakem rangu ostane žrebni
+// vrstni red (prva številka doma), ker lanske uvrstitve baza ne pozna.
+// ────────────────────────────────────────────────────────────────
+
+/** Rang, ko kluba ni v nobeni članski ligi tekoče sezone — šteje kot najnižji. */
+export const RANG_NEZNAN = 9
+
+/**
+ * Rang članske lige: manjša številka = višja liga. Ženske in mladinske lige
+ * ranga NE določajo (pokal je člansko tekmovanje) — zanje vrne null, prav
+ * tako za pokal sam in sezone brez ranga.
+ */
+export function rangLige(
+  tier: string | null | undefined,
+  category: string | null | undefined,
+): number | null {
+  if (category && category !== 'men' && category !== 'mixed') return null
+  if (tier === 'super_liga') return 1
+  if (tier === '1_liga') return 2
+  if (tier === '2_liga_vzhod' || tier === '2_liga_zahod') return 3
+  if (tier === 'obz') return 4
+  return null
+}
+
+/**
+ * Stran pokalne tekme: [domači, gostujoči]. Domačin je ekipa z VIŠJO številko
+ * ranga (nižja liga); pri enakem rangu ostane podani (žrebni) vrstni red.
+ */
+export function pokalniDomacin(
+  a: string,
+  b: string,
+  rang: Map<string, number>,
+): [string, string] {
+  const ra = rang.get(a) ?? RANG_NEZNAN
+  const rb = rang.get(b) ?? RANG_NEZNAN
+  return rb > ra ? [b, a] : [a, b]
+}
+
 /** Ekipe, ki so v prvem krogu proste (nasprotnika ni izžrebal nihče). */
 export function prostiVPrvemKrogu(ekipe: PokalEkipa[], velikost = POKAL_VELIKOST): string[] {
   return pariPrvegaKroga(ekipe, velikost)
