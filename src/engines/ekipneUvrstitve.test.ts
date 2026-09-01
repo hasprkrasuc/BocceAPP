@@ -5,10 +5,12 @@ import {
 } from './ekipneUvrstitve'
 
 describe('uvrstitvene točke', () => {
-  test('Super liga: 16 / 10 / 8 / 7, od 5. mesta naprej nič', () => {
+  test('Super liga: zmagovalec 16, finalist 10, polfinalista po 7', () => {
     expect(tockeUvrstitveSuperLiga(1)).toBe(16)
     expect(tockeUvrstitveSuperLiga(2)).toBe(10)
-    expect(tockeUvrstitveSuperLiga(3)).toBe(8)
+    // Točke se delijo po končnici — 3. in 4. mesto (poraženca polfinalov)
+    // dobita enako.
+    expect(tockeUvrstitveSuperLiga(3)).toBe(7)
     expect(tockeUvrstitveSuperLiga(4)).toBe(7)
     expect(tockeUvrstitveSuperLiga(5)).toBe(0)
   })
@@ -16,7 +18,7 @@ describe('uvrstitvene točke', () => {
   test('Pokal BZS: polovica superligaških', () => {
     expect(tockeUvrstitvePokal(1)).toBe(8)
     expect(tockeUvrstitvePokal(2)).toBe(5)
-    expect(tockeUvrstitvePokal(3)).toBe(4)
+    expect(tockeUvrstitvePokal(3)).toBe(3.5)
     expect(tockeUvrstitvePokal(4)).toBe(3.5)
     expect(tockeUvrstitvePokal(5)).toBe(0)
   })

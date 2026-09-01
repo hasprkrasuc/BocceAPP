@@ -3,9 +3,11 @@
  *
  * V rang lestvico poleg odigranih tekem šteje tudi KONČNA UVRSTITEV ekipe:
  * vsak igralec ekipe (postava iz `league_team_players`) dobi točke po mestu.
+ * Točke se delijo po končnici: zmagovalec, finalist, polfinalista — zato
+ * 3. in 4. mesto (poraženca polfinalov) dobita ENAKO.
  *
- *   Super liga:  1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7
- *   Pokal BZS:   polovico tega (8 · 5 · 4 · 3.5)
+ *   Super liga:  1. m. 16 · 2. m. 10 · 3.–4. m. po 7
+ *   Pokal BZS:   polovico tega (8 · 5 · po 3.5)
  *
  * Velja za moške in ženske — točke gredo v rang kategorijo sezone.
  *
@@ -19,8 +21,9 @@ import { TEKEM_V_SERIJI, ZMAG_ZA_SERIJO } from './koncnica'
 export function tockeUvrstitveSuperLiga(mesto: number): number {
   if (mesto === 1) return 16
   if (mesto === 2) return 10
-  if (mesto === 3) return 8
-  if (mesto === 4) return 7
+  // Poraženca polfinalov: obe ekipi enako, ne glede na to, ali sta razvrščeni
+  // na 3. in 4. mesto ali si mesto delita.
+  if (mesto === 3 || mesto === 4) return 7
   return 0
 }
 

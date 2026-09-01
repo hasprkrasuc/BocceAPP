@@ -13,7 +13,8 @@
  * (ne vsota obeh lig); pokal šteje vedno poleg tega.
  * DP točke:   1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7 · 5.–8. m. 3 · 9.–16. m. 1
  * Uvrstitev ekipe (Super liga in Pokal BZS): vsak igralec ekipe dobi točke po
- * končnem mestu — Super liga 16/10/8/7, pokal polovico.
+ * končnem mestu — Super liga 16/10/7/7, pokal polovico. Ročno vnesena
+ * uvrstitev (`league_teams.final_rank`) prepiše izračunano.
  * Skupni rang = ligaRang + dpPts + uvrstitevPts
  */
 
@@ -160,7 +161,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   // ── Liga sezone ───────────────────────────────────────────────────────────
   const { data: seasons, error: sErr } = await supabase
     .from('league_seasons')
-    .select('id, name, tier, category, year, status, format, win_points, draw_points, loss_points, rounds_count')
+    .select('id, name, tier, category, year, status, format, win_points, draw_points, loss_points, rounds_count, ended_on')
     // Pokal je zraven NAMENOMA: pokalne tekme štejejo v rang s koeficientom 1.
     // Ker pokal nima ravni (`tier` je NULL), se v izračun preslika prek ključa
     // 'pokal' (glej tierKljuc spodaj in LIGA_KOEF.pokal).
@@ -342,8 +343,8 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
 
   // ── Uvrstitve ekip: Super liga in Pokal BZS ──────────────────────────────
   // Vsak igralec ekipe (postava) dobi točke po končnem mestu: Super liga
-  // 16/10/8/7, pokal polovico. Šteje ZAKLJUČENO tekmovanje, katerega zadnja
-  // odigrana tekma pade v 365-dnevno okno.
+  // 16/10/7/7, pokal polovico. Šteje ZAKLJUČENO tekmovanje, katerega zadnja
+  // odigrana tekma (ali `ended_on`, če tekem ni) pade v 365-dnevno okno.
   const uvrstitveneSezone = (seasons ?? []).filter(s =>
     s.status === 'completed' && (s.tier === 'super_liga' || s.format === 'pokal'))
 
@@ -359,16 +360,23 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         .select('id, round_number, home_team_id, away_team_id, home_score, away_score, status, scheduled_date, group_label')
         .eq('season_id', season.id),
       supabase.from('league_teams')
-        .select('id, club_name, draw_number, league_team_players(player_id)')
+        .select('id, club_name, draw_number, final_rank, league_team_players(player_id)')
         .eq('season_id', season.id),
     ])
     const odigrane = ((fixtures ?? []) as LeagueFixture[]).filter(f => f.status === 'completed')
     const zadnja = odigrane.reduce<string | null>(
       (max, f) => f.scheduled_date && (!max || f.scheduled_date > max) ? f.scheduled_date : max, null)
-    if (!zadnja || zadnja.slice(0, 10) < cutoffStr || zadnja.slice(0, 10) > todayStr) return
+    const konec = zadnja?.slice(0, 10) ?? (season as { ended_on?: string | null }).ended_on ?? null
+    if (!konec || konec < cutoffStr || konec > todayStr) return
+
+    // Ročno vnesena uvrstitev prepiše izračunano — za tekmovanja, katerih
+    // tekem aplikacija nima (zgodovinski uvozi, npr. Pokal BZS 2025/26).
+    const rocno = ((teams ?? []) as LeagueTeam[]).filter(t => t.final_rank != null)
 
     let mesta: Map<string, number>
-    if (jePokal) {
+    if (rocno.length > 0) {
+      mesta = new Map(rocno.map(t => [t.id, t.final_rank!]))
+    } else if (jePokal) {
       const ekipe = ((teams ?? []) as LeagueTeam[])
         .filter(t => t.draw_number !== null)
         .map(t => ({ teamId: t.id, drawNumber: t.draw_number! }))
@@ -388,11 +396,13 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     const tocke = jePokal ? tockeUvrstitvePokal : tockeUvrstitveSuperLiga
     const postave = new Map(((teams ?? []) as LeagueTeam[])
       .map(t => [t.id, (t.league_team_players ?? []).map(p => p.player_id).filter(Boolean)]))
+    const naMestu = new Map<number, number>()
+    for (const m of mesta.values()) naMestu.set(m, (naMestu.get(m) ?? 0) + 1)
     for (const [teamId, mesto] of mesta) {
       const pts = tocke(mesto)
       if (pts <= 0) continue
-      // Pokal brez tekme za 3. mesto: obe polfinalni poraženki imata mesto 3.
-      const label = jePokal && mesto === 3 ? '3.–4. mesto' : `${mesto}. mesto`
+      // Brez tekme za 3. mesto si polfinalni poraženki delita 3. mesto.
+      const label = mesto === 3 && (naMestu.get(3) ?? 0) > 1 ? '3.–4. mesto' : `${mesto}. mesto`
       for (const pid of postave.get(teamId) ?? []) {
         const a = ensureAcc(cat, pid)
         a.uvrstitevPts += pts

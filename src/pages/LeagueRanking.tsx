@@ -92,7 +92,7 @@ export function LeagueRanking() {
         <div>
           <span className="font-semibold text-gray-700">Uvrstitev ekipe:</span>
           <span className="ml-2 text-gray-500">
-            Super liga 1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7 — Pokal BZS polovico ·
+            Super liga 1. m. 16 · 2. m. 10 · 3.–4. m. po 7 — Pokal BZS polovico ·
             za vsakega igralca ekipe
           </span>
         </div>
