@@ -13,6 +13,7 @@ import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
 import { GROUP_TEMPLATES, computePropagation } from '../engines/tournament'
 import { propagateKnockout } from '../lib/knockoutDraw'
+import { isPairDiscipline } from '../engines/tournamentPlacement'
 import type {
   Tournament, TournamentGroup, Match, TournamentRegistration,
   TournamentStatus, TournamentCategory, TournamentKind, UserProfile, GroupSize,
@@ -171,6 +172,16 @@ export function TournamentDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [regForm, setRegForm] = useState({ partner: '' })
+  /**
+   * Ali se na to tekmovanje prijavlja par ali posameznik.
+   *
+   * Enako privzeto kot v adminu (`TournamentEdit`): kadar disciplina ni
+   * vpisana, štejemo par — tako se vedenje obstoječih turnirjev ne spremeni.
+   * Prav zato je pomembno, da ima vsako tekmovanje disciplino vpisano.
+   */
+  const jeDvojka = tournament?.discipline_type
+    ? isPairDiscipline(tournament.discipline_type)
+    : true
   const [players, setPlayers] = useState<PlayerOption[]>([])
   const [judges, setJudges] = useState<JudgeOption[]>([])
   const [regLoading, setRegLoading] = useState(false)
@@ -245,17 +256,22 @@ export function TournamentDetail() {
 
   async function handleRegister() {
     setRegError('')
-    if (!regForm.partner) { setRegError('Izberi partnerja'); return }
-    const partnerTaken = registrations.some(
-      r => r.player1_id === regForm.partner || r.player2_id === regForm.partner
-    )
-    if (partnerTaken) { setRegError('Ta igralec je že prijavljen na ta turnir'); return }
+    // Na posamičnih tekmovanjih partnerja ni. Prej ga je obrazec zahteval
+    // vedno, zato se na Državno prvenstvo posamezno ni bilo mogoče prijaviti
+    // drugače kot v paru — kar je za posamično disciplino nesmisel.
+    if (jeDvojka) {
+      if (!regForm.partner) { setRegError('Izberi partnerja'); return }
+      const partnerTaken = registrations.some(
+        r => r.player1_id === regForm.partner || r.player2_id === regForm.partner
+      )
+      if (partnerTaken) { setRegError('Ta igralec je že prijavljen na ta turnir'); return }
+    }
     setRegLoading(true)
     try {
       const { error } = await supabase.from('tournament_registrations').insert({
         tournament_id: id,
         player1_id: user!.id,
-        player2_id: regForm.partner,
+        player2_id: jeDvojka ? regForm.partner : null,
         status: 'pending',
       })
       if (error) throw error
@@ -364,19 +380,27 @@ export function TournamentDetail() {
       {/* Registration for players */}
       {tournament.status === 'registration_open' && user && !myReg && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-6">
-          <h2 className="font-semibold text-green-800 mb-3">Prijavi se na turnir</h2>
+          <h2 className="font-semibold text-green-800 mb-3">
+            {jeDvojka ? 'Prijavi se na turnir' : 'Prijavi se na turnir — posamično'}
+          </h2>
           <div className="flex gap-3 flex-wrap">
-            <select
-              value={regForm.partner}
-              onChange={e => setRegForm({ partner: e.target.value })}
-              onFocus={loadPlayers}
-              className="flex-1 min-w-0 border border-green-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none"
-            >
-              <option value="">Izberi partnerja...</option>
-              {players.filter(p => p.id !== user.id).map(p => (
-                <option key={p.id} value={p.id}>{p.full_name}{p.club ? ` (${p.club})` : ''}</option>
-              ))}
-            </select>
+            {jeDvojka ? (
+              <select
+                value={regForm.partner}
+                onChange={e => setRegForm({ partner: e.target.value })}
+                onFocus={loadPlayers}
+                className="flex-1 min-w-0 border border-green-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none"
+              >
+                <option value="">Izberi partnerja...</option>
+                {players.filter(p => p.id !== user.id).map(p => (
+                  <option key={p.id} value={p.id}>{p.full_name}{p.club ? ` (${p.club})` : ''}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="flex-1 min-w-0 text-sm text-green-800 self-center">
+                Tekmovanje je posamično — partnerja ni treba izbrati.
+              </p>
+            )}
             <button onClick={handleRegister} disabled={regLoading}
               className="bg-bocce-green text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors disabled:opacity-50">
               {regLoading ? 'Prijavljam...' : 'Prijavi se'}
