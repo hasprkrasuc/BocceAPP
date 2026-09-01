@@ -46,7 +46,7 @@ export function LeagueRanking() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Rang lestvica</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Ligaški rang + državna prvenstva
+          Liga in pokal + državna prvenstva + uvrstitve ekip
           {cutoffLabel && (
             <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-bocce-green/10 text-bocce-green rounded-full text-xs font-medium">
               📅 {cutoffLabel}
@@ -89,6 +89,13 @@ export function LeagueRanking() {
             1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7 · 5.–8. m. 3 · 9.–16. m. 1
           </span>
         </div>
+        <div>
+          <span className="font-semibold text-gray-700">Uvrstitev ekipe:</span>
+          <span className="ml-2 text-gray-500">
+            Super liga 1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7 — Pokal BZS polovico ·
+            za vsakega igralca ekipe
+          </span>
+        </div>
       </div>
 
       {error && (
@@ -119,6 +126,7 @@ export function LeagueRanking() {
                 <th className="px-3 py-3 text-right hidden md:table-cell" title="% uspešnosti v ligah">% usp.</th>
                 <th className="px-3 py-3 text-right" title="Liga rang">Liga</th>
                 <th className="px-3 py-3 text-right" title="DP točke">DP</th>
+                <th className="px-3 py-3 text-right hidden md:table-cell" title="Uvrstitev ekipe (Super liga / Pokal BZS)">Ekipa</th>
                 <th className="px-3 py-3 text-right font-bold" title="Skupni rang">Rang</th>
                 <th className="px-3 py-3 w-8"></th>
               </tr>
@@ -189,6 +197,11 @@ export function LeagueRanking() {
                       {row.dpPts > 0 ? `+${row.dpPts}` : <span className="text-gray-300">—</span>}
                     </td>
 
+                    {/* Uvrstitev ekipe */}
+                    <td className="px-3 py-2.5 text-right text-bocce-gold font-medium hidden md:table-cell">
+                      {row.uvrstitevPts > 0 ? `+${row.uvrstitevPts}` : <span className="text-gray-300">—</span>}
+                    </td>
+
                     {/* Total rang */}
                     <td className="px-3 py-2.5 text-right font-bold">
                       {row.rang > 0
@@ -205,7 +218,7 @@ export function LeagueRanking() {
                   {/* Expanded breakdown */}
                   {expanded === row.playerId && (
                     <tr key={`${row.playerId}-exp`} className="bg-bocce-green/5">
-                      <td colSpan={9} className="px-6 py-3">
+                      <td colSpan={10} className="px-6 py-3">
                         <div className="grid sm:grid-cols-2 gap-4 text-xs text-gray-600">
                           {/* Liga contributions */}
                           {row.ligaEntries.length > 0 && (
@@ -245,6 +258,26 @@ export function LeagueRanking() {
                                       {c.placeLabel}
                                     </span>
                                     <span className="text-gray-700 truncate">{c.champName}</span>
+                                    <span className="ml-auto font-bold text-bocce-gold shrink-0">
+                                      +{c.pts}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Uvrstitev ekipe (Super liga / Pokal BZS) */}
+                          {row.uvrstitevEntries.length > 0 && (
+                            <div>
+                              <p className="font-semibold text-gray-700 mb-2">Uvrstitev ekipe</p>
+                              <div className="space-y-1">
+                                {row.uvrstitevEntries.map((c, ci) => (
+                                  <div key={ci} className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded bg-bocce-gold/20 text-yellow-700 font-medium shrink-0">
+                                      {c.placeLabel}
+                                    </span>
+                                    <span className="text-gray-700 truncate">{c.name}</span>
                                     <span className="ml-auto font-bold text-bocce-gold shrink-0">
                                       +{c.pts}
                                     </span>

@@ -186,6 +186,26 @@ export function pokalniDomacin(
   return rb > ra ? [b, a] : [a, b]
 }
 
+/**
+ * Končna uvrstitev pokala iz pajka: zmagovalec finala 1., poraženec 2.,
+ * poraženca polfinalov si delita 3. mesto (tekme za 3. mesto v pokalu ni —
+ * enako kot deljeni bron na DP). Vrne samo odločena mesta: dokler finale ni
+ * odigran, ni nobenega.
+ */
+export function pokalneUvrstitve(pajek: PlannedMatch[]): Map<string, number> {
+  const mesta = new Map<string, number>()
+  const finale = pajek.find(m => m.stage === 'final')
+  if (!finale?.winner || !finale.teamA || !finale.teamB) return mesta
+  mesta.set(finale.winner, 1)
+  mesta.set(finale.winner === finale.teamA ? finale.teamB : finale.teamA, 2)
+  for (const sf of pajek.filter(m => m.stage === 'sf')) {
+    if (!sf.winner || !sf.teamA || !sf.teamB) continue
+    const porazenec = sf.winner === sf.teamA ? sf.teamB : sf.teamA
+    if (!mesta.has(porazenec)) mesta.set(porazenec, 3)
+  }
+  return mesta
+}
+
 /** Ekipe, ki so v prvem krogu proste (nasprotnika ni izžrebal nihče). */
 export function prostiVPrvemKrogu(ekipe: PokalEkipa[], velikost = POKAL_VELIKOST): string[] {
   return pariPrvegaKroga(ekipe, velikost)
