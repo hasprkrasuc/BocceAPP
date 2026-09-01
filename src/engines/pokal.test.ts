@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'vitest'
 import {
   pariPrvegaKroga, pokalniPajek, prostiVPrvemKrogu, tekmePrvegaKroga,
-  pokalniDomacin, rangLige, POKAL_VELIKOST, RANG_NEZNAN, type PokalEkipa,
+  pokalniDomacin, pokalneUvrstitve, rangLige, POKAL_VELIKOST, RANG_NEZNAN,
+  type PokalEkipa, type PokalIzid,
 } from './pokal'
 
 /**
@@ -173,6 +174,35 @@ describe('napake v žrebu se ujamejo', () => {
   })
 })
 
+describe('končna uvrstitev pokala', () => {
+  // Mali pajek z 8 mesti: 1-2, 3-4, 5-6, 7-8 → polfinala → finale.
+  const male: PokalEkipa[] = Array.from({ length: 8 }, (_, i) => ({ teamId: `E${i + 1}`, drawNumber: i + 1 }))
+  const zmaga = (a: string, b: string): PokalIzid => ({ homeTeamId: a, awayTeamId: b, winnerTeamId: a })
+
+  test('zmagovalec finala 1., poraženec 2., polfinalna poraženca si delita 3.', () => {
+    const pajek = pokalniPajek(male, [
+      zmaga('E1', 'E2'), zmaga('E3', 'E4'), zmaga('E5', 'E6'), zmaga('E7', 'E8'),
+      zmaga('E1', 'E3'), zmaga('E7', 'E5'),
+      zmaga('E7', 'E1'),
+    ], 8)
+    const mesta = pokalneUvrstitve(pajek)
+    expect(mesta.get('E7')).toBe(1)
+    expect(mesta.get('E1')).toBe(2)
+    expect(mesta.get('E3')).toBe(3)
+    expect(mesta.get('E5')).toBe(3)
+    // Četrtfinalni poraženci mesta nimajo.
+    expect(mesta.size).toBe(4)
+  })
+
+  test('dokler finale ni odigran, ni nobenega mesta', () => {
+    const pajek = pokalniPajek(male, [
+      zmaga('E1', 'E2'), zmaga('E3', 'E4'), zmaga('E5', 'E6'), zmaga('E7', 'E8'),
+      zmaga('E1', 'E3'), zmaga('E7', 'E5'),
+    ], 8)
+    expect(pokalneUvrstitve(pajek).size).toBe(0)
+  })
+})
+
 describe('domačin pokalne tekme', () => {
   test('rang članskih lig: Super liga 1, 1. liga 2, obe 2. ligi 3, OBZ 4', () => {
     expect(rangLige('super_liga', 'men')).toBe(1)
@@ -218,18 +248,23 @@ describe('domačin pokalne tekme', () => {
 
 describe('pokalna sezona ne sme uiti med lige', () => {
   // Pokal je `league_seasons` z drugim formatom, zato ga vsaka poizvedba čez
-  // sezone potegne zraven, če je ne omejiš. Dvakrat bi to zabolelo tiho:
-  // na seznamu lig kot liga brez lestvice, na rang lestvici pa kot tekme z
-  // neznano ravnjo (`tier` je pri pokalu NULL).
+  // sezone potegne zraven, če je ne omejiš. Na seznamu lig bi se pokazal kot
+  // liga brez lestvice. (V rang lestvico pokal od zdaj šteje NAMENOMA, s
+  // koeficientom LIGA_KOEF.pokal — tam omejitve ne sme biti.)
   const viri = import.meta.glob('../**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
-  test.each([
-    ['../pages/League.tsx', 'seznam državnih lig'],
-    ['../lib/rangLestvica.ts', 'rang lestvica'],
-  ])('%s izpušča pokalne sezone', (pot, kaj) => {
-    const vsebina = viri[pot]
-    expect(vsebina, `datoteke ${pot} ni med prebranimi`).toBeDefined()
-    expect(vsebina, `${kaj} ne izpušča pokala — dodaj .neq('format', 'pokal')`)
+  test('../pages/League.tsx izpušča pokalne sezone', () => {
+    const vsebina = viri['../pages/League.tsx']
+    expect(vsebina, 'datoteke ../pages/League.tsx ni med prebranimi').toBeDefined()
+    expect(vsebina, "seznam državnih lig ne izpušča pokala — dodaj .neq('format', 'pokal')")
       .toMatch(/\.neq\(\s*['"]format['"]\s*,\s*['"]pokal['"]\s*\)/)
+  })
+
+  test('rang lestvica pokal vključuje (koeficient 1)', () => {
+    const vsebina = viri['../lib/rangLestvica.ts']
+    expect(vsebina, 'datoteke ../lib/rangLestvica.ts ni med prebranimi').toBeDefined()
+    expect(vsebina, 'rang lestvica ne sme izpuščati pokala — pokal šteje s koeficientom 1')
+      .not.toMatch(/\.neq\(\s*['"]format['"]\s*,\s*['"]pokal['"]\s*\)/)
+    expect(vsebina).toMatch(/'pokal'/)
   })
 })

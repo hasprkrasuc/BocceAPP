@@ -1,24 +1,33 @@
 /**
- * RANG LESTVICA — izračun (liga + državna prvenstva).
+ * RANG LESTVICA — izračun (liga + pokal + državna prvenstva).
  *
  * Ločeno po kategoriji: Moški, Ženske, U18, U14. Vsaka lestvica šteje le
  * sezone/prvenstva svoje kategorije.
  *
- * Okno: ENOTNO 365-dnevno drseče okno za VSE (lige in DP, vse kategorije) —
- * štejejo le rezultati (ligaške tekme + državna prvenstva) iz zadnjih 365 dni.
+ * Okno: ENOTNO 365-dnevno drseče okno za VSE (lige, pokal in DP, vse
+ * kategorije) — štejejo le rezultati iz zadnjih 365 dni.
  *
  * Liga rang:  rang = utežene match točke × ligaKoef × % uspešnosti
+ * Pokal BZS šteje kot »liga« s koeficientom 1 (LIGA_KOEF.pokal).
  * Dvojna registracija: za ligaški rang šteje LE liga z največ rang točkami
- * (ne vsota obeh lig).
+ * (ne vsota obeh lig); pokal šteje vedno poleg tega.
  * DP točke:   1. m. 16 · 2. m. 10 · 3. m. 8 · 4. m. 7 · 5.–8. m. 3 · 9.–16. m. 1
- * Skupni rang = ligaRang + dpPts
+ * Uvrstitev ekipe (Super liga in Pokal BZS): vsak igralec ekipe dobi točke po
+ * končnem mestu — Super liga 16/10/8/7, pokal polovico.
+ * Skupni rang = ligaRang + dpPts + uvrstitevPts
  */
 
 import { supabase } from '../supabase'
 import { aggregatePlayerStats, calculateRang, stripReserve } from '../engines/leagueStats'
 import { placementPoints, placementLabel } from './dpPlacement'
+import { calculateStandings } from '../engines/league'
+import { pokalniPajek, pokalneUvrstitve, type PokalIzid } from '../engines/pokal'
+import {
+  koncnaUvrstitevLige, tockeUvrstitveSuperLiga, tockeUvrstitvePokal,
+} from '../engines/ekipneUvrstitve'
 import type {
   LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline,
+  LeagueTeam,
 } from '../types'
 
 export const TIER_LABELS: Record<string, string> = {
@@ -27,6 +36,7 @@ export const TIER_LABELS: Record<string, string> = {
   '2_liga_zahod': '2. liga zahod',
   '2_liga_vzhod': '2. liga vzhod',
   obz:            'Območna liga',
+  pokal:          'Pokal BZS',
 }
 
 /** Kategorije rang lestvic. */
@@ -51,6 +61,8 @@ function toRangCategory(cat: string | null | undefined): RangCategory | null {
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export interface ChampEntry { champName: string; placeLabel: string; pts: number }
+/** Uvrstitvene točke ekipe (Super liga / Pokal BZS) za enega igralca. */
+export interface UvrstitevEntry { name: string; placeLabel: string; pts: number }
 export interface LigaEntry {
   name: string
   tier: string
@@ -59,22 +71,27 @@ export interface LigaEntry {
   totalMatchPointsFor: number
   /** Ali ta liga šteje v skupni ligaški rang (pri dvojni registraciji šteje le najboljša). */
   counted: boolean
+  /** Pokal BZS — šteje vedno, tudi pri dvojni registraciji. */
+  pokal: boolean
 }
 
 export interface RangRow {
   playerId: string
   displayName: string
   club: string | null
-  /** ligaRang + dpPts */
+  /** ligaRang + dpPts + uvrstitevPts */
   rang: number
   ligaRang: number
   dpPts: number
+  /** Točke za končno uvrstitev ekipe (Super liga in Pokal BZS). */
+  uvrstitevPts: number
   totalPlayed: number
   totalMatchPointsFor: number
   uspesnostPct: number
   isUuid: boolean
   ligaEntries: LigaEntry[]
   champEntries: ChampEntry[]
+  uvrstitevEntries: UvrstitevEntry[]
 }
 
 /** Povzetek igralčeve statistike v eni sezoni (za stran igralca). */
@@ -101,10 +118,12 @@ export interface RangLestvica {
 type PlayerAcc = {
   ligaRang: number
   dpPts: number
+  uvrstitevPts: number
   totalPlayed: number
   totalMatchPointsFor: number
   ligaEntries: LigaEntry[]
   champEntries: ChampEntry[]
+  uvrstitevEntries: UvrstitevEntry[]
   clubName: string | null
 }
 
@@ -132,8 +151,8 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   function ensureAcc(cat: RangCategory, pid: string): PlayerAcc {
     const m = accByCat[cat]
     if (!m[pid]) m[pid] = {
-      ligaRang: 0, dpPts: 0, totalPlayed: 0, totalMatchPointsFor: 0,
-      ligaEntries: [], champEntries: [], clubName: null,
+      ligaRang: 0, dpPts: 0, uvrstitevPts: 0, totalPlayed: 0, totalMatchPointsFor: 0,
+      ligaEntries: [], champEntries: [], uvrstitevEntries: [], clubName: null,
     }
     return m[pid]
   }
@@ -141,12 +160,10 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   // ── Liga sezone ───────────────────────────────────────────────────────────
   const { data: seasons, error: sErr } = await supabase
     .from('league_seasons')
-    .select('id, name, tier, category, year, status, win_points, draw_points, loss_points, rounds_count')
-    // Pokal se ne šteje v rang. Tekmovanje združuje Super ligo, obe drugi ligi
-    // in območne lige, `calculateRang` pa je vezan na eno raven (`tier`), ki je
-    // pri pokalu NULL. Brez tega bi pokalne tekme padle v izračun z neznano
-    // ravnjo in tiho popačile lestvico.
-    .neq('format', 'pokal')
+    .select('id, name, tier, category, year, status, format, win_points, draw_points, loss_points, rounds_count')
+    // Pokal je zraven NAMENOMA: pokalne tekme štejejo v rang s koeficientom 1.
+    // Ker pokal nima ravni (`tier` je NULL), se v izračun preslika prek ključa
+    // 'pokal' (glej tierKljuc spodaj in LIGA_KOEF.pokal).
     .gte('year', currentYear - 2)
     .order('year', { ascending: false })
   if (sErr) throw sErr
@@ -220,17 +237,20 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
 
     for (const { season, fixtures, disciplines, matchResults, playerClub } of bundles) {
       const baseCat = toRangCategory((season as { category?: string }).category)
+      const jePokal = season.format === 'pokal'
+      // Pokal nima ravni (`tier` NULL) — v koeficient in oznake gre kot 'pokal'.
+      const tierKljuc = jePokal ? 'pokal' : season.tier
       const playerStats = aggregatePlayerStats(matchResults, fixtures, disciplines)
       for (const ps of playerStats) {
         if (ps.totalPlayed === 0) continue
-        const entry = calculateRang(ps, season.tier)
+        const entry = calculateRang(ps, tierKljuc)
 
         // Povzetek po sezoni (za stran igralca — neodvisno od kategorije)
         if (!seasonStatsByPlayer[ps.playerId]) seasonStatsByPlayer[ps.playerId] = []
         seasonStatsByPlayer[ps.playerId].push({
           seasonId: season.id,
           seasonName: season.name,
-          tier: season.tier,
+          tier: tierKljuc,
           year: season.year,
           status: season.status,
           played: ps.totalPlayed,
@@ -248,8 +268,9 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         // Prispevek posamezne lige — seštevanje/izbor najboljše se izvede v buildRows
         // (pri dvojni registraciji šteje le liga z največ točkami).
         a.ligaEntries.push({
-          name: season.name, tier: season.tier, rang: entry.rang,
-          totalPlayed: entry.totalPlayed, totalMatchPointsFor: entry.totalMatchPointsFor, counted: true,
+          name: season.name, tier: tierKljuc, rang: entry.rang,
+          totalPlayed: entry.totalPlayed, totalMatchPointsFor: entry.totalMatchPointsFor,
+          counted: true, pokal: jePokal,
         })
         if (!a.clubName && playerClub[ps.playerId]) a.clubName = playerClub[ps.playerId]
       }
@@ -319,6 +340,67 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     }))
   }
 
+  // ── Uvrstitve ekip: Super liga in Pokal BZS ──────────────────────────────
+  // Vsak igralec ekipe (postava) dobi točke po končnem mestu: Super liga
+  // 16/10/8/7, pokal polovico. Šteje ZAKLJUČENO tekmovanje, katerega zadnja
+  // odigrana tekma pade v 365-dnevno okno.
+  const uvrstitveneSezone = (seasons ?? []).filter(s =>
+    s.status === 'completed' && (s.tier === 'super_liga' || s.format === 'pokal'))
+
+  await Promise.all(uvrstitveneSezone.map(async season => {
+    const cat = toRangCategory((season as { category?: string }).category)
+    if (!cat) return
+    const jePokal = season.format === 'pokal'
+
+    // Cela sezona (brez okna): lestvica rednega dela in končnica potrebujeta
+    // vse tekme, ne le tistih iz zadnjih 365 dni.
+    const [{ data: fixtures }, { data: teams }] = await Promise.all([
+      supabase.from('league_fixtures')
+        .select('id, round_number, home_team_id, away_team_id, home_score, away_score, status, scheduled_date, group_label')
+        .eq('season_id', season.id),
+      supabase.from('league_teams')
+        .select('id, club_name, draw_number, league_team_players(player_id)')
+        .eq('season_id', season.id),
+    ])
+    const odigrane = ((fixtures ?? []) as LeagueFixture[]).filter(f => f.status === 'completed')
+    const zadnja = odigrane.reduce<string | null>(
+      (max, f) => f.scheduled_date && (!max || f.scheduled_date > max) ? f.scheduled_date : max, null)
+    if (!zadnja || zadnja.slice(0, 10) < cutoffStr || zadnja.slice(0, 10) > todayStr) return
+
+    let mesta: Map<string, number>
+    if (jePokal) {
+      const ekipe = ((teams ?? []) as LeagueTeam[])
+        .filter(t => t.draw_number !== null)
+        .map(t => ({ teamId: t.id, drawNumber: t.draw_number! }))
+      const izidi: PokalIzid[] = odigrane
+        .filter(f => (f.home_score ?? 0) !== (f.away_score ?? 0))
+        .map(f => ({
+          homeTeamId: f.home_team_id, awayTeamId: f.away_team_id,
+          winnerTeamId: (f.home_score ?? 0) > (f.away_score ?? 0) ? f.home_team_id : f.away_team_id,
+        }))
+      mesta = pokalneUvrstitve(pokalniPajek(ekipe, izidi))
+    } else {
+      const standings = calculateStandings(
+        (teams ?? []) as LeagueTeam[], (fixtures ?? []) as LeagueFixture[], season)
+      mesta = koncnaUvrstitevLige(standings.map(s => s.team.id), (fixtures ?? []) as LeagueFixture[])
+    }
+
+    const tocke = jePokal ? tockeUvrstitvePokal : tockeUvrstitveSuperLiga
+    const postave = new Map(((teams ?? []) as LeagueTeam[])
+      .map(t => [t.id, (t.league_team_players ?? []).map(p => p.player_id).filter(Boolean)]))
+    for (const [teamId, mesto] of mesta) {
+      const pts = tocke(mesto)
+      if (pts <= 0) continue
+      // Pokal brez tekme za 3. mesto: obe polfinalni poraženki imata mesto 3.
+      const label = jePokal && mesto === 3 ? '3.–4. mesto' : `${mesto}. mesto`
+      for (const pid of postave.get(teamId) ?? []) {
+        const a = ensureAcc(cat, pid)
+        a.uvrstitevPts += pts
+        a.uvrstitevEntries.push({ name: season.name, placeLabel: label, pts })
+      }
+    }
+  }))
+
   // ── Igralci z dvojno registracijo (odobrena) ─────────────────────────────
   // Za te velja: ligaški rang = liga z največ točkami (ne vsota obeh lig).
   const { data: drData } = await supabase
@@ -350,19 +432,17 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         // Ligaški prispevki, urejeni po rangu (padajoče).
         const entries = [...a.ligaEntries].sort((x, y) => y.rang - x.rang)
 
-        // Dvojna registracija: šteje LE liga z največ rang točkami (prvi vnos).
-        // Sicer: vsota vseh lig (v praksi znotraj 365-dnevnega okna ena liga).
-        let ligaRang: number, totalPlayed: number, totalMatchPointsFor: number
-        if (isDouble && entries.length > 0) {
-          ligaRang = entries[0].rang
-          totalPlayed = entries[0].totalPlayed
-          totalMatchPointsFor = entries[0].totalMatchPointsFor
-        } else {
-          ligaRang = entries.reduce((n, e) => n + e.rang, 0)
-          totalPlayed = entries.reduce((n, e) => n + e.totalPlayed, 0)
-          totalMatchPointsFor = entries.reduce((n, e) => n + e.totalMatchPointsFor, 0)
-        }
-        const markedEntries = entries.map((e, i) => ({ ...e, counted: !isDouble || i === 0 }))
+        // Dvojna registracija: šteje LE liga z največ rang točkami. Pokal ni
+        // liga — šteje VEDNO poleg tega. Sicer: vsota vseh vnosov.
+        const najboljsaLiga = entries.find(e => !e.pokal)
+        const markedEntries = entries.map(e => ({
+          ...e,
+          counted: !isDouble || e.pokal || e === najboljsaLiga,
+        }))
+        const stete = markedEntries.filter(e => e.counted)
+        const ligaRang = stete.reduce((n, e) => n + e.rang, 0)
+        const totalPlayed = stete.reduce((n, e) => n + e.totalPlayed, 0)
+        const totalMatchPointsFor = stete.reduce((n, e) => n + e.totalMatchPointsFor, 0)
 
         const totalPossible = totalPlayed * 2
         const club = a.clubName ?? user?.club ?? null
@@ -370,18 +450,20 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
           playerId: pid,
           displayName: user?.full_name ?? (isUuid ? `?? ${pid.slice(0, 8)}` : pid),
           club,
-          rang: ligaRang + a.dpPts,
+          rang: ligaRang + a.dpPts + a.uvrstitevPts,
           ligaRang,
           dpPts: a.dpPts,
+          uvrstitevPts: a.uvrstitevPts,
           totalPlayed,
           totalMatchPointsFor,
           uspesnostPct: totalPossible > 0 ? totalMatchPointsFor / totalPossible : 0,
           isUuid,
           ligaEntries: markedEntries,
           champEntries: a.champEntries.sort((x, y) => y.pts - x.pts),
+          uvrstitevEntries: a.uvrstitevEntries.sort((x, y) => y.pts - x.pts),
         }
       })
-      .filter(r => r.totalPlayed > 0 || r.dpPts > 0)
+      .filter(r => r.totalPlayed > 0 || r.dpPts > 0 || r.uvrstitevPts > 0)
       .filter(r => !!r.club)   // odstrani tekmovalce brez kluba (neregistrirani/prosto besedilo)
       .sort((a, b) => b.rang - a.rang || b.totalPlayed - a.totalPlayed)
   }
@@ -407,10 +489,10 @@ export async function computePlayerSeasonStats(playerId: string): Promise<Player
   // Sezone, v katerih je igralec v postavi (isto kot »Ligaška pot«).
   const { data: tp } = await supabase
     .from('league_team_players')
-    .select('league_teams(season:league_seasons(id, name, tier, year, status))')
+    .select('league_teams(season:league_seasons(id, name, tier, year, status, format))')
     .eq('player_id', playerId)
 
-  const seasonMap = new Map<string, { id: string; name: string; tier: string; year: number; status: string }>()
+  const seasonMap = new Map<string, { id: string; name: string; tier: string; year: number; status: string; format: string | null }>()
   for (const r of ((tp ?? []) as any[])) {
     const s = r.league_teams?.season
     if (s?.id) seasonMap.set(s.id, s)
@@ -439,11 +521,13 @@ export async function computePlayerSeasonStats(playerId: string): Promise<Player
     const ps = stats.find(s => s.playerId === playerId)
     if (!ps || ps.totalPlayed === 0) return null
 
-    const entry = calculateRang(ps, season.tier)
+    // Pokal nima ravni — koeficient in oznaka gresta prek ključa 'pokal'.
+    const tierKljuc = season.format === 'pokal' ? 'pokal' : season.tier
+    const entry = calculateRang(ps, tierKljuc)
     return {
       seasonId: season.id,
       seasonName: season.name,
-      tier: season.tier,
+      tier: tierKljuc,
       year: season.year,
       status: season.status,
       played: ps.totalPlayed,
