@@ -175,3 +175,25 @@ export function tockeEkipeIgralcem(
   }
   return out
 }
+
+/**
+ * Ali sezona sploh prinaša uvrstitvene točke ekip.
+ *
+ * Točke daje NAJVIŠJA liga svoje kategorije in pokal:
+ *
+ *   moški   — Super liga
+ *   ženske  — 1. državna liga članice (višje pri ženskah ni)
+ *   pokal   — vsak, ne glede na kategorijo (moški, članice)
+ *
+ * Prvotno je bil pogoj zapisan kot `tier === 'super_liga'`, zato so ženske
+ * ostale brez: njihova najvišja liga je `1_liga`, Super lige za ženske ni.
+ * Isti `1_liga` pri moških je DRUGA raven in točk ne prinaša — zato pogoj
+ * gleda tudi kategorijo.
+ */
+export function steUvrstitveEkip(
+  s: { tier: string | null | undefined; category: string | null | undefined; format: string | null | undefined },
+): boolean {
+  if (s.format === 'pokal') return true
+  if (s.tier === 'super_liga') return true
+  return s.tier === '1_liga' && s.category === 'women'
+}

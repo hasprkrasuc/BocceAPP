@@ -25,6 +25,7 @@ import { calculateStandings } from '../engines/league'
 import { pokalniPajek, pokalneUvrstitve, type PokalIzid } from '../engines/pokal'
 import {
   koncnaUvrstitevLige, tockeUvrstitveSuperLiga, tockeUvrstitvePokal, tockeEkipeIgralcem,
+  steUvrstitveEkip,
 } from '../engines/ekipneUvrstitve'
 import type {
   LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline,
@@ -397,7 +398,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   // 16/10/7/7, pokal polovico. Šteje ZAKLJUČENO tekmovanje, katerega zadnja
   // odigrana tekma (ali `ended_on`, če tekem ni) pade v 365-dnevno okno.
   const uvrstitveneSezone = (seasons ?? []).filter(s =>
-    s.status === 'completed' && (s.tier === 'super_liga' || s.format === 'pokal'))
+    s.status === 'completed' && steUvrstitveEkip(s))
 
   await Promise.all(uvrstitveneSezone.map(async season => {
     const cat = toRangCategory((season as { category?: string }).category)
