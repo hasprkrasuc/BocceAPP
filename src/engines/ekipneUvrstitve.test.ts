@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import {
-  tockeUvrstitveSuperLiga, tockeUvrstitvePokal, koncnaUvrstitevLige,
+  tockeUvrstitveSuperLiga, tockeUvrstitvePokal, koncnaUvrstitevLige, tockeEkipeIgralcem,
   type KoncnicaIzid,
 } from './ekipneUvrstitve'
 
@@ -92,5 +92,54 @@ describe('končna uvrstitev lige', () => {
     // A ima edino zmago in je zmagovalec finala.
     expect(mesta.get('A')).toBe(1)
     expect(mesta.get('C')).toBe(2)
+  })
+})
+
+describe('tockeEkipeIgralcem', () => {
+  const tocke = tockeUvrstitveSuperLiga
+  const postave = new Map([
+    ['prvak', ['a', 'b', 'brezNastopa']],
+    ['finalist', ['c']],
+  ])
+  const mesta = new Map([['prvak', 1], ['finalist', 2]])
+  const igral = (id: string) => id !== 'brezNastopa'
+
+  test('igralec brez nastopa ne dobi točk za uvrstitev ekipe', () => {
+    const izid = tockeEkipeIgralcem(mesta, postave, igral, tocke)
+    expect(izid.map(u => u.playerId).sort()).toEqual(['a', 'b', 'c'])
+    expect(izid.find(u => u.playerId === 'brezNastopa')).toBeUndefined()
+  })
+
+  test('kdor je igral, dobi točke svojega mesta', () => {
+    const izid = tockeEkipeIgralcem(mesta, postave, igral, tocke)
+    expect(izid.filter(u => u.playerId === 'a')[0]).toMatchObject({ pts: 16, placeLabel: '1. mesto' })
+    expect(izid.filter(u => u.playerId === 'c')[0]).toMatchObject({ pts: 10, placeLabel: '2. mesto' })
+  })
+
+  test('brez nastopov ne dobi nihče nič', () => {
+    expect(tockeEkipeIgralcem(mesta, postave, () => false, tocke)).toEqual([])
+  })
+
+  test('deljeno 3. mesto dobi oznako 3.–4. mesto, točke enake', () => {
+    const m = new Map([['x', 3], ['y', 3]])
+    const p = new Map([['x', ['i1']], ['y', ['i2']]])
+    const izid = tockeEkipeIgralcem(m, p, () => true, tocke)
+    expect(izid).toHaveLength(2)
+    for (const u of izid) expect(u).toMatchObject({ pts: 7, placeLabel: '3.–4. mesto' })
+  })
+
+  test('samostojno 3. mesto obdrži svojo oznako', () => {
+    const izid = tockeEkipeIgralcem(new Map([['x', 3]]), new Map([['x', ['i1']]]), () => true, tocke)
+    expect(izid[0].placeLabel).toBe('3. mesto')
+  })
+
+  test('mesta zunaj točkovnika ne prinesejo ničesar', () => {
+    const izid = tockeEkipeIgralcem(new Map([['x', 5]]), new Map([['x', ['i1']]]), () => true, tocke)
+    expect(izid).toEqual([])
+  })
+
+  test('pokalne točke so polovične', () => {
+    const izid = tockeEkipeIgralcem(new Map([['x', 1]]), new Map([['x', ['i1']]]), () => true, tockeUvrstitvePokal)
+    expect(izid[0].pts).toBe(8)
   })
 })
