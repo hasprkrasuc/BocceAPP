@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   tockeUvrstitveSuperLiga, tockeUvrstitvePokal, koncnaUvrstitevLige, tockeEkipeIgralcem,
+  steUvrstitveEkip,
   type KoncnicaIzid,
 } from './ekipneUvrstitve'
 
@@ -141,5 +142,36 @@ describe('tockeEkipeIgralcem', () => {
   test('pokalne točke so polovične', () => {
     const izid = tockeEkipeIgralcem(new Map([['x', 1]]), new Map([['x', ['i1']]]), () => true, tockeUvrstitvePokal)
     expect(izid[0].pts).toBe(8)
+  })
+})
+
+describe('steUvrstitveEkip', () => {
+  test('moška Super liga prinaša točke', () => {
+    expect(steUvrstitveEkip({ tier: 'super_liga', category: 'men', format: 'flat' })).toBe(true)
+  })
+
+  test('ženska 1. liga prinaša točke — pri ženskah višje ni', () => {
+    expect(steUvrstitveEkip({ tier: '1_liga', category: 'women', format: 'flat' })).toBe(true)
+  })
+
+  test('moška 1. liga NE prinaša — je druga raven', () => {
+    expect(steUvrstitveEkip({ tier: '1_liga', category: 'men', format: 'groups' })).toBe(false)
+  })
+
+  test('pokal prinaša v obeh kategorijah', () => {
+    expect(steUvrstitveEkip({ tier: null, category: 'men', format: 'pokal' })).toBe(true)
+    expect(steUvrstitveEkip({ tier: null, category: 'women', format: 'pokal' })).toBe(true)
+  })
+
+  test('nižje lige in območne ne prinašajo', () => {
+    for (const tier of ['2_liga_zahod', '2_liga_vzhod', 'obz']) {
+      expect(steUvrstitveEkip({ tier, category: 'men', format: 'flat' }), tier).toBe(false)
+      expect(steUvrstitveEkip({ tier, category: 'women', format: 'flat' }), tier).toBe(false)
+    }
+  })
+
+  test('mladinske lige ne prinašajo', () => {
+    expect(steUvrstitveEkip({ tier: '1_liga', category: 'u18', format: 'flat' })).toBe(false)
+    expect(steUvrstitveEkip({ tier: '1_liga', category: 'u14', format: 'flat' })).toBe(false)
   })
 })

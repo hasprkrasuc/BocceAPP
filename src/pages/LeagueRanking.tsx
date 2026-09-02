@@ -92,8 +92,8 @@ export function LeagueRanking() {
         <div>
           <span className="font-semibold text-gray-700">Uvrstitev ekipe:</span>
           <span className="ml-2 text-gray-500">
-            Super liga 1. m. 16 · 2. m. 10 · 3.–4. m. po 7 — Pokal BZS polovico ·
-            za vsakega igralca ekipe
+            Super liga in 1. liga članice 1. m. 16 · 2. m. 10 · 3.–4. m. po 7 —
+            Pokal BZS polovico · za vsakega igralca ekipe, ki je nastopil
           </span>
         </div>
       </div>
@@ -126,7 +126,7 @@ export function LeagueRanking() {
                 <th className="px-3 py-3 text-right hidden md:table-cell" title="% uspešnosti v ligah">% usp.</th>
                 <th className="px-3 py-3 text-right" title="Liga rang">Liga</th>
                 <th className="px-3 py-3 text-right" title="DP točke">DP</th>
-                <th className="px-3 py-3 text-right hidden md:table-cell" title="Uvrstitev ekipe (Super liga / Pokal BZS)">Ekipa</th>
+                <th className="px-3 py-3 text-right hidden md:table-cell" title="Uvrstitev ekipe (Super liga oz. 1. liga članice / Pokal BZS)">Ekipa</th>
                 <th className="px-3 py-3 text-right font-bold" title="Skupni rang">Rang</th>
                 <th className="px-3 py-3 w-8"></th>
               </tr>
