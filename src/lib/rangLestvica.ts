@@ -133,6 +133,43 @@ function formatDate(iso: string): string {
   return `${parseInt(d)}. ${parseInt(m)}. ${y}`
 }
 
+/**
+ * Največ id-jev v enem `in('id', …)`.
+ *
+ * UUID je 36 znakov; 750 id-jev da URL, dolg ~28 kB, kar je krepko čez
+ * omejitev dolžine zahteve. Poizvedba pade, PostgREST vrne napako, koda pa
+ * je doslej brala samo `data` — torej prazen rezultat brez opozorila.
+ */
+const KOS = 300
+
+/**
+ * Prebere `users` po id-jih, v kosih.
+ *
+ * 1. 9. 2026 je rang lestvica namesto imen izpisala `?? <id>` za VSE igralce.
+ * Iskanje imen je šlo v eni sami zahtevi z vsemi id-ji naenkrat; ko je pokal
+ * na lestvico prinesel ~750 igralcev, je URL prerasel omejitev in poizvedba
+ * je padla. Klubi so se izrisali naprej, ker ne pridejo od tod — zato je bilo
+ * videti kot težava z imeni, ne kot padla poizvedba.
+ *
+ * Iskanje spola dvesto vrstic višje je bilo že od nekdaj po kosih; ta funkcija
+ * je zato, da obe mesti uporabljata isto pot in se ne razideta znova.
+ */
+export async function preberiUporabnikePoIdjih<T extends { id: string }>(
+  ids: string[],
+  stolpci: string,
+): Promise<Record<string, T>> {
+  const zemljevid: Record<string, T> = {}
+  const unikatni = [...new Set(ids)]
+  for (let i = 0; i < unikatni.length; i += KOS) {
+    const { data, error } = await supabase
+      .from('users').select(stolpci).in('id', unikatni.slice(i, i + KOS))
+    // Napake ne požiramo: prazen zemljevid je videti kot "teh ljudi ni".
+    if (error) throw error
+    for (const u of ((data ?? []) as unknown as T[])) zemljevid[u.id] = u
+  }
+  return zemljevid
+}
+
 /** Izračuna rang lestvice (po kategoriji) + povzetke po sezonah za vsakega igralca. */
 export async function computeRangLestvica(): Promise<RangLestvica> {
   const today = new Date()
@@ -229,12 +266,11 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         for (const dr of (mr.discipline_results ?? []))
           for (const pid of [...(dr.home_players ?? []), ...(dr.away_players ?? [])])
             if (pid) leaguePids.add(stripReserve(pid))
-    const genderMap: Record<string, string | null> = {}
     const gArr = [...leaguePids].filter(id => UUID_RE.test(id))
-    for (let i = 0; i < gArr.length; i += 300) {
-      const { data: gs } = await supabase.from('users').select('id, gender').in('id', gArr.slice(i, i + 300))
-      for (const u of ((gs ?? []) as Array<{ id: string; gender: string | null }>)) genderMap[u.id] = u.gender
-    }
+    const spoli = await preberiUporabnikePoIdjih<{ id: string; gender: string | null }>(
+      gArr, 'id, gender')
+    const genderMap: Record<string, string | null> = {}
+    for (const u of Object.values(spoli)) genderMap[u.id] = u.gender
 
     for (const { season, fixtures, disciplines, matchResults, playerClub } of bundles) {
       const baseCat = toRangCategory((season as { category?: string }).category)
@@ -426,10 +462,9 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   const uuidIds = allIds.filter(id => UUID_RE.test(id))
   // UUID-ji izhajajo iz igralnih pozicij / DP prijav — razrešimo jih ne glede
   // na vlogo (igralec je lahko hkrati tudi sodnik in mora šteti kot igralec).
-  const { data: users } = uuidIds.length > 0
-    ? await supabase.from('users').select('id, full_name, club').in('id', uuidIds)
-    : { data: [] }
-  const userMap = Object.fromEntries((users ?? []).map((u: { id: string; full_name: string | null; club: string | null }) => [u.id, u]))
+  const userMap = await preberiUporabnikePoIdjih<
+    { id: string; full_name: string | null; club: string | null }
+  >(uuidIds, 'id, full_name, club')
 
   function buildRows(catAcc: Record<string, PlayerAcc>): RangRow[] {
     return Object.keys(catAcc)
