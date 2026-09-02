@@ -134,6 +134,21 @@ function formatDate(iso: string): string {
 }
 
 /**
+ * Ali ima igralec v oknu lestvice vsaj en nastop.
+ *
+ * POZOR: bere `ligaEntries`, NE vrhnjega `totalPlayed`. Ta se v tej fazi še
+ * ne napolni — nastopi so do izračuna v `buildRows` shranjeni samo po
+ * posameznih ligah. Prvi poskus tega pogoja je bral `acc.totalPlayed` in je
+ * bil zato vedno 0: točk za uvrstitev ekipe ni dobil NIHČE, stolpec EKIPA je
+ * bil povsod prazen.
+ */
+export function imaNastopVOknu(
+  acc: { ligaEntries: Array<{ totalPlayed: number }> } | undefined,
+): boolean {
+  return (acc?.ligaEntries ?? []).some(e => e.totalPlayed > 0)
+}
+
+/**
  * Največ id-jev v enem `in('id', …)`.
  *
  * UUID je 36 znakov; 750 id-jev da URL, dolg ~28 kB, kar je krepko čez
@@ -433,10 +448,8 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     const postave = new Map(((teams ?? []) as LeagueTeam[])
       .map(t => [t.id, (t.league_team_players ?? []).map(p => p.player_id).filter(Boolean)]))
 
-    // Točke za uvrstitev ekipe dobi samo, kdor je tudi igral. `accByCat` je do
-    // tu že napolnjen z nastopi iz tekem, zato je odsotnost zapisa (ali 0
-    // odigranih) dokaz, da igralec ni nastopil.
-    const jeIgral = (pid: string) => (accByCat[cat][pid]?.totalPlayed ?? 0) > 0
+    // Točke za uvrstitev ekipe dobi samo, kdor je tudi igral.
+    const jeIgral = (pid: string) => imaNastopVOknu(accByCat[cat][pid])
 
     for (const u of tockeEkipeIgralcem(mesta, postave, jeIgral, tocke)) {
       const a = ensureAcc(cat, u.playerId)
