@@ -10,6 +10,7 @@ import { formatMatchDateTime } from '../../lib/matchDate'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
 import KlubskiGrb from '../../components/KlubskiGrb'
 import { vrsticeSodnikov } from '../../lib/podpisiZapisnika'
+import { jeAdminTeLige, smeUrejatiZapisnik } from '../../lib/pravicaNadTekmo'
 
 const TECHNICAL_TYPES: DisciplineType[] = ['stafeta', 'hitrostno', 'natancno']
 
@@ -152,7 +153,7 @@ function PlayerSelect({ value, onChange, roster, stats, currentDiscType, current
 
 export default function LeagueMatchScoresheet() {
   const { fixtureId } = useParams<{ fixtureId: string }>()
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, managedSeasonIds } = useAuth()
 
   const [fixture, setFixture] = useState<LeagueFixture | null>(null)
   const [disciplines, setDisciplines] = useState<LeagueSeasonDiscipline[]>([])
@@ -185,11 +186,18 @@ export default function LeagueMatchScoresheet() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
 
+  // Ligaški admin sme na svoji ligi isto kot globalni admin — tako pravijo
+  // politike v bazi (`is_league_admin(season_id)` na tekmah, zapisnikih,
+  // disciplinah in kartonih). Vmesnik je gledal samo `isAdmin`, zato ligaški
+  // admin ni mogel ne premakniti datuma ne delegirati sodnikov.
+  const upravljaLigo = jeAdminTeLige({ isAdmin, managedSeasonIds, seasonId: fixture?.season_id })
+
   useEffect(() => { if (fixtureId) load() }, [fixtureId])
-  // Seznam sodnikov/adminov za delegacijo je viden le adminom (glej spodaj `isAdmin &&`),
-  // zato ga naložimo ločeno in šele ko je admin status znan — s tem se anonimnim/navadnim
-  // obiskovalcem ta poizvedba sploh ne izvede.
-  useEffect(() => { if (isAdmin) loadJudgeCandidates() }, [isAdmin])
+  // Seznam sodnikov za delegacijo je viden le tistemu, ki upravlja to ligo
+  // (glej spodaj `upravljaLigo &&`), zato ga naložimo ločeno in šele ko je to
+  // znano — s tem se anonimnim in navadnim obiskovalcem poizvedba ne izvede.
+  // Sezona pride šele z naloženo tekmo, zato je v odvisnostih tudi ta.
+  useEffect(() => { if (upravljaLigo) loadJudgeCandidates() }, [upravljaLigo])
 
   // Imena delegiranih sodnikov se berejo po id-jih, zato jih sme videti vsak,
   // ki zapisnik odpre — poizvedba ne izda seznama vseh sodnikov.
@@ -345,7 +353,10 @@ export default function LeagueMatchScoresheet() {
     if (error) setMessage(`❌ Sodnik ni odstranjen: ${error.message}`)
   }
 
-  const canEdit = isAdmin || (!!user && chiefJudgeUserId === user.id)
+  const canEdit = smeUrejatiZapisnik({
+    isAdmin, managedSeasonIds, seasonId: fixture?.season_id,
+    userId: user?.id, chiefJudgeId: chiefJudgeUserId,
+  })
 
   const homeStats = useMemo(() => computeStats(disciplines, forms, 'home'), [disciplines, forms])
   const awayStats = useMemo(() => computeStats(disciplines, forms, 'away'), [disciplines, forms])
@@ -590,8 +601,8 @@ export default function LeagueMatchScoresheet() {
         </div>
       </div>
 
-      {/* Judge delegation — admin only */}
-      {isAdmin && (
+      {/* Delegacija sodnikov — kdor upravlja to ligo */}
+      {upravljaLigo && (
         <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-5">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Delegacija sodnikov</p>
           <div className="grid sm:grid-cols-2 gap-4">
