@@ -82,3 +82,33 @@ describe('preberiUporabnikePoIdjih', () => {
       .rejects.toMatchObject({ message: 'nekaj je šlo narobe' })
   })
 })
+
+const { imaNastopVOknu } = await import('./rangLestvica')
+
+/**
+ * Regresija: stolpec EKIPA je bil na rang lestvici povsod prazen.
+ *
+ * Pogoj »igralec mora imeti vsaj en nastop« je bral `acc.totalPlayed`. To
+ * polje se v tisti fazi še ne napolni — nastopi so do izračuna v `buildRows`
+ * shranjeni samo po posameznih ligah v `ligaEntries` — zato je bil pogoj
+ * vedno neresničen in točk za uvrstitev ekipe ni dobil nihče.
+ */
+describe('imaNastopVOknu', () => {
+  test('nastop v ligi šteje, tudi ko je vrhnji totalPlayed še 0', () => {
+    const acc = { totalPlayed: 0, ligaEntries: [{ totalPlayed: 12 }] }
+    expect(imaNastopVOknu(acc), 'bere napačno polje — to je bil vzrok praznega stolpca EKIPA').toBe(true)
+  })
+
+  test('brez nastopov ne šteje', () => {
+    expect(imaNastopVOknu({ ligaEntries: [] })).toBe(false)
+    expect(imaNastopVOknu({ ligaEntries: [{ totalPlayed: 0 }] })).toBe(false)
+  })
+
+  test('vsaj ena liga z nastopom zadošča', () => {
+    expect(imaNastopVOknu({ ligaEntries: [{ totalPlayed: 0 }, { totalPlayed: 3 }] })).toBe(true)
+  })
+
+  test('igralca brez zapisa ne razglasi za nastopajočega', () => {
+    expect(imaNastopVOknu(undefined)).toBe(false)
+  })
+})
