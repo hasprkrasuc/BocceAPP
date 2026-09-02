@@ -24,7 +24,7 @@ import { placementPoints, placementLabel } from './dpPlacement'
 import { calculateStandings } from '../engines/league'
 import { pokalniPajek, pokalneUvrstitve, type PokalIzid } from '../engines/pokal'
 import {
-  koncnaUvrstitevLige, tockeUvrstitveSuperLiga, tockeUvrstitvePokal,
+  koncnaUvrstitevLige, tockeUvrstitveSuperLiga, tockeUvrstitvePokal, tockeEkipeIgralcem,
 } from '../engines/ekipneUvrstitve'
 import type {
   LeagueFixture, LeagueMatchResult, LeagueMatchDisciplineResult, LeagueSeasonDiscipline,
@@ -432,18 +432,16 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     const tocke = jePokal ? tockeUvrstitvePokal : tockeUvrstitveSuperLiga
     const postave = new Map(((teams ?? []) as LeagueTeam[])
       .map(t => [t.id, (t.league_team_players ?? []).map(p => p.player_id).filter(Boolean)]))
-    const naMestu = new Map<number, number>()
-    for (const m of mesta.values()) naMestu.set(m, (naMestu.get(m) ?? 0) + 1)
-    for (const [teamId, mesto] of mesta) {
-      const pts = tocke(mesto)
-      if (pts <= 0) continue
-      // Brez tekme za 3. mesto si polfinalni poraženki delita 3. mesto.
-      const label = mesto === 3 && (naMestu.get(3) ?? 0) > 1 ? '3.–4. mesto' : `${mesto}. mesto`
-      for (const pid of postave.get(teamId) ?? []) {
-        const a = ensureAcc(cat, pid)
-        a.uvrstitevPts += pts
-        a.uvrstitevEntries.push({ name: season.name, placeLabel: label, pts })
-      }
+
+    // Točke za uvrstitev ekipe dobi samo, kdor je tudi igral. `accByCat` je do
+    // tu že napolnjen z nastopi iz tekem, zato je odsotnost zapisa (ali 0
+    // odigranih) dokaz, da igralec ni nastopil.
+    const jeIgral = (pid: string) => (accByCat[cat][pid]?.totalPlayed ?? 0) > 0
+
+    for (const u of tockeEkipeIgralcem(mesta, postave, jeIgral, tocke)) {
+      const a = ensureAcc(cat, u.playerId)
+      a.uvrstitevPts += u.pts
+      a.uvrstitevEntries.push({ name: season.name, placeLabel: u.placeLabel, pts: u.pts })
     }
   }))
 

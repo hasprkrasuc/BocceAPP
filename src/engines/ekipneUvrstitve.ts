@@ -128,3 +128,50 @@ export function koncnaUvrstitevLige(
   }
   return mesta
 }
+
+/** Ena podelitev točk za uvrstitev ekipe. */
+export interface UvrstitevIgralca {
+  playerId: string
+  pts: number
+  /** Oznaka za razčlenitev na lestvici, npr. »2. mesto« ali »3.–4. mesto«. */
+  placeLabel: string
+}
+
+/**
+ * Razdeli točke za končno uvrstitev med igralce ekip.
+ *
+ * Točke dobi le, KDOR JE ZA EKIPO TUDI IGRAL. Prej jih je dobil vsak s
+ * seznama postave — tudi igralec brez enega samega nastopa. Na rang lestvici
+ * se je to poznalo kot vrstice s statistiko 0/0 in samo stolpcem EKIPA;
+ * pri pokalu še izraziteje, ker so pokalne postave prepisane iz ligaških in
+ * jih je večina brez pokalne tekme.
+ *
+ * Brez tekme za 3. mesto si poraženca polfinalov delita 3. mesto — takrat
+ * oznaka pove »3.–4. mesto«, točke pa so pri obeh enake.
+ *
+ * @param mesta    ekipa -> končno mesto
+ * @param postave  ekipa -> id-ji igralcev v postavi
+ * @param jeIgral  ali ima igralec vsaj en nastop (iz statistike lestvice)
+ * @param tocke    točkovnik mesta (Super liga ali pokal)
+ */
+export function tockeEkipeIgralcem(
+  mesta: Map<string, number>,
+  postave: Map<string, string[]>,
+  jeIgral: (playerId: string) => boolean,
+  tocke: (mesto: number) => number,
+): UvrstitevIgralca[] {
+  const naMestu = new Map<number, number>()
+  for (const m of mesta.values()) naMestu.set(m, (naMestu.get(m) ?? 0) + 1)
+
+  const out: UvrstitevIgralca[] = []
+  for (const [teamId, mesto] of mesta) {
+    const pts = tocke(mesto)
+    if (pts <= 0) continue
+    const placeLabel = mesto === 3 && (naMestu.get(3) ?? 0) > 1 ? '3.–4. mesto' : `${mesto}. mesto`
+    for (const playerId of postave.get(teamId) ?? []) {
+      if (!playerId || !jeIgral(playerId)) continue
+      out.push({ playerId, pts, placeLabel })
+    }
+  }
+  return out
+}
