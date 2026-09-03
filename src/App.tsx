@@ -36,6 +36,7 @@ import Zasebnost from './pages/Zasebnost'
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const TournamentAdmin = lazy(() => import('./pages/admin/TournamentAdmin'))
 const TournamentEdit = lazy(() => import('./pages/admin/TournamentEdit'))
+const ZivZreb = lazy(() => import('./pages/admin/ZivZreb'))
 const LeagueAdmin = lazy(() => import('./pages/admin/LeagueAdmin'))
 const MojKlub = lazy(() => import('./pages/admin/MojKlub'))
 const DoubleRegAdmin = lazy(() => import('./pages/admin/DoubleRegAdmin'))
@@ -148,6 +149,7 @@ export default function App() {
               <Route path="/admin" element={<LeagueAdminRoute><AdminDashboard /></LeagueAdminRoute>} />
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
               <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
+              <Route path="/admin/turnir/:id/zreb" element={<AdminRoute><ZivZreb /></AdminRoute>} />
               <Route path="/admin/liga" element={<LeagueAdminRoute><LeagueAdmin /></LeagueAdminRoute>} />
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />
               <Route path="/admin/liga/tekma/:fixtureId" element={<OldScoresheetRedirect />} />

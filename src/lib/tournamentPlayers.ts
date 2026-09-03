@@ -1,6 +1,23 @@
 import { supabase } from '../supabase'
 import { fetchAllRows } from './fetchAllRows'
+import { USER_PUBLIC_COLS } from './userColumns'
 import type { UserProfile } from '../types'
+
+/**
+ * Vgnezdena polja prijave na turnir. `users` je NUJNO naštet po stolpcih —
+ * branje vseh stolpcev vrne 403 "permission denied for table users", ker je
+ * SELECT za vlogo authenticated omejen na USER_PUBLIC_COLS
+ * (migracija 20260729_02_users_pii_authenticated).
+ *
+ * Niz je bil nekoč zapisan v vsaki poizvedbi posebej in kopije so ušle
+ * narazen (29. 7. 2026 se prijave zato niso prikazale). Zdaj je na enem
+ * mestu; uporabljata ga administracija turnirja in žreb v živo.
+ */
+export const PRIJAVA_SELECT =
+  `*, player1:users!tournament_registrations_player1_id_fkey(${USER_PUBLIC_COLS})`
+  + `, player2:users!tournament_registrations_player2_id_fkey(${USER_PUBLIC_COLS})`
+  + `, guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*)`
+  + `, guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)`
 
 /**
  * Igralci, izbirljivi na turnirjih.
