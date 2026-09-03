@@ -8,27 +8,10 @@ import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
 import { pairsFromSeededTeams, preRoundFirstRoundPairs, crossPairs, KO_STAGE_ORDER } from '../../engines/knockout'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
-import { loadTournamentPlayers } from '../../lib/tournamentPlayers'
-import { USER_PUBLIC_COLS } from '../../lib/userColumns'
+import { loadTournamentPlayers, PRIJAVA_SELECT } from '../../lib/tournamentPlayers'
 import { oznakaIgralca } from '../../lib/playerNames'
 
 type Tab = 'registrations' | 'draw' | 'knockout'
-
-/**
- * Vgnezdena polja prijave. `users` je NUJNO naštet po stolpcih — branje vseh
- * stolpcev vrne 403 "permission denied for table users", ker je SELECT za
- * vlogo authenticated omejen na USER_PUBLIC_COLS
- * (migracija 20260729_02_users_pii_authenticated).
- *
- * Prej je bil ta niz zapisan dvakrat, v obeh poizvedbah spodaj, in obakrat je
- * bral vse stolpce — zato se prijave na turnir od 29. 7. 2026 niso prikazale.
- * Zdaj je na enem mestu, da kopiji ne moreta več narazen.
- */
-const PRIJAVA_SELECT =
-  `*, player1:users!tournament_registrations_player1_id_fkey(${USER_PUBLIC_COLS})`
-  + `, player2:users!tournament_registrations_player2_id_fkey(${USER_PUBLIC_COLS})`
-  + `, guest1:guest_players!tournament_registrations_player1_guest_id_fkey(*)`
-  + `, guest2:guest_players!tournament_registrations_player2_guest_id_fkey(*)`
 
 function toRangCat(cat: string): RangCategory | null {
   return cat === 'men' || cat === 'women' || cat === 'u18' ? cat : null
@@ -1275,10 +1258,16 @@ export default function TournamentEdit() {
                 </button>
               ))}
             </div>
-            <button onClick={handleDraw} disabled={drawLoading || confirmed.length === 0 || !dist.isValid || (drawMethod === 'seeded' && rangLoading)}
-              className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors disabled:opacity-50">
-              {drawLoading ? 'Žrebam...' : drawMethod === 'seeded' && rangLoading ? 'Nalagam rang…' : groups.length > 0 ? '↺ Ponovi žreb' : 'Naredi žreb'}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={handleDraw} disabled={drawLoading || confirmed.length === 0 || !dist.isValid || (drawMethod === 'seeded' && rangLoading)}
+                className="bg-bocce-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green-light transition-colors disabled:opacity-50">
+                {drawLoading ? 'Žrebam...' : drawMethod === 'seeded' && rangLoading ? 'Nalagam rang…' : groups.length > 0 ? '↺ Ponovi žreb' : 'Naredi žreb'}
+              </button>
+              <Link to={`/admin/turnir/${id}/zreb`}
+                className="border border-bocce-green text-bocce-green px-4 py-2 rounded-lg text-sm font-medium hover:bg-bocce-green/5 transition-colors">
+                🎱 Žreb v živo (bobni, par po par)
+              </Link>
+            </div>
           </div>
 
           {/* Nosilci (bobni) — pregled + ročni rang tujih igralcev */}
