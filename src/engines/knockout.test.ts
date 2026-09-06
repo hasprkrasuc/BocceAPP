@@ -321,4 +321,47 @@ describe('knockoutPropagation', () => {
     ]
     expect(() => knockoutPropagation(matches)).not.toThrow()
   })
+
+  // Popravek izida že propagirane tekme: na mestu naslednjega kroga sedi stari
+  // (napačni) zmagovalec. Na DP dvojic 6. 9. 2026 je tako v četrtfinale
+  // napredoval poraženec osmine finala.
+  test('popravek izida zamenja zastarelo ekipo v naslednjem krogu', () => {
+    const matches: KoMatchRow[] = [
+      // Izid je bil najprej vpisan za B, propagiran, nato popravljen na A.
+      row({ id: 'qf1', stage: 'qf', match_number: 1, team_a_id: 'A', team_b_id: 'B', winner_id: 'A' }),
+      row({ id: 'qf2', stage: 'qf', match_number: 2, team_a_id: 'C', team_b_id: 'D', winner_id: 'C' }),
+      row({ id: 'sf1', stage: 'sf', match_number: 1, team_a_id: 'B', team_b_id: 'C' }),
+      row({ id: 'fin', stage: 'final', match_number: 1 }),
+    ]
+    const u = knockoutPropagation(matches)
+    expect(u).toContainEqual({ id: 'sf1', slot: 'team_a_id', teamId: 'A' })
+    // Pravilno mesto (C) se ne dotakne.
+    expect(u.find(x => x.id === 'sf1' && x.slot === 'team_b_id')).toBeUndefined()
+  })
+
+  test('ročno postavljene ekipe od drugod se ne povozijo', () => {
+    const matches: KoMatchRow[] = [
+      row({ id: 'qf1', stage: 'qf', match_number: 1, team_a_id: 'A', team_b_id: 'B', winner_id: 'A' }),
+      // Na mestu zmagovalca qf1 je ročno postavljena ekipa X, ki v qf1 NI
+      // igrala — tega fiksna mreža ne sme prepisati.
+      row({ id: 'sf1', stage: 'sf', match_number: 1, team_a_id: 'X' }),
+    ]
+    const u = knockoutPropagation(matches)
+    expect(u.find(x => x.id === 'sf1')).toBeUndefined()
+  })
+
+  test('popravek polfinala zamenja zastarelega poraženca v tekmi za 3. mesto', () => {
+    const matches: KoMatchRow[] = [
+      // Sprva je bil zmagovalec B (poraženec A šel v tekmo za 3.), po
+      // popravku je zmagovalec A — v tekmo za 3. sodi B.
+      row({ id: 'sf1', stage: 'sf', match_number: 1, team_a_id: 'A', team_b_id: 'B', winner_id: 'A' }),
+      row({ id: 'sf2', stage: 'sf', match_number: 2, team_a_id: 'C', team_b_id: 'D', winner_id: 'D' }),
+      row({ id: 'fin', stage: 'final', match_number: 1, team_a_id: 'B', team_b_id: 'D' }),
+      row({ id: 'tp',  stage: 'third_place', match_number: 1, team_a_id: 'A', team_b_id: 'C' }),
+    ]
+    const u = knockoutPropagation(matches)
+    expect(u).toContainEqual({ id: 'fin', slot: 'team_a_id', teamId: 'A' })
+    expect(u).toContainEqual({ id: 'tp', slot: 'team_a_id', teamId: 'B' })
+    expect(u.find(x => x.id === 'tp' && x.slot === 'team_b_id')).toBeUndefined()
+  })
 })

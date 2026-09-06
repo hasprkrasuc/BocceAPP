@@ -168,7 +168,17 @@ export interface KoSlotUpdate {
   teamId: string
 }
 
-/** Izračuna, katera mesta naslednjih krogov je treba napolniti iz zmagovalcev. */
+/**
+ * Izračuna, katera mesta naslednjih krogov je treba napolniti iz zmagovalcev.
+ *
+ * Mesto se zapolni, ko je PRAZNO — tako se ročno sestavljeni ali žrebani krogi
+ * (že napolnjeni z drugimi ekipami) ne povozijo nazaj na fiksno mrežo. A samo
+ * to ne zadošča: če sodnik POPRAVI izid že propagirane tekme, na mestu sedi
+ * stari (napačni) zmagovalec. Zato se mesto uskladi tudi takrat, kadar na njem
+ * sedi ekipa, ki je v IZVORNI tekmi igrala — taka zasedba je lahko prišla le
+ * iz propagacije te tekme, ne iz ročnega razporeda. Na DP dvojic 6. 9. 2026 je
+ * po popravku izida osmine finala v četrtfinalu obtičal poraženec.
+ */
 export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
   const koStages = KO_STAGE_ORDER.filter(s => matches.some(m => m.stage === s))
   if (koStages.length) {
@@ -180,13 +190,20 @@ export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
     matches.filter(m => m.stage === s).sort((a, b) => a.match_number - b.match_number)
 
   const updates: KoSlotUpdate[] = []
-  const want = (target: KoMatchRow | undefined, slot: KoSlotUpdate['slot'], teamId: string) => {
+  const want = (
+    target: KoMatchRow | undefined,
+    slot: KoSlotUpdate['slot'],
+    teamId: string,
+    izvor: KoMatchRow,
+  ) => {
     if (!target) return
     const cur = slot === 'team_a_id' ? target.team_a_id : target.team_b_id
-    // Polni SAMO prazna mesta — tako se ročno sestavljeni ali žrebani krogi (že
-    // napolnjeni) ne povozijo nazaj na fiksno mrežo. Prazna mesta naslednjih
-    // krogov se napolnijo iz zmagovalcev, kot doslej.
-    if (cur === null || cur === undefined) updates.push({ id: target.id, slot, teamId })
+    const prazno = cur === null || cur === undefined
+    // Zastarela zasedba po popravku izida: na mestu sedi ekipa iz izvorne
+    // tekme, ki pa ni (več) tista, ki napreduje.
+    const zastarelo = !prazno && cur !== teamId &&
+      (cur === izvor.team_a_id || cur === izvor.team_b_id)
+    if (prazno || zastarelo) updates.push({ id: target.id, slot, teamId })
   }
 
   for (let si = 0; si < koStages.length - 1; si++) {
@@ -194,7 +211,7 @@ export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
     const nxt = byStage(koStages[si + 1])
     cur.forEach((m, j) => {
       if (!m.winner_id) return
-      want(nxt[Math.floor(j / 2)], j % 2 === 0 ? 'team_a_id' : 'team_b_id', m.winner_id)
+      want(nxt[Math.floor(j / 2)], j % 2 === 0 ? 'team_a_id' : 'team_b_id', m.winner_id, m)
     })
   }
 
@@ -203,7 +220,7 @@ export function knockoutPropagation(matches: KoMatchRow[]): KoSlotUpdate[] {
     byStage('sf').forEach((m, j) => {
       if (!m.winner_id) return
       const loser = m.winner_id === m.team_a_id ? m.team_b_id : m.team_a_id
-      if (loser) want(third, j % 2 === 0 ? 'team_a_id' : 'team_b_id', loser)
+      if (loser) want(third, j % 2 === 0 ? 'team_a_id' : 'team_b_id', loser, m)
     })
   }
 

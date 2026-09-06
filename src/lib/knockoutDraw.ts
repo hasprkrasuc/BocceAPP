@@ -8,18 +8,40 @@ import {
  * Prebere izločilne tekme turnirja, napolni mesta naslednjih krogov iz zmagovalcev.
  * Deluje za oba formata (čisti izločilni IN skupine→izločilni) — obravnava le
  * izločilne kroge (stage != 'group'), skupinskih tekem se ne dotakne.
+ *
+ * Popravek izida že propagirane tekme ZAMENJA ekipo v naslednjem krogu
+ * (knockoutPropagation vrne tudi zastarela mesta). Če je bila naslednja tekma
+ * s staro ekipo že odigrana, njen izid ne velja več — ponastavi se na
+ * neodigrano; nova propagacija steče, ko se izid vnese znova.
  */
 export async function propagateKnockout(tournamentId: string): Promise<void> {
   const { data } = await supabase
     .from('matches')
-    .select('id, stage, match_number, team_a_id, team_b_id, winner_id, is_bye')
+    .select('id, stage, match_number, team_a_id, team_b_id, winner_id, is_bye, status')
     .eq('tournament_id', tournamentId)
     .neq('stage', 'group')
-  const rows = (data ?? []) as KoMatchRow[]
+  const rows = (data ?? []) as Array<KoMatchRow & { status: string }>
   if (rows.length === 0) return
-  const updates = knockoutPropagation(rows)
-  for (const u of updates) {
-    await supabase.from('matches').update({ [u.slot]: u.teamId }).eq('id', u.id)
+  // Zanka: zamenjava ekipe lahko ponastavi že odigrano tekmo in s tem sprosti
+  // nove uskladitve. Krogov je največ osem, zato trda meja passov.
+  for (let obhod = 0; obhod < 10; obhod++) {
+    const updates = knockoutPropagation(rows)
+    if (updates.length === 0) break
+    for (const u of updates) {
+      const row = rows.find(r => r.id === u.id)
+      if (!row) continue
+      const zamenjava = (u.slot === 'team_a_id' ? row.team_a_id : row.team_b_id) !== null
+      const patch: Record<string, unknown> = { [u.slot]: u.teamId }
+      if (zamenjava && !row.is_bye && row.winner_id) {
+        patch.winner_id = null
+        patch.score_a = null
+        patch.score_b = null
+        patch.status = 'pending'
+      }
+      const { error } = await supabase.from('matches').update(patch).eq('id', u.id)
+      if (error) throw error
+      Object.assign(row, patch)
+    }
   }
 }
 
