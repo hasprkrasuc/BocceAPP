@@ -6,6 +6,11 @@
  *
  * Okno: ENOTNO 365-dnevno drseče okno za VSE (lige, pokal in DP, vse
  * kategorije) — štejejo le rezultati iz zadnjih 365 dni.
+ * Pri državnih prvenstvih poleg okna velja še: od izdaj istega prvenstva
+ * (ista kategorija, ista disciplina) šteje samo najnovejša z vpisanimi izidi
+ * (engines/dpSerije.ts). Uvrstitve se preberejo iz ročnega končnega vrstnega
+ * reda (`final_rank`), pri prvenstvih, odigranih v aplikaciji, pa izpeljejo iz
+ * mreže (engines/tournamentPlacement.ts).
  *
  * Liga rang:  rang = utežene match točke × ligaKoef × % uspešnosti
  * Pokal BZS šteje kot »liga« s koeficientom 1 (LIGA_KOEF.pokal).
@@ -23,6 +28,8 @@ import { aggregatePlayerStats, calculateRang, stripReserve } from '../engines/le
 import { placementPoints, placementLabel } from './dpPlacement'
 import { calculateStandings } from '../engines/league'
 import { pokalniPajek, pokalneUvrstitve, type PokalIzid } from '../engines/pokal'
+import { veljavneIzdaje } from '../engines/dpSerije'
+import { tournamentPlayerPoints } from '../engines/tournamentPlacement'
 import {
   koncnaUvrstitevLige, tockeUvrstitveSuperLiga, tockeUvrstitvePokal, tockeEkipeIgralcem,
   steUvrstitveEkip,
@@ -186,6 +193,78 @@ export async function preberiUporabnikePoIdjih<T extends { id: string }>(
   return zemljevid
 }
 
+/** Uvrstitev enega tekmovalca na enem državnem prvenstvu. */
+interface DpUvrstitev { playerId: string; pts: number; placeLabel: string }
+
+/**
+ * Uvrstitve enega državnega prvenstva — iz grafikona ali iz odigrane mreže.
+ *
+ * Zgodovinsko uvožena prvenstva imajo ročno vpisan `final_rank`; ta ima
+ * prednost, ker aplikacija njihovih tekem sploh nima.
+ *
+ * Prvenstva, ki so bila odigrana V aplikaciji, `final_rank` NIMAJO — nič ga ne
+ * piše. DP dvojice 2026 je bilo 6. 9. 2026 odigrano do konca (skupine, osmina,
+ * četrtfinale, polfinale, tekma za 3. mesto in finale), na lestvici pa ni dalo
+ * niti točke, ker je ta brala samo `final_rank`. Zato se uvrstitve izpeljejo iz
+ * mreže — po istem motorju kot lestvica serij (`tournamentPlayerPoints`), da se
+ * točkovanji ne razideta.
+ */
+async function uvrstitvePrvenstva(champId: string): Promise<DpUvrstitev[]> {
+  const { data: regs, error } = await supabase
+    .from('tournament_registrations')
+    .select('id, player1_id, player2_id, player1_guest_id, player2_guest_id, final_rank')
+    .eq('tournament_id', champId)
+  // Napake ne požiramo: prazen rezultat je videti kot »prvenstvo brez izidov«
+  // in bi tiho pobrisal točke celega prvenstva z lestvice.
+  if (error) throw error
+  type Prijava = {
+    id: string
+    player1_id: string | null; player2_id: string | null
+    player1_guest_id: string | null; player2_guest_id: string | null
+    final_rank: number | null
+  }
+  const prijave = (regs ?? []) as unknown as Prijava[]
+
+  // 1) Ročno vpisan končni vrstni red (grafikon) — ima prednost.
+  const zVrstnimRedom = prijave.filter(r => r.final_rank != null)
+  if (zVrstnimRedom.length > 0) {
+    const out: DpUvrstitev[] = []
+    for (const r of zVrstnimRedom) {
+      const pts = placementPoints(r.final_rank!)
+      if (pts <= 0) continue
+      const placeLabel = placementLabel(r.final_rank!)
+      for (const pid of [r.player1_id, r.player2_id].filter(Boolean) as string[]) {
+        out.push({ playerId: pid, pts, placeLabel })
+      }
+    }
+    return out
+  }
+
+  // 2) Izpeljava iz odigrane izločilne mreže.
+  const [{ data: groups, error: gErr }, { data: matches, error: mErr }] = await Promise.all([
+    supabase.from('tournament_groups')
+      .select('id, group_teams(id, registration_id)')
+      .eq('tournament_id', champId),
+    supabase.from('matches')
+      .select('stage, team_a_id, team_b_id, winner_id')
+      .eq('tournament_id', champId).neq('stage', 'group').eq('status', 'completed'),
+  ])
+  if (gErr) throw gErr
+  if (mErr) throw mErr
+
+  const groupTeams = ((groups ?? []) as unknown as Array<{
+    group_teams?: Array<{ id: string; registration_id: string }>
+  }>).flatMap(g => g.group_teams ?? [])
+
+  return tournamentPlayerPoints({
+    registrations: prijave,
+    groupTeams,
+    knockoutMatches: (matches ?? []) as unknown as Array<{
+      stage: string; team_a_id: string | null; team_b_id: string | null; winner_id: string | null
+    }>,
+  }).map(p => ({ playerId: p.player_id, pts: p.points, placeLabel: p.placeLabel }))
+}
+
 /** Izračuna rang lestvice (po kategoriji) + povzetke po sezonah za vsakega igralca. */
 export async function computeRangLestvica(): Promise<RangLestvica> {
   const today = new Date()
@@ -333,18 +412,30 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   // ── Državna prvenstva ─────────────────────────────────────────────────────
   const { data: allChamps } = await supabase
     .from('tournaments')
-    .select('id, name, date, category')
+    .select('id, name, date, category, discipline_type')
     .eq('kind', 'championship')
     .eq('status', 'completed')
 
   // ENOTNO 365-dnevno okno za vse kategorije (tudi moški) — DP izven okna ne štejejo.
-  const championships = (allChamps ?? []).filter(c => {
+  const vOknu = (allChamps ?? []).filter(c => {
     const raw = (c as { category?: string }).category
     // MIX (mešane dvojice): šteje za oba spola.
     if (raw === 'mixed') return c.date >= cutoffStr && c.date <= todayStr
     if (!toRangCategory(raw)) return false
     return c.date >= cutoffStr && c.date <= todayStr
   })
+
+  const izidiPrvenstva = new Map<string, DpUvrstitev[]>()
+  await Promise.all(vOknu.map(async champ => {
+    izidiPrvenstva.set(champ.id, await uvrstitvePrvenstva(champ.id))
+  }))
+
+  // Pri istem prvenstvu šteje samo najnovejša izdaja: DP dvojice 2026 vzame
+  // mesto DP dvojice 2025 takoj, ko ima vpisane izide, ne šele ko starega poje
+  // 365-dnevno okno. Zato izide potrebujemo že tu, pred izborom.
+  const championships = veljavneIzdaje(vOknu.map(c => ({
+    ...c, imaIzide: (izidiPrvenstva.get(c.id) ?? []).length > 0,
+  })))
 
   if (championships.length) {
     await Promise.all(championships.map(async champ => {
@@ -353,42 +444,28 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
       const champCat = isMixed ? null : toRangCategory(rawCat)
       if (!isMixed && !champCat) return
 
-      // DP točke po EKSPLICITNI končni uvrstitvi (final_rank iz grafikona), ne iz
-      // izločilnih tekem — deluje enotno za posamezno/dvojice/igro v krog/krožni
-      // sistem in zajame tudi mesta 5+ (iz skupin), ne le finalistov.
-      const { data: regs } = await supabase
-        .from('tournament_registrations')
-        .select('player1_id, player2_id, final_rank')
-        .eq('tournament_id', champ.id)
-        .not('final_rank', 'is', null)
-
-      type RegRow = { player1_id: string; player2_id: string | null; final_rank: number }
-      const rows = (regs ?? []) as RegRow[]
+      const rows = izidiPrvenstva.get(champ.id) ?? []
 
       // Pri MIX prvenstvu vsak igralec pripada svoji spolni kategoriji.
       let genderCat: (pid: string) => RangCategory | null
       if (isMixed) {
-        const pids = rows.flatMap(r => [r.player1_id, r.player2_id]).filter(Boolean) as string[]
-        const { data: gs } = pids.length
-          ? await supabase.from('users').select('id, gender').in('id', pids)
-          : { data: [] }
-        const gmap = Object.fromEntries((gs ?? []).map((u: { id: string; gender: string | null }) => [u.id, u.gender]))
-        genderCat = pid => { const g = gmap[pid]; return g === 'Ž' ? 'women' : g ? 'men' : null }
+        const pids = rows.map(r => r.playerId)
+        const spoli = await preberiUporabnikePoIdjih<{ id: string; gender: string | null }>(
+          pids.filter(id => UUID_RE.test(id)), 'id, gender')
+        genderCat = pid => {
+          const g = spoli[pid]?.gender
+          return g === 'Ž' ? 'women' : g ? 'men' : null
+        }
       } else {
         genderCat = () => champCat
       }
 
-      for (const reg of rows) {
-        const pts = placementPoints(reg.final_rank)
-        if (pts <= 0) continue
-        const label = placementLabel(reg.final_rank)
-        for (const pid of [reg.player1_id, reg.player2_id].filter(Boolean) as string[]) {
-          const cat = genderCat(pid)
-          if (!cat) continue
-          const a = ensureAcc(cat, pid)
-          a.dpPts += pts
-          a.champEntries.push({ champName: champ.name, placeLabel: label, pts })
-        }
+      for (const u of rows) {
+        const cat = genderCat(u.playerId)
+        if (!cat) continue
+        const a = ensureAcc(cat, u.playerId)
+        a.dpPts += u.pts
+        a.champEntries.push({ champName: champ.name, placeLabel: u.placeLabel, pts: u.pts })
       }
     }))
   }

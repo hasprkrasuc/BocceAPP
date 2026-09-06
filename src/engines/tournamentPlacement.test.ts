@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import {
-  bucketPoints, isPairDiscipline, tournamentPlayerPoints, PLACEMENT_POINTS,
+  bucketPoints, isPairDiscipline, oznakaMesta, tournamentPlayerPoints, PLACEMENT_POINTS,
 } from './tournamentPlacement'
 
 describe('bucketPoints', () => {
@@ -113,5 +113,79 @@ describe('tournamentPlayerPoints', () => {
     expect(pts).toHaveLength(2)
     expect(pts.map(p => p.player_id).sort()).toEqual(['pa', 'pb'])
     expect(pts.every(p => p.points === 1)).toBe(true)
+  })
+})
+
+describe('oznakaMesta', () => {
+  test('koša 5-8 in 9-16 dobita razpon', () => {
+    expect(oznakaMesta('5-8', false)).toBe('5.–8. mesto')
+    expect(oznakaMesta('9-16', false)).toBe('9.–16. mesto')
+  })
+
+  test('brez tekme za 3. mesto je bron deljen', () => {
+    expect(oznakaMesta(3, true)).toBe('3.–4. mesto')
+    expect(oznakaMesta(3, false)).toBe('3. mesto')
+  })
+
+  test('mesta 1, 2 in 4 so vedno posamična', () => {
+    expect(oznakaMesta(1, true)).toBe('1. mesto')
+    expect(oznakaMesta(2, true)).toBe('2. mesto')
+    expect(oznakaMesta(4, true)).toBe('4. mesto')
+  })
+})
+
+describe('tournamentPlayerPoints — oznake mest', () => {
+  const registrations = Array.from({ length: 8 }, (_, i) => ({
+    id: `r${i + 1}`, player1_id: `p${i + 1}`, player2_id: null,
+  }))
+  const groupTeams = Array.from({ length: 8 }, (_, i) => ({
+    id: `gt${i + 1}`, registration_id: `r${i + 1}`,
+  }))
+  const doPolfinala = [
+    { stage: 'qf', team_a_id: 'gt1', team_b_id: 'gt8', winner_id: 'gt1' },
+    { stage: 'qf', team_a_id: 'gt2', team_b_id: 'gt7', winner_id: 'gt2' },
+    { stage: 'qf', team_a_id: 'gt3', team_b_id: 'gt6', winner_id: 'gt3' },
+    { stage: 'qf', team_a_id: 'gt4', team_b_id: 'gt5', winner_id: 'gt4' },
+    { stage: 'sf', team_a_id: 'gt1', team_b_id: 'gt2', winner_id: 'gt1' },
+    { stage: 'sf', team_a_id: 'gt3', team_b_id: 'gt4', winner_id: 'gt3' },
+    { stage: 'final', team_a_id: 'gt1', team_b_id: 'gt3', winner_id: 'gt1' },
+  ]
+
+  test('s tekmo za 3. mesto sta bron in 4. mesto ločena', () => {
+    const km = [...doPolfinala,
+      { stage: 'third_place', team_a_id: 'gt2', team_b_id: 'gt4', winner_id: 'gt2' }]
+    const byPlayer = Object.fromEntries(
+      tournamentPlayerPoints({ registrations, groupTeams, knockoutMatches: km })
+        .map(p => [p.player_id, p.placeLabel]))
+    expect(byPlayer['p1']).toBe('1. mesto')
+    expect(byPlayer['p3']).toBe('2. mesto')
+    expect(byPlayer['p2']).toBe('3. mesto')
+    expect(byPlayer['p4']).toBe('4. mesto')
+    expect(byPlayer['p5']).toBe('5.–8. mesto')
+  })
+
+  test('brez tekme za 3. mesto oba polfinalista dobita »3.–4. mesto«', () => {
+    const byPlayer = Object.fromEntries(
+      tournamentPlayerPoints({ registrations, groupTeams, knockoutMatches: doPolfinala })
+        .map(p => [p.player_id, p.placeLabel]))
+    expect(byPlayer['p2']).toBe('3.–4. mesto')
+    expect(byPlayer['p4']).toBe('3.–4. mesto')
+  })
+
+  test('prvi izločilni krog da »9.–16. mesto«', () => {
+    const regs16 = Array.from({ length: 16 }, (_, i) => ({
+      id: `r${i + 1}`, player1_id: `p${i + 1}`, player2_id: null,
+    }))
+    const gts16 = Array.from({ length: 16 }, (_, i) => ({
+      id: `gt${i + 1}`, registration_id: `r${i + 1}`,
+    }))
+    const km = [
+      { stage: 'r16', team_a_id: 'gt1', team_b_id: 'gt16', winner_id: 'gt1' },
+      ...doPolfinala,
+    ]
+    const p16 = tournamentPlayerPoints({ registrations: regs16, groupTeams: gts16, knockoutMatches: km })
+      .find(p => p.player_id === 'p16')
+    expect(p16?.placeLabel).toBe('9.–16. mesto')
+    expect(p16?.points).toBe(1)
   })
 })
