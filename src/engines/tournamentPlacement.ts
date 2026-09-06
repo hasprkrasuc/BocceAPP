@@ -26,6 +26,22 @@ export interface PlayerPoints {
   player_id: string
   points: number
   bucket: PlacementBucket
+  /** Oznaka mesta za izpis: »2. mesto«, »5.–8. mesto«, »3.–4. mesto« … */
+  placeLabel: string
+}
+
+/**
+ * Oznaka mesta iz koša.
+ *
+ * Brez tekme za 3. mesto si poraženca polfinala delita bron — takrat oznaka
+ * pove »3.–4. mesto«. Zapis je enak kot pri dpPlacement.placementLabel in
+ * ekipneUvrstitve, da se razčlenitve na lestvici ne razidejo.
+ */
+export function oznakaMesta(bucket: PlacementBucket, deljenBron: boolean): string {
+  if (bucket === '5-8') return '5.–8. mesto'
+  if (bucket === '9-16') return '9.–16. mesto'
+  if (bucket === 3 && deljenBron) return '3.–4. mesto'
+  return `${bucket}. mesto`
 }
 
 const PAIR_DISCIPLINES: ReadonlySet<DisciplineType> = new Set(['dvojka', 'stafeta'])
@@ -91,17 +107,21 @@ export function tournamentPlayerPoints(input: PlacementInput): PlayerPoints[] {
     }
   }
 
+  // Deljen bron: 3. mesto je dodeljeno dvakrat (tekme za 3. mesto ni bilo).
+  const deljenBron = [...bucketByReg.values()].filter(b => b === 3).length > 1
+
   const out: PlayerPoints[] = []
   for (const r of registrations) {
     const bucket = bucketByReg.get(r.id)
     if (!bucket) continue // izven najboljših 16 (izpad v skupinah) → brez točk
     const points = bucketPoints(bucket)
+    const placeLabel = oznakaMesta(bucket, deljenBron)
     // Registriran igralec (users) ali gost-igralec (guest_players) — oba imata
     // stabilen UUID in štejeta v lestvico serije. Prosto ime brez UUID se izpusti.
     const p1 = r.player1_id ?? r.player1_guest_id ?? null
     const p2 = r.player2_id ?? r.player2_guest_id ?? null
-    if (p1) out.push({ player_id: p1, points, bucket })
-    if (p2) out.push({ player_id: p2, points, bucket })
+    if (p1) out.push({ player_id: p1, points, bucket, placeLabel })
+    if (p2) out.push({ player_id: p2, points, bucket, placeLabel })
   }
   return out
 }
