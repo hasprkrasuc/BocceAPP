@@ -6,6 +6,9 @@
  *
  * Okno: ENOTNO 365-dnevno drseče okno za VSE (lige, pokal in DP, vse
  * kategorije) — štejejo le rezultati iz zadnjih 365 dni.
+ * Pri državnih prvenstvih poleg okna velja še: od izdaj istega prvenstva
+ * (ista kategorija, ista disciplina) šteje samo najnovejša z vpisanimi izidi
+ * (engines/dpSerije.ts).
  *
  * Liga rang:  rang = utežene match točke × ligaKoef × % uspešnosti
  * Pokal BZS šteje kot »liga« s koeficientom 1 (LIGA_KOEF.pokal).
@@ -23,6 +26,7 @@ import { aggregatePlayerStats, calculateRang, stripReserve } from '../engines/le
 import { placementPoints, placementLabel } from './dpPlacement'
 import { calculateStandings } from '../engines/league'
 import { pokalniPajek, pokalneUvrstitve, type PokalIzid } from '../engines/pokal'
+import { veljavneIzdaje } from '../engines/dpSerije'
 import {
   koncnaUvrstitevLige, tockeUvrstitveSuperLiga, tockeUvrstitvePokal, tockeEkipeIgralcem,
   steUvrstitveEkip,
@@ -333,18 +337,42 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
   // ── Državna prvenstva ─────────────────────────────────────────────────────
   const { data: allChamps } = await supabase
     .from('tournaments')
-    .select('id, name, date, category')
+    .select('id, name, date, category, discipline_type')
     .eq('kind', 'championship')
     .eq('status', 'completed')
 
   // ENOTNO 365-dnevno okno za vse kategorije (tudi moški) — DP izven okna ne štejejo.
-  const championships = (allChamps ?? []).filter(c => {
+  const vOknu = (allChamps ?? []).filter(c => {
     const raw = (c as { category?: string }).category
     // MIX (mešane dvojice): šteje za oba spola.
     if (raw === 'mixed') return c.date >= cutoffStr && c.date <= todayStr
     if (!toRangCategory(raw)) return false
     return c.date >= cutoffStr && c.date <= todayStr
   })
+
+  // DP točke po EKSPLICITNI končni uvrstitvi (final_rank iz grafikona), ne iz
+  // izločilnih tekem — deluje enotno za posamezno/dvojice/igro v krog/krožni
+  // sistem in zajame tudi mesta 5+ (iz skupin), ne le finalistov.
+  type RegRow = { player1_id: string; player2_id: string | null; final_rank: number }
+  const izidiPrvenstva = new Map<string, RegRow[]>()
+  await Promise.all(vOknu.map(async champ => {
+    const { data: regs, error } = await supabase
+      .from('tournament_registrations')
+      .select('player1_id, player2_id, final_rank')
+      .eq('tournament_id', champ.id)
+      .not('final_rank', 'is', null)
+    // Napake ne požiramo: prazen rezultat je videti kot »prvenstvo brez izidov«
+    // in bi tiho pobrisal točke celega prvenstva z lestvice.
+    if (error) throw error
+    izidiPrvenstva.set(champ.id, (regs ?? []) as RegRow[])
+  }))
+
+  // Pri istem prvenstvu šteje samo najnovejša izdaja: DP dvojice 2026 vzame
+  // mesto DP dvojice 2025 takoj, ko ima vpisane izide, ne šele ko starega poje
+  // 365-dnevno okno. Zato izide potrebujemo že tu, pred izborom.
+  const championships = veljavneIzdaje(vOknu.map(c => ({
+    ...c, imaIzide: (izidiPrvenstva.get(c.id) ?? []).length > 0,
+  })))
 
   if (championships.length) {
     await Promise.all(championships.map(async champ => {
@@ -353,17 +381,7 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
       const champCat = isMixed ? null : toRangCategory(rawCat)
       if (!isMixed && !champCat) return
 
-      // DP točke po EKSPLICITNI končni uvrstitvi (final_rank iz grafikona), ne iz
-      // izločilnih tekem — deluje enotno za posamezno/dvojice/igro v krog/krožni
-      // sistem in zajame tudi mesta 5+ (iz skupin), ne le finalistov.
-      const { data: regs } = await supabase
-        .from('tournament_registrations')
-        .select('player1_id, player2_id, final_rank')
-        .eq('tournament_id', champ.id)
-        .not('final_rank', 'is', null)
-
-      type RegRow = { player1_id: string; player2_id: string | null; final_rank: number }
-      const rows = (regs ?? []) as RegRow[]
+      const rows = izidiPrvenstva.get(champ.id) ?? []
 
       // Pri MIX prvenstvu vsak igralec pripada svoji spolni kategoriji.
       let genderCat: (pid: string) => RangCategory | null
