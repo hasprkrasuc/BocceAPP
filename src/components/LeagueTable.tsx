@@ -1,3 +1,11 @@
+/**
+ * Ligaška lestvica.
+ *
+ * Razlika točk iger (`bouleDiff`) se NE izpisuje — na uvrstitev pa še vedno
+ * vpliva: v `engines/league.ts` je tretje in četrto merilo razvrstitve. Če
+ * kdaj izgine še iz motorja, se vrstni red tiho spremeni, zato je tam, ne tu.
+ * Opomba pod tabelo merila našteva v celoti.
+ */
 import { sl } from '../i18n/sl'
 import type { TeamStats } from '../types'
 import KlubskiGrb from './KlubskiGrb'
@@ -24,7 +32,6 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
             <th className="px-3 py-3 text-center w-10" title={sl.league.drawn}>N</th>
             <th className="px-3 py-3 text-center w-10" title={sl.league.lost}>P</th>
             <th className="px-3 py-3 text-center w-16" title="Match točke za / proti (seštevek končnih izidov tekem)">T+/T-</th>
-            <th className="px-3 py-3 text-center w-14" title="Razlika točk posameznih iger (boule) — tiebreak">Igre ±</th>
             <th className="px-3 py-3 text-center w-14 font-bold" title="Točke: zmaga 2 · remi 1 · poraz 0">Točke</th>
           </tr>
         </thead>
@@ -44,7 +51,7 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
                 </td>
                 <td className="px-3 py-2.5">
                   <span className="flex items-center gap-2">
-                    <KlubskiGrb ime={row.team.club_name} logoUrl={row.team.club?.logo_url} velikost="sm" />
+                    <KlubskiGrb ime={row.team.club_name} logoUrl={row.team.club?.logo_url} velikost="md" />
                     <span className={isHighlighted ? 'text-bocce-green' : 'text-gray-800'}>{row.team.club_name}</span>
                     {row.team.short_name && <span className="text-xs text-gray-400">({row.team.short_name})</span>}
                   </span>
@@ -54,10 +61,6 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
                 <td className="px-3 py-2.5 text-center text-gray-500">{row.drawn}</td>
                 <td className="px-3 py-2.5 text-center text-red-500">{row.lost}</td>
                 <td className="px-3 py-2.5 text-center text-gray-500 text-xs">{row.pointsFor}:{row.pointsAgainst}</td>
-                <td className={`px-3 py-2.5 text-center font-mono text-xs
-                  ${row.bouleDiff > 0 ? 'text-green-600' : row.bouleDiff < 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                  {row.bouleDiff > 0 ? '+' : ''}{row.bouleDiff}
-                </td>
                 <td className={`px-3 py-2.5 text-center font-bold text-base ${isTop3 ? 'text-bocce-green' : 'text-gray-700'}`}>
                   {row.points}
                 </td>
