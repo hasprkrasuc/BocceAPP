@@ -802,11 +802,10 @@ export function LeagueDetail() {
                   {team.league_team_players.map(p => (
                     <div key={p.id} className="text-sm text-gray-700 flex items-center gap-2">
                       {p.jersey_number && <span className="text-xs text-gray-400 w-5">#{p.jersey_number}</span>}
-                      {/* Gost (ekipni turnirji) nima računa — ime nosi vrstica postave. */}
+                      {/* Gost (ekipni turnirji) nima računa — ime nosi vrstica postave.
+                          Brez posebne oznake: na reprezentančnem turnirju so gostje
+                          običajni igralci in oznaka »gost« gledalcu nič ne pove. */}
                       {p.player?.full_name ?? p.guest_name}
-                      {!p.player && p.guest_name && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600">gost</span>
-                      )}
                     </div>
                   ))}
                 </div>

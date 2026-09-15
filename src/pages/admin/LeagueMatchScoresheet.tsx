@@ -254,7 +254,7 @@ export default function LeagueMatchScoresheet() {
     const toRoster = (players?: Array<{ player: { id: string; full_name: string | null } | null; guest_name?: string | null }>): RosterPlayer[] =>
       (players ?? []).flatMap(p => {
         if (p.player?.full_name) return [{ playerId: p.player.id, name: p.player.full_name }]
-        if (p.guest_name) return [{ playerId: p.guest_name, name: `${p.guest_name} (gost)` }]
+        if (p.guest_name) return [{ playerId: p.guest_name, name: p.guest_name }]
         return []
       })
     setHomeRoster(toRoster(f.home_team?.league_team_players))
