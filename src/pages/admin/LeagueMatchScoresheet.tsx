@@ -14,6 +14,13 @@ import { jeAdminTeLige, smeUrejatiZapisnik } from '../../lib/pravicaNadTekmo'
 
 const TECHNICAL_TYPES: DisciplineType[] = ['stafeta', 'hitrostno', 'natancno']
 
+/** Vodja v zapisniku je uuid uporabnika ali prosto ime gosta — po tem ju ločimo. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Ime shranjenega vodje: iz seznama licenciranih, sicer prosto ime gosta. */
+const imeVodje = (izbran: string, kandidati: Array<{ userId: string; name: string }>): string =>
+  kandidati.find(v => v.userId === izbran)?.name
+    ?? (izbran && !UUID_RE.test(izbran) ? izbran : '')
+
 interface DisciplineForm {
   homePlayers: string[]
   awayPlayers: string[]
@@ -255,17 +262,23 @@ export default function LeagueMatchScoresheet() {
 
     // Vodje, licencirani za TI DVE ekipi. Ker league_teams visi na sezoni,
     // vezava na ekipo že pomeni pravo tekmovanje — filtrirati po njem ni treba.
+    // Gostujoči vodja (ekipni turnirji — ni vpisan pri BZS) nastopa z imenom
+    // kot prostim besedilom: to gre tudi v home/away_leader_id, ki je zato
+    // besedilo, ne tuji ključ (enaka konvencija kot igralci v disciplinah).
     const fx2 = fx as LeagueFixture
     const { data: vodjeData } = await supabase
       .from('team_leaders')
-      .select('league_team_id, user:users(id, full_name)')
+      .select('league_team_id, guest_name, user:users(id, full_name)')
       .in('league_team_id', [fx2.home_team_id, fx2.away_team_id].filter(Boolean) as string[])
     const vodje = (vodjeData ?? []) as unknown as Array<{
-      league_team_id: string; user: { id: string; full_name: string | null } | null
+      league_team_id: string; guest_name: string | null
+      user: { id: string; full_name: string | null } | null
     }>
     const zaEkipo = (teamId: string | null): Vodja[] => vodje
-      .filter(v => v.league_team_id === teamId && v.user)
-      .map(v => ({ userId: v.user!.id, name: v.user!.full_name ?? '(brez imena)' }))
+      .filter(v => v.league_team_id === teamId && (v.user || v.guest_name))
+      .map(v => v.user
+        ? { userId: v.user.id, name: v.user.full_name ?? '(brez imena)' }
+        : { userId: v.guest_name!, name: `${v.guest_name} (gost)` })
       .sort((a, b) => a.name.localeCompare(b.name, 'sl'))
     setHomeLeaders(zaEkipo(fx2.home_team_id))
     setAwayLeaders(zaEkipo(fx2.away_team_id))
@@ -712,7 +725,7 @@ export default function LeagueMatchScoresheet() {
                     </>
                   ) : (
                     <p className="text-sm text-gray-700">
-                      {kandidati.find(v => v.userId === izbran)?.name ?? '—'}
+                      {imeVodje(izbran, kandidati) || '—'}
                     </p>
                   )}
                 </div>
@@ -926,9 +939,9 @@ export default function LeagueMatchScoresheet() {
           {[
             ...vrsticeSodnikov(chiefJudgeUserId, judgeUserIds, sodnikiImena),
             [`Vodja ekipe — ${fixture.home_team?.club_name ?? 'domači'}`,
-              homeLeaders.find(v => v.userId === homeLeaderId)?.name ?? ''],
+              imeVodje(homeLeaderId, homeLeaders)],
             [`Vodja ekipe — ${fixture.away_team?.club_name ?? 'gostje'}`,
-              awayLeaders.find(v => v.userId === awayLeaderId)?.name ?? ''],
+              imeVodje(awayLeaderId, awayLeaders)],
           ].map(([oznaka, ime], i) => (
             <div key={i}>
               <div className="h-10 border-b border-gray-400" />
