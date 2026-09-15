@@ -4,10 +4,9 @@ import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import KlubskiGrb from '../components/KlubskiGrb'
 import {
-  pokalniPajek, POKAL_VELIKOST, pokalniDomacin, rangLige, RANG_NEZNAN,
+  pokalniPajek, pokalniDomacin, rangLige, RANG_NEZNAN, velikostPajka, oznakeKrogov,
   type PokalEkipa, type PokalIzid,
 } from '../engines/pokal'
-import type { MatchStage } from '../types'
 
 /**
  * POKAL BZS — izločilno tekmovanje klubskih ekip.
@@ -15,16 +14,11 @@ import type { MatchStage } from '../types'
  * Pajek se ne bere iz baze, ampak izračuna: `league_teams.draw_number` je
  * žrebana številka in hkrati mesto v pajku, `league_fixtures` pa povedo, kdo
  * je katero tekmo dobil. Glej `src/engines/pokal.ts`.
+ *
+ * Pokalov je več in so LOČENA tekmovanja: moški in članice imata vsak svojo
+ * sezono, svoj žreb, svojo velikost pajka in svoje discipline. Stran zato ne
+ * bere ene same sezone, ampak vse in med njimi preklaplja — nič se ne meša.
  */
-
-const KROGI: Array<{ stage: MatchStage; naslov: string }> = [
-  { stage: 'r64', naslov: '1. krog' },
-  { stage: 'r32', naslov: '2. krog' },
-  { stage: 'r16', naslov: 'Osmina finala' },
-  { stage: 'qf', naslov: 'Četrtfinale' },
-  { stage: 'sf', naslov: 'Polfinale' },
-  { stage: 'final', naslov: 'Finale' },
-]
 
 interface Ekipa {
   id: string
@@ -32,6 +26,13 @@ interface Ekipa {
   draw_number: number | null
   club_id: string | null
   club: { logo_url: string | null } | null
+}
+
+interface Sezona {
+  id: string
+  name: string
+  status: string
+  category: string | null
 }
 
 interface Tekma {
@@ -47,7 +48,8 @@ interface Tekma {
 
 export default function Pokal() {
   const { isAdmin } = useAuth()
-  const [sezona, setSezona] = useState<{ id: string; name: string; status: string } | null>(null)
+  const [sezone, setSezone] = useState<Sezona[]>([])
+  const [izbranaId, setIzbranaId] = useState<string | null>(null)
   const [ekipe, setEkipe] = useState<Ekipa[]>([])
   const [tekme, setTekme] = useState<Tekma[]>([])
   /** Rang kluba (club_id → 1..4) iz članskih lig tekoče sezone. */
@@ -56,17 +58,32 @@ export default function Pokal() {
   const [napaka, setNapaka] = useState('')
   const [delam, setDelam] = useState('')
 
-  useEffect(() => { nalozi() }, [])
+  useEffect(() => { naloziSezone() }, [])
+  useEffect(() => { if (izbranaId) nalozi(izbranaId) }, [izbranaId])
 
-  async function nalozi() {
+  /** Vse pokalne sezone, ki niso osnutek — vsaka je svoje tekmovanje. */
+  async function naloziSezone() {
     setNalagam(true); setNapaka('')
     try {
-      const { data: s, error: sErr } = await supabase
-        .from('league_seasons').select('id, name, status')
-        .eq('format', 'pokal').order('year', { ascending: false }).limit(1).maybeSingle()
-      if (sErr) throw sErr
-      if (!s) { setSezona(null); return }
-      setSezona(s)
+      const { data, error } = await supabase
+        .from('league_seasons').select('id, name, status, category')
+        .eq('format', 'pokal').neq('status', 'draft')
+        .order('year', { ascending: false }).order('name')
+      if (error) throw error
+      const vse = (data ?? []) as Sezona[]
+      setSezone(vse)
+      setIzbranaId(prej => prej ?? vse[0]?.id ?? null)
+      if (!vse.length) setNalagam(false)
+    } catch (err) {
+      setNapaka(err instanceof Error ? err.message : String(err))
+      setNalagam(false)
+    }
+  }
+
+  async function nalozi(sezonaId: string) {
+    setNalagam(true); setNapaka('')
+    try {
+      const s = { id: sezonaId }
 
       const [{ data: e, error: eErr }, { data: t, error: tErr }, { data: cl, error: clErr }] = await Promise.all([
         supabase.from('league_teams')
@@ -106,6 +123,7 @@ export default function Pokal() {
     }
   }
 
+  const sezona = sezone.find(s => s.id === izbranaId) ?? null
   const poId = new Map(ekipe.map(e => [e.id, e]))
 
   const vhod: PokalEkipa[] = ekipe
@@ -122,10 +140,16 @@ export default function Pokal() {
         : t.away_score > t.home_score ? t.away_team_id : null,
   }))
 
+  // Velikost pajka pove žreb te sezone, ne konstanta: moški pokal ima 64 mest,
+  // pokal članic 16. Od nje so odvisna tudi imena krogov.
+  const velikost = velikostPajka(vhod)
+  const krogi = oznakeKrogov(velikost)
+  const prviKrog = krogi[0]?.stage
+
   let pajek: ReturnType<typeof pokalniPajek> = []
   let napakaPajka = ''
   try {
-    if (vhod.length) pajek = pokalniPajek(vhod, izidi, POKAL_VELIKOST)
+    if (vhod.length) pajek = pokalniPajek(vhod, izidi, velikost)
   } catch (err) {
     napakaPajka = err instanceof Error ? err.message : String(err)
   }
@@ -155,7 +179,7 @@ export default function Pokal() {
       home_team_id: home, away_team_id: away,
     })
     if (error) setNapaka(`Zapisnika ni bilo mogoče ustvariti: ${error.message}`)
-    else await nalozi()
+    else await nalozi(sezona.id)
     setDelam('')
   }
 
@@ -181,7 +205,7 @@ export default function Pokal() {
       .update({ home_team_id: t.away_team_id, away_team_id: t.home_team_id })
       .eq('id', t.id)
     if (error) setNapaka(`Zamenjava ni uspela: ${error.message}`)
-    else await nalozi()
+    else if (izbranaId) await nalozi(izbranaId)
     setDelam('')
   }
 
@@ -202,16 +226,31 @@ export default function Pokal() {
     )
   }
 
-  const prosti = pajek.filter(m => m.stage === 'r64' && m.isBye)
+  const prosti = pajek.filter(m => m.stage === prviKrog && m.isBye)
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
         <h1 className="text-2xl font-bold text-gray-800">Pokal BZS</h1>
-        <span className="text-sm text-gray-500">{sezona.name}</span>
+        {sezone.length === 1 && <span className="text-sm text-gray-500">{sezona.name}</span>}
       </div>
+
+      {/* Vsak pokal je svoje tekmovanje — svoj žreb, svoj pajek, svoje discipline. */}
+      {sezone.length > 1 && (
+        <div className="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto">
+          {sezone.map(s => (
+            <button key={s.id} onClick={() => setIzbranaId(s.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors
+                ${s.id === izbranaId
+                  ? 'border-bocce-green text-bocce-green'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
       <p className="text-sm text-gray-500 mb-6">
-        {ekipe.length} prijavljenih ekip · izločilni sistem s {POKAL_VELIKOST} mesti ·{' '}
+        {ekipe.length} prijavljenih ekip · izločilni sistem s {velikost} mesti ·{' '}
         {prosti.length} prostih mest v 1. krogu ·{' '}
         <span title="Pri enakem rangu odloči lanska uvrstitev — domačina po potrebi zamenja admin (⇄).">
           nižje rangirana ekipa je domačin (D)
@@ -230,10 +269,10 @@ export default function Pokal() {
       )}
 
       <div className="space-y-8">
-        {KROGI.map(({ stage, naslov }) => {
+        {krogi.map(({ stage, naslov }) => {
           const tekmeKroga = pajek.filter(m => m.stage === stage && !m.isBye)
           if (!tekmeKroga.length) return null
-          const krogIndex = KROGI.findIndex(k => k.stage === stage) + 1
+          const krogIndex = krogi.findIndex(k => k.stage === stage) + 1
           const znane = tekmeKroga.filter(m => m.teamA && m.teamB)
           if (!znane.length) return null
 

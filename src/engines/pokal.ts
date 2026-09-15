@@ -1,7 +1,8 @@
 import {
-  buildBracketFromFirstRound, knockoutPropagation,
+  buildBracketFromFirstRound, firstStageForSize, knockoutPropagation, KO_STAGE_ORDER,
   type PlannedMatch, type KoMatchRow,
 } from './knockout'
+import type { MatchStage } from '../types'
 
 /**
  * POKAL BZS — izločilno tekmovanje klubskih ekip.
@@ -39,6 +40,47 @@ export interface PokalIzid {
 
 /** Privzeta velikost pajka — 64 mest (47 prijavljenih ekip v sezoni 2026/27). */
 export const POKAL_VELIKOST = 64
+
+/**
+ * Velikost pajka te sezone: najmanjša potenca dvojke, ki sprejme največjo
+ * žrebano številko.
+ *
+ * Velikost NI enaka številu ekip — pajek je večji od udeležbe, razlika so
+ * prosta mesta. Pove jo torej žreb, ne štetje: moški pokal 2026/27 ima 47 ekip
+ * na številkah do 64 (velikost 64), pokal članic 2026 pa 10 ekip na številkah
+ * do 15 (velikost 16). Zato se bere največja številka in ne dolžina seznama.
+ *
+ * Brez ekip (žreba še ni) vrne privzetih 64, da stran nima česa narisati
+ * narobe.
+ */
+export function velikostPajka(ekipe: PokalEkipa[]): number {
+  const najvecja = ekipe.reduce((n, e) => Math.max(n, e.drawNumber ?? 0), 0)
+  if (najvecja <= 0) return POKAL_VELIKOST
+  let velikost = 2
+  while (velikost < najvecja) velikost *= 2
+  return velikost
+}
+
+/** Polna imena krogov; prvi krog pajka dobi ime »1. krog«, ne glede na to, kateri je. */
+const IME_KROGA: Partial<Record<MatchStage, string>> = {
+  r16: 'Osmina finala', qf: 'Četrtfinale', sf: 'Polfinale', final: 'Finale',
+}
+
+/**
+ * Krogi pajka dane velikosti, od prvega do finala.
+ *
+ * Isti `stage` pomeni v različno velikih pajkih različno stvar: v pajku 64 je
+ * `r16` osmina finala, v pajku 16 pa PRVI krog. Zato se prvi krog vedno
+ * imenuje »1. krog«, poznejši pa po svojem mestu v finalu; krogi pred osmino,
+ * ki niso prvi, ostanejo oštevilčeni (»2. krog«).
+ */
+export function oznakeKrogov(velikost: number): Array<{ stage: MatchStage; naslov: string }> {
+  const zacetek = KO_STAGE_ORDER.indexOf(firstStageForSize(velikost))
+  return KO_STAGE_ORDER.slice(zacetek).map((stage, i) => ({
+    stage,
+    naslov: i === 0 ? '1. krog' : IME_KROGA[stage] ?? `${i + 1}. krog`,
+  }))
+}
 
 function preveri(ekipe: PokalEkipa[], velikost: number): void {
   if ((velikost & (velikost - 1)) !== 0 || velikost < 2) {
