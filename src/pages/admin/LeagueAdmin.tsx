@@ -129,12 +129,14 @@ export default function LeagueAdmin() {
   const [teamForm, setTeamForm] = useState<TeamForm>({ club_name: '', short_name: '', captain_id: '' })
   /** Vnos imena gostujočega igralca po ekipah (samo ekipni turnirji). */
   const [gostIme, setGostIme] = useState<Record<string, string>>({})
+  /** Vnos imena gostujočega vodje po ekipah (samo ekipni turnirji). */
+  const [gostVodja, setGostVodja] = useState<Record<string, string>>({})
   /**
    * Licencirani vodje ekip (tabela team_leaders). To NI isto kot `captain_id`
    * zgoraj: kapetan je eden, licenciranih vodij je lahko več, njihov vir pa je
    * evidenca zveze. Zapisnik v spustnem seznamu ponudi prav te.
    */
-  const [vodje, setVodje] = useState<Array<{ league_team_id: string; user_id: string; full_name: string | null }>>([])
+  const [vodje, setVodje] = useState<Array<{ id: string; league_team_id: string; user_id: string | null; full_name: string | null; guest_name: string | null }>>([])
   const [vodjeZa, setVodjeZa] = useState<string | null>(null)
   const [iskanjeVodje, setIskanjeVodje] = useState('')
   const [zadetkiVodij, setZadetkiVodij] = useState<Array<{ id: string; full_name: string | null; club: string | null }>>([])
@@ -297,11 +299,15 @@ export default function LeagueAdmin() {
   async function loadVodje(teamIds: string[]) {
     if (teamIds.length === 0) { setVodje([]); return }
     const { data } = await supabase
-      .from('team_leaders').select('league_team_id, user_id, user:users(full_name)')
+      .from('team_leaders').select('id, league_team_id, user_id, guest_name, user:users(full_name)')
       .in('league_team_id', teamIds)
     setVodje(((data ?? []) as unknown as Array<{
-      league_team_id: string; user_id: string; user: { full_name: string | null } | null
-    }>).map(v => ({ league_team_id: v.league_team_id, user_id: v.user_id, full_name: v.user?.full_name ?? null })))
+      id: string; league_team_id: string; user_id: string | null; guest_name: string | null
+      user: { full_name: string | null } | null
+    }>).map(v => ({
+      id: v.id, league_team_id: v.league_team_id, user_id: v.user_id,
+      full_name: v.user?.full_name ?? null, guest_name: v.guest_name,
+    })))
   }
 
   /** Kandidati za vodjo se iščejo med VSEMI uporabniki: vodja ni nujno igralec te ekipe. */
@@ -322,13 +328,25 @@ export default function LeagueAdmin() {
     await loadVodje(teams.map(t => t.id))
   }
 
-  async function odvzemiVodjo(teamId: string, userId: string, ime: string | null) {
-    if (!window.confirm(`Odvzeti vodenje ekipe uporabniku ${ime ?? ''}?`)) return
+  async function odvzemiVodjo(vodjaId: string, ime: string | null) {
+    if (!window.confirm(`Odvzeti vodenje ekipe ${ime ? `(${ime})` : ''}?`)) return
     setVodjeBusy(true)
-    const { error } = await supabase.from('team_leaders')
-      .delete().eq('league_team_id', teamId).eq('user_id', userId)
+    const { error } = await supabase.from('team_leaders').delete().eq('id', vodjaId)
     setVodjeBusy(false)
     if (error) { setMessage(`⚠ ${error.message}`); return }
+    await loadVodje(teams.map(t => t.id))
+  }
+
+  /** Gostujoči vodja (ekipni turnirji): ni vpisan pri BZS, samo ime. */
+  async function dodajGostaVodjo(teamId: string, ime: string) {
+    const cisto = ime.trim()
+    if (!cisto) return
+    setVodjeBusy(true)
+    const { error } = await supabase.from('team_leaders')
+      .insert({ league_team_id: teamId, guest_name: cisto })
+    setVodjeBusy(false)
+    if (error) { setMessage(`⚠ Vodje ni bilo mogoče dodati: ${error.message}`); return }
+    setGostVodja(g => ({ ...g, [teamId]: '' }))
     await loadVodje(teams.map(t => t.id))
   }
 
@@ -1723,12 +1741,13 @@ export default function LeagueAdmin() {
                               </span>
                             )}
                             {moji.map(v => (
-                              <span key={v.user_id}
-                                className="flex items-center gap-1 bg-bocce-green/10 text-bocce-green text-xs px-2 py-1 rounded-full">
-                                {v.full_name ?? '(neznano ime)'}
-                                <button onClick={() => odvzemiVodjo(team.id, v.user_id, v.full_name)}
+                              <span key={v.id}
+                                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${v.guest_name
+                                  ? 'bg-blue-50 text-blue-700' : 'bg-bocce-green/10 text-bocce-green'}`}>
+                                {v.full_name ?? (v.guest_name ? `${v.guest_name} · gost` : '(neznano ime)')}
+                                <button onClick={() => odvzemiVodjo(v.id, v.full_name ?? v.guest_name)}
                                   disabled={vodjeBusy}
-                                  className="text-bocce-green/60 hover:text-red-500 ml-1 disabled:opacity-50">×</button>
+                                  className="opacity-60 hover:opacity-100 hover:text-red-500 ml-1 disabled:opacity-50">×</button>
                               </span>
                             ))}
                             <button
@@ -1739,11 +1758,25 @@ export default function LeagueAdmin() {
                           </div>
 
                           {odprto && (
-                            <div className="mt-2">
+                            <div className="mt-2 space-y-2">
                               <input type="search" value={iskanjeVodje}
                                 onChange={e => poisciVodjo(e.target.value)} disabled={vodjeBusy}
                                 placeholder="Išči po imenu..."
                                 className="w-full max-w-xs border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-50" />
+                              {/* Gostujoči vodja (ni vpisan pri BZS) — samo ekipni turnirji. */}
+                              {selectedSeason.format === 'turnir' && (
+                                <form className="flex gap-1"
+                                  onSubmit={e => { e.preventDefault(); dodajGostaVodjo(team.id, gostVodja[team.id] ?? '') }}>
+                                  <input type="text" value={gostVodja[team.id] ?? ''}
+                                    onChange={e => setGostVodja(g => ({ ...g, [team.id]: e.target.value }))}
+                                    placeholder="Gost — ime in priimek (ni vpisan pri BZS)"
+                                    className="w-full max-w-xs border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-bocce-green outline-none" />
+                                  <button type="submit" disabled={vodjeBusy || !(gostVodja[team.id] ?? '').trim()}
+                                    className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-100 disabled:opacity-40">
+                                    Dodaj gosta
+                                  </button>
+                                </form>
+                              )}
                               {zadetkiVodij.length > 0 && (
                                 <div className="mt-1 max-w-xs border border-gray-200 rounded-lg divide-y divide-gray-100 bg-white">
                                   {zadetkiVodij
