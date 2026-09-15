@@ -527,7 +527,9 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
 
     const tocke = jePokal ? tockeUvrstitvePokal : tockeUvrstitveSuperLiga
     const postave = new Map(((teams ?? []) as LeagueTeam[])
-      .map(t => [t.id, (t.league_team_players ?? []).map(p => p.player_id).filter(Boolean)]))
+      .map(t => [t.id, (t.league_team_players ?? [])
+        .map(p => p.player_id)
+        .filter((id): id is string => !!id)]))
 
     // Točke za uvrstitev ekipe dobi samo, kdor je tudi igral.
     const jeIgral = (pid: string) => imaNastopVOknu(accByCat[cat][pid])

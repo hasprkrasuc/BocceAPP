@@ -226,6 +226,8 @@ export interface LeagueTeam {
   club_id: string | null
   /** Žrebana številka (1..N oz. 1..6 znotraj skupine) za Bergerjev razpored; NULL = žreb še ni opravljen */
   draw_number: number | null
+  /** Logotip/zastava ekipe (reprezentance na ekipnih turnirjih); pri prikazu ima prednost pred klubskim. */
+  logo_url?: string | null
   /** Ročno vnesena končna uvrstitev (za zgodovinske uvoze brez tekem); prepiše izračunano pri rang točkah. */
   final_rank?: number | null
   /** Samo za format='groups': v kateri skupini faze 1 je ekipa ('A'/'B'). NULL = žreb še ni vnešen. */
@@ -239,7 +241,10 @@ export interface LeagueTeam {
 export interface LeagueTeamPlayer {
   id: string
   league_team_id: string
-  player_id: string
+  /** NULL pri gostujočem igralcu (ekipni turnirji) — takrat je vpisan guest_name. */
+  player_id: string | null
+  /** Prosto vpisano ime gosta (tuji reprezentant); izključuje se s player_id. */
+  guest_name?: string | null
   jersey_number?: number | null
   player?: UserProfile
 }
