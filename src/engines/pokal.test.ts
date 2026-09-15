@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest'
 import {
   pariPrvegaKroga, pokalniPajek, prostiVPrvemKrogu, tekmePrvegaKroga,
   pokalniDomacin, pokalneUvrstitve, rangLige, POKAL_VELIKOST, RANG_NEZNAN,
+  velikostPajka, oznakeKrogov,
   type PokalEkipa, type PokalIzid,
 } from './pokal'
 
@@ -278,5 +279,117 @@ describe('pokalna sezona ne sme uiti med lige', () => {
     expect(vsebina, `datoteke ${pot} ni med prebranimi`).toBeDefined()
     expect(vsebina, `${kaj} ne izpušča ekipnih turnirjev — dodaj .neq('format', 'turnir')`)
       .toMatch(/\.neq\(\s*['"]format['"]\s*,\s*['"]turnir['"]\s*\)/)
+  })
+})
+
+describe('velikostPajka', () => {
+  const e = (...st: number[]) => st.map((drawNumber, i) => ({ teamId: `t${i}`, drawNumber }))
+
+  test('velikost pove največja žrebana številka, ne število ekip', () => {
+    // 10 ekip na številkah do 15 → pajek 16, ne 16-ekipni pajek in ne 8
+    expect(velikostPajka(e(1, 3, 5, 7, 9, 10, 11, 13, 14, 15))).toBe(16)
+  })
+
+  test('moški pokal 2026/27: 47 ekip do številke 64 → 64', () => {
+    expect(velikostPajka(e(1, 33, 64))).toBe(64)
+  })
+
+  test('zaokroži navzgor na potenco dvojke', () => {
+    expect(velikostPajka(e(9))).toBe(16)
+    expect(velikostPajka(e(16))).toBe(16)
+    expect(velikostPajka(e(17))).toBe(32)
+    expect(velikostPajka(e(1, 2))).toBe(2)
+  })
+
+  test('brez žreba vrne privzeto velikost', () => {
+    expect(velikostPajka([])).toBe(POKAL_VELIKOST)
+  })
+
+  test('izračunana velikost vedno sprejme ves žreb', () => {
+    const ekipe = e(1, 3, 5, 7, 9, 10, 11, 13, 14, 15)
+    expect(() => pariPrvegaKroga(ekipe, velikostPajka(ekipe))).not.toThrow()
+  })
+})
+
+describe('oznakeKrogov', () => {
+  test('pajek 64 obdrži dosedanja imena', () => {
+    expect(oznakeKrogov(64).map(k => k.naslov)).toEqual(
+      ['1. krog', '2. krog', 'Osmina finala', 'Četrtfinale', 'Polfinale', 'Finale'])
+  })
+
+  test('pajek 16: r16 je PRVI krog, ne osmina finala', () => {
+    expect(oznakeKrogov(16)).toEqual([
+      { stage: 'r16', naslov: '1. krog' },
+      { stage: 'qf', naslov: 'Četrtfinale' },
+      { stage: 'sf', naslov: 'Polfinale' },
+      { stage: 'final', naslov: 'Finale' },
+    ])
+  })
+
+  test('pajek 8 se začne s četrtfinalom', () => {
+    expect(oznakeKrogov(8).map(k => k.stage)).toEqual(['qf', 'sf', 'final'])
+    expect(oznakeKrogov(8)[0].naslov).toBe('1. krog')
+  })
+})
+
+// ── Pokal BZS za članice 2026 — pravi žreb komisije za žensko balinanje ─────
+// Vir: »Opravljen žreb Pokala BZS za članice«, 14. 9. 2026. Deset ekip na
+// pajku šestnajstih: dve tekmi 1. kroga, šest ekip prostih v četrtfinale.
+describe('Pokal BZS članice 2026 — pajek iz žrebanih številk', () => {
+  const ZREB: Record<string, number> = {
+    'Šiška': 1, 'Sivke Postojna': 3, 'Deskle': 5, 'Hrast Kobjeglava': 7,
+    '4. Julij': 9, 'Podskala': 10, 'Pivka Oro Met': 11,
+    'Kanal': 13, 'Bistrica pri Tržiču': 14, 'Brus Team Idrija': 15,
+  }
+  const ekipe: PokalEkipa[] = Object.entries(ZREB).map(([teamId, drawNumber]) => ({ teamId, drawNumber }))
+  const velikost = velikostPajka(ekipe)
+
+  test('deset ekip da pajek šestnajstih', () => {
+    expect(ekipe).toHaveLength(10)
+    expect(velikost).toBe(16)
+  })
+
+  test('prvi krog se imenuje »1. krog«, ne osmina finala', () => {
+    expect(oznakeKrogov(velikost)[0]).toEqual({ stage: 'r16', naslov: '1. krog' })
+  })
+
+  test('v 1. krogu sta odigrani natanko dve tekmi', () => {
+    const pajek = pokalniPajek(ekipe, [], velikost)
+    const prvi = pajek.filter(m => m.stage === 'r16' && !m.isBye && m.teamA && m.teamB)
+    expect(prvi.map(m => [m.teamA, m.teamB])).toEqual([
+      ['4. Julij', 'Podskala'],
+      ['Kanal', 'Bistrica pri Tržiču'],
+    ])
+  })
+
+  test('šest ekip je prostih v četrtfinale', () => {
+    expect(prostiVPrvemKrogu(ekipe, velikost).sort()).toEqual([
+      'Brus Team Idrija', 'Deskle', 'Hrast Kobjeglava', 'Pivka Oro Met', 'Sivke Postojna', 'Šiška',
+    ].sort())
+  })
+
+  test('četrtfinale se ujema z razporedom komisije', () => {
+    // Odigrani obe tekmi 1. kroga: naprej gresta 4. Julij in Kanal.
+    const izidi: PokalIzid[] = [
+      { homeTeamId: '4. Julij', awayTeamId: 'Podskala', winnerTeamId: '4. Julij' },
+      { homeTeamId: 'Kanal', awayTeamId: 'Bistrica pri Tržiču', winnerTeamId: 'Kanal' },
+    ]
+    const cf = pokalniPajek(ekipe, izidi, velikost)
+      .filter(m => m.stage === 'qf')
+      .map(m => [m.teamA, m.teamB])
+    expect(cf).toEqual([
+      ['Šiška', 'Sivke Postojna'],
+      ['Deskle', 'Hrast Kobjeglava'],
+      ['4. Julij', 'Pivka Oro Met'],
+      ['Kanal', 'Brus Team Idrija'],
+    ])
+  })
+
+  test('prvonapisana ekipa iz žreba je tudi prva v paru (domačin)', () => {
+    // rangLige za ženske vrne null, zato vse ekipe dobijo RANG_NEZNAN in
+    // pokalniDomacin ohrani žrebni vrstni red — prav tako, kot pravi razpis.
+    const rang = new Map<string, number>()
+    expect(pokalniDomacin('Šiška', 'Sivke Postojna', rang)).toEqual(['Šiška', 'Sivke Postojna'])
+    expect(rangLige('1_liga', 'women')).toBeNull()
   })
 })
