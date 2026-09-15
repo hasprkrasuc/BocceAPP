@@ -1800,7 +1800,7 @@ export default function LeagueAdmin() {
                       {team.league_team_players?.map(p => (
                         <span key={p.id} className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${p.guest_name
                           ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-                          {p.player?.full_name ?? (p.guest_name ? `${p.guest_name} · gost` : '?')}
+                          {p.player?.full_name ?? p.guest_name ?? '?'}
                           <button onClick={() => removePlayerFromTeam(p.id)} className="text-gray-400 hover:text-red-500 ml-1">×</button>
                         </span>
                       ))}
