@@ -69,8 +69,25 @@ function TournamentCard({ t, basePath }: { t: Tournament; basePath: string }) {
 
 const CAT_ORDER: TournamentCategory[] = ['men', 'women', 'u18', 'u18_women', 'mixed', 'u15', 'u12']
 
+/** Ekipni turnir = league_seasons s format='turnir' (ligaški zapisnik, enokrožni
+ *  round robin). Prikaže se med turnirji, odpre pa se kot liga (/liga/:id). */
+interface EkipniTurnir {
+  id: string
+  name: string
+  year: number
+  status: string
+  league_teams: Array<{ count: number }>
+}
+
+const EKIPNI_STATUS: Record<string, { label: string; cls: string }> = {
+  draft:     { label: 'V pripravi', cls: 'bg-gray-100 text-gray-600' },
+  active:    { label: 'V teku', cls: 'bg-green-100 text-green-700' },
+  completed: { label: 'Zaključen', cls: 'bg-blue-100 text-blue-700' },
+}
+
 export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind }) {
   const [tournaments, setTournaments] = useState<Tournament[]>([])
+  const [ekipni, setEkipni] = useState<EkipniTurnir[]>([])
   const [filter, setFilter] = useState<TournamentStatus | 'all'>('all')
   const [loading, setLoading] = useState(true)
   const [closedCats, setClosedCats] = useState<Set<string>>(new Set())
@@ -78,6 +95,13 @@ export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind 
   useEffect(() => {
     supabase.from('tournaments').select('*').eq('kind', kind).order('date', { ascending: false })
       .then(({ data }) => { setTournaments((data ?? []) as Tournament[]); setLoading(false) })
+    if (kind === 'tournament') {
+      supabase.from('league_seasons').select('id, name, year, status, league_teams(count)')
+        .eq('format', 'turnir').order('year', { ascending: false })
+        .then(({ data }) => setEkipni((data ?? []) as unknown as EkipniTurnir[]))
+    } else {
+      setEkipni([])
+    }
   }, [kind])
 
   const statuses: Array<TournamentStatus | 'all'> = ['all', 'registration_open', 'in_progress', 'completed']
@@ -110,9 +134,41 @@ export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind 
 
       {loading ? (
         <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 italic">Ni {isChamp ? 'prvenstev' : 'turnirjev'}</div>
-      ) : !isChamp ? (
+      ) : (
+        <>
+          {/* Ekipni turnirji (reprezentance) — ligaški zapisnik, enokrožni round robin */}
+          {!isChamp && ekipni.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">Ekipni turnirji</h2>
+              <div className="space-y-3">
+                {ekipni.map(s => {
+                  const st = EKIPNI_STATUS[s.status] ?? EKIPNI_STATUS.draft
+                  return (
+                    <Link key={s.id} to={`/liga/${s.id}`}
+                      className="block bg-white border border-gray-200 rounded-xl p-4 hover:border-bocce-green hover:shadow-sm transition-all">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold text-gray-800">{s.name}</h3>
+                          <p className="text-sm text-gray-500 mt-0.5">
+                            {s.league_teams?.[0]?.count ?? 0} ekip · enokrožni round robin · ligaški zapisnik
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${st.cls}`}>
+                          {st.label}
+                        </span>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {filtered.length === 0 ? (
+            ekipni.length === 0 && (
+              <div className="text-center py-12 text-gray-400 italic">Ni {isChamp ? 'prvenstev' : 'turnirjev'}</div>
+            )
+          ) : !isChamp ? (
         <div className="space-y-3">
           {filtered.map(t => <TournamentCard key={t.id} t={t} basePath={basePath} />)}
         </div>
@@ -149,7 +205,9 @@ export function TournamentList({ kind = 'tournament' }: { kind?: TournamentKind 
               </div>
             )
           })}
-        </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

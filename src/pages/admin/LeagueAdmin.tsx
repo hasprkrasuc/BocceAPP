@@ -34,6 +34,10 @@ const FORMAT_LABELS: Record<LeagueSeasonFormat, string> = {
   // Pokal razporeda ne generira: pari izhajajo iz žrebanih številk (glej
   // src/engines/pokal.ts), tu se ureja samo ekipe in discipline zapisnika.
   pokal: 'Pokal (izločilno)',
+  // Ekipni turnir (reprezentance): ligaški zapisnik, VEDNO enokrožni round
+  // robin. Ni raven državnih lig (tier NULL) in ne šteje v rang lestvico;
+  // kartico ima na strani /turnirji.
+  turnir: 'Ekipni turnir (enokrožno)',
 }
 
 /** Predlog razdelitve po 9 kolih: po pet ekip v vsaki skupini. */
@@ -74,6 +78,7 @@ const LEAGUE_COLUMNS: Array<{ label: string; match: (s: LeagueSeason) => boolean
   { label: '2. liga vzhod', match: s => s.tier === '2_liga_vzhod' },
   { label: 'Območne lige', match: s => s.tier === 'obz' },
   { label: 'Pokal', match: s => s.format === 'pokal' },
+  { label: 'Ekipni turnirji', match: s => s.format === 'turnir' },
   { label: 'U18', match: s => s.category === 'u18' },
   { label: 'U14', match: s => s.category === 'u14' },
 ]
@@ -383,24 +388,31 @@ export default function LeagueAdmin() {
     // "Območna liga" (League.tsx: `s.obz_name ?? 'Območna liga'`) in je od
     // drugih ne bi bilo mogoče ločiti. Po ustvarjanju je ni mogoče popraviti
     // drugače kot z ročnim SQL, zato ustavimo tu.
-    if (form.tier === 'obz' && !form.obz_name) {
+    if (form.tier === 'obz' && form.format !== 'turnir' && !form.obz_name) {
       setMessage('⚠ Območna liga potrebuje območno zvezo.')
       return
     }
+    // Ekipni turnir ni raven državnih lig: tier NULL (kot pokal), razpored je
+    // vedno enokrožen.
+    const jeTurnir = form.format === 'turnir'
     setLoading(true)
     const { data, error } = await supabase.from('league_seasons').insert({
       name: form.name, year: form.year, category: form.category,
-      tier: form.tier, obz_name: form.tier === 'obz' ? form.obz_name : null,
+      tier: jeTurnir ? null : form.tier,
+      obz_name: !jeTurnir && form.tier === 'obz' ? form.obz_name : null,
       format: form.format, rounds_count: form.rounds_count, win_points: form.win_points,
       draw_points: form.draw_points, loss_points: form.loss_points,
-      berger_mirror: form.berger_mirror, double_round: form.double_round,
+      berger_mirror: form.berger_mirror,
+      double_round: jeTurnir ? false : form.double_round,
       status: 'draft',
     }).select().single()
     if (error) {
       setMessage(`⚠ Sezone ni bilo mogoče ustvariti: ${error.message}`)
     } else if (data) {
       setMessage('')
-      await seedDisciplines(data.id, form.tier)
+      // Turnir dobi polni (superligaški) nabor disciplin — reprezentančne
+      // tekme se igrajo s polnim zapisnikom; admin jih po potrebi prilagodi.
+      await seedDisciplines(data.id, jeTurnir ? 'super_liga' : form.tier)
       setShowCreate(false)
       await loadSeasons()
       setSelectedSeason(data as LeagueSeason)
@@ -524,9 +536,11 @@ export default function LeagueAdmin() {
     // Enokrožno/dvokrožno bere iz double_round, NE iz rounds_count: ta je po
     // generiranju število kol, zato bi ga `> 1` prebral kot dvokrožno tudi pri
     // enokrožni ligi in bi vsaka regeneracija podvojila razpored.
+    // Ekipni turnir je po definiciji enokrožen — brez povratnih tekem.
+    const dvokrozno = selectedSeason.format === 'turnir' ? false : (selectedSeason.double_round ?? false)
     let fixtureList
     try {
-      fixtureList = bergerFixtures(teams, selectedSeason.double_round ?? false, selectedSeason.berger_mirror ?? false)
+      fixtureList = bergerFixtures(teams, dvokrozno, selectedSeason.berger_mirror ?? false)
     } catch (err) {
       setMessage(`⚠ ${err instanceof Error ? err.message : 'Napaka pri žrebu'}`)
       return
@@ -535,7 +549,7 @@ export default function LeagueAdmin() {
     const zamenjave = opozoriloOZamenjavah(fixtures.filter(f => !f.group_label), fixtureList)
     if (!window.confirm(
       `Ustvari Bergerjev razpored za ${teams.length} ekip — ` +
-      `${selectedSeason.double_round ? 'dvokrožno' : 'enokrožno'}, ${kol} kol, ${fixtureList.length} tekem? ` +
+      `${dvokrozno ? 'dvokrožno' : 'enokrožno'}, ${kol} kol, ${fixtureList.length} tekem? ` +
       'To bo izbrisalo obstoječe tekme!' + (zamenjave ? `\n\n${zamenjave}` : '')
     )) return
     setLoading(true)
@@ -1298,16 +1312,19 @@ export default function LeagueAdmin() {
                 </p>
               )}
             </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Rang *</label>
-              <select value={form.tier} onChange={set('tier')}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
-                {(Object.entries(TIER_LABELS) as [LeagueTier, string][]).map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
-                ))}
-              </select>
-            </div>
-            {form.tier === 'obz' && (
+            {/* Ekipni turnir ni raven državnih lig — rang se ne izbira (tier NULL). */}
+            {form.format !== 'turnir' && (
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Rang *</label>
+                <select value={form.tier} onChange={set('tier')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                  {(Object.entries(TIER_LABELS) as [LeagueTier, string][]).map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {form.tier === 'obz' && form.format !== 'turnir' && (
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Območna zveza *</label>
                 <select required value={form.obz_name} onChange={set('obz_name')}
@@ -1355,9 +1372,11 @@ export default function LeagueAdmin() {
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Krogi</label>
                 <div className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500">
-                  {form.format === 'split'
-                    ? 'Nastavi se samodejno (9 po fazi 1, 14 po fazi 2)'
-                    : 'Nastavi se samodejno (10 po fazi 1, 16 po fazi 2)'}
+                  {form.format === 'turnir'
+                    ? 'Enokrožni round robin — brez povratnih tekem'
+                    : form.format === 'split'
+                      ? 'Nastavi se samodejno (9 po fazi 1, 14 po fazi 2)'
+                      : 'Nastavi se samodejno (10 po fazi 1, 16 po fazi 2)'}
                 </div>
               </div>
             )}

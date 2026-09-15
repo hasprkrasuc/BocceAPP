@@ -267,4 +267,16 @@ describe('pokalna sezona ne sme uiti med lige', () => {
       .not.toMatch(/\.neq\(\s*['"]format['"]\s*,\s*['"]pokal['"]\s*\)/)
     expect(vsebina).toMatch(/'pokal'/)
   })
+
+  // Ekipni turnir (format 'turnir') je tudi sezona z ligaškim zapisnikom, a ni
+  // ne liga ne del rang sistema — kartico ima na /turnirji.
+  test.each([
+    ['../pages/League.tsx', 'seznam državnih lig'],
+    ['../lib/rangLestvica.ts', 'rang lestvica'],
+  ])('%s izpušča ekipne turnirje', (pot, kaj) => {
+    const vsebina = viri[pot]
+    expect(vsebina, `datoteke ${pot} ni med prebranimi`).toBeDefined()
+    expect(vsebina, `${kaj} ne izpušča ekipnih turnirjev — dodaj .neq('format', 'turnir')`)
+      .toMatch(/\.neq\(\s*['"]format['"]\s*,\s*['"]turnir['"]\s*\)/)
+  })
 })
