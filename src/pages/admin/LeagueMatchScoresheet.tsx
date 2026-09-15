@@ -8,7 +8,7 @@ import type { LeagueFixture, LeagueSeasonDiscipline, LeagueMatchResult, LeagueMa
 import { evaluatePlayerLineup, seasonUsesBlock2Rule, type LineupDisc } from '../../engines/leagueLineup'
 import { formatMatchDateTime } from '../../lib/matchDate'
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
-import KlubskiGrb from '../../components/KlubskiGrb'
+import KlubskiGrb, { logoEkipe } from '../../components/KlubskiGrb'
 import { vrsticeSodnikov } from '../../lib/podpisiZapisnika'
 import { jeAdminTeLige, smeUrejatiZapisnik } from '../../lib/pravicaNadTekmo'
 
@@ -230,7 +230,8 @@ export default function LeagueMatchScoresheet() {
         .eq('fixture_id', fixtureId).maybeSingle(),
     ])
     if (!fx) { setLoading(false); return }
-    const f = fx as LeagueFixture & { home_team: { league_team_players?: Array<{ player: { id: string; full_name: string | null } }> }; away_team: { league_team_players?: Array<{ player: { id: string; full_name: string | null } }> } }
+    type PostavaVrstica = { player: { id: string; full_name: string | null } | null; guest_name?: string | null }
+    const f = fx as LeagueFixture & { home_team: { league_team_players?: PostavaVrstica[] }; away_team: { league_team_players?: PostavaVrstica[] } }
     setFixture(fx as LeagueFixture)
     // scheduled_date je timestamptz (ISO); <input datetime-local> potrebuje "YYYY-MM-DDTHH:mm"
     const sd = (fx as LeagueFixture).scheduled_date
@@ -239,9 +240,16 @@ export default function LeagueMatchScoresheet() {
     setChiefJudgeUserId((fx as LeagueFixture).chief_judge_id ?? '')
     setJudgeUserIds((fx as LeagueFixture).judge_ids ?? [])
 
-    // Build rosters
-    const toRoster = (players?: Array<{ player: { id: string; full_name: string | null } }>): RosterPlayer[] =>
-      (players ?? []).filter(p => p.player?.full_name).map(p => ({ playerId: p.player.id, name: p.player.full_name! }))
+    // Build rosters. Gost (guest_name, brez računa — ekipni turnirji) nastopa
+    // v zapisniku s svojim imenom kot prostim besedilom: tako obliko
+    // discipline_results že poznajo, statistika pa jo obravnava kot
+    // tekmovalca brez registra.
+    const toRoster = (players?: Array<{ player: { id: string; full_name: string | null } | null; guest_name?: string | null }>): RosterPlayer[] =>
+      (players ?? []).flatMap(p => {
+        if (p.player?.full_name) return [{ playerId: p.player.id, name: p.player.full_name }]
+        if (p.guest_name) return [{ playerId: p.guest_name, name: `${p.guest_name} (gost)` }]
+        return []
+      })
     setHomeRoster(toRoster(f.home_team?.league_team_players))
     setAwayRoster(toRoster(f.away_team?.league_team_players))
 
@@ -581,7 +589,7 @@ export default function LeagueMatchScoresheet() {
               <p className="font-bold text-gray-800 text-xl">{fixture.home_team?.club_name ?? '—'}</p>
               <p className="text-xs text-gray-400">Domači</p>
             </div>
-            <KlubskiGrb ime={fixture.home_team?.club_name} logoUrl={fixture.home_team?.club?.logo_url} velikost="lg" />
+            <KlubskiGrb ime={fixture.home_team?.club_name} logoUrl={logoEkipe(fixture.home_team)} velikost="lg" />
           </div>
           <div className="text-center px-4">
             <div className="text-5xl font-bold text-bocce-green font-mono leading-none">
@@ -592,7 +600,7 @@ export default function LeagueMatchScoresheet() {
             <p className="text-xs text-gray-400">punt razlika</p>
           </div>
           <div className="flex-1 min-w-[150px] flex items-center gap-3">
-            <KlubskiGrb ime={fixture.away_team?.club_name} logoUrl={fixture.away_team?.club?.logo_url} velikost="lg" />
+            <KlubskiGrb ime={fixture.away_team?.club_name} logoUrl={logoEkipe(fixture.away_team)} velikost="lg" />
             <div className="text-left">
               <p className="font-bold text-gray-800 text-xl">{fixture.away_team?.club_name ?? '—'}</p>
               <p className="text-xs text-gray-400">Gostje</p>

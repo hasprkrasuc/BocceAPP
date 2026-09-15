@@ -8,7 +8,7 @@
  */
 import { sl } from '../i18n/sl'
 import type { TeamStats } from '../types'
-import KlubskiGrb from './KlubskiGrb'
+import KlubskiGrb, { logoEkipe } from './KlubskiGrb'
 
 interface Props {
   standings: TeamStats[]
@@ -51,7 +51,7 @@ export default function LeagueTable({ standings, highlightTeamId }: Props) {
                 </td>
                 <td className="px-3 py-2.5">
                   <span className="flex items-center gap-2">
-                    <KlubskiGrb ime={row.team.club_name} logoUrl={row.team.club?.logo_url} velikost="md" />
+                    <KlubskiGrb ime={row.team.club_name} logoUrl={logoEkipe(row.team)} velikost="md" />
                     <span className={isHighlighted ? 'text-bocce-green' : 'text-gray-800'}>{row.team.club_name}</span>
                     {row.team.short_name && <span className="text-xs text-gray-400">({row.team.short_name})</span>}
                   </span>

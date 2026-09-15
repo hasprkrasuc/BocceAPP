@@ -2,10 +2,19 @@
  * Grb kluba ob imenu ekipe.
  *
  * Logotip pride iz kluba (`clubs.logo_url`), na ekipo pa je vezan prek
- * `league_teams.club_id`. Ekipe brez te povezave in klubi brez naložene slike
- * so povsem običajni — takrat se izriše krogec z začetnicami, da vrstica ne
+ * `league_teams.club_id`. Ekipa ima lahko tudi SVOJ logotip
+ * (`league_teams.logo_url` — npr. zastava reprezentance na ekipnem turnirju),
+ * ki ima prednost; skupno pravilo je `logoEkipe`. Ekipe brez logotipa so
+ * povsem običajne — takrat se izriše krogec z začetnicami, da vrstica ne
  * poskoči in da se ekipe med sabo še vedno ločijo na prvi pogled.
  */
+
+/** Logotip ekipe: njen lastni pred klubskim; null, kadar ni nobenega. */
+export function logoEkipe(
+  ekipa: { logo_url?: string | null; club?: { logo_url: string | null } | null } | null | undefined,
+): string | null {
+  return ekipa?.logo_url ?? ekipa?.club?.logo_url ?? null
+}
 
 interface Props {
   /** Ime ekipe, kakor je prijavljena — iz njega so začetnice, kadar logotipa ni. */

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
-import KlubskiGrb from '../components/KlubskiGrb'
+import KlubskiGrb, { logoEkipe } from '../components/KlubskiGrb'
 import { useRealtimeTable, useJitteredCallback, mergeRowById } from '../lib/useRealtimeTable'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
@@ -274,7 +274,7 @@ function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: s
           <span className={`font-medium text-sm text-right ${f.home_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
             {f.home_team?.club_name}
           </span>
-          <KlubskiGrb ime={f.home_team?.club_name} logoUrl={f.home_team?.club?.logo_url} velikost="md" />
+          <KlubskiGrb ime={f.home_team?.club_name} logoUrl={logoEkipe(f.home_team)} velikost="md" />
         </div>
         <div className="text-center min-w-[80px]">
           {f.status === 'completed' ? (
@@ -288,7 +288,7 @@ function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: s
           )}
         </div>
         <div className="flex-1 flex items-center gap-2 min-w-0">
-          <KlubskiGrb ime={f.away_team?.club_name} logoUrl={f.away_team?.club?.logo_url} velikost="md" />
+          <KlubskiGrb ime={f.away_team?.club_name} logoUrl={logoEkipe(f.away_team)} velikost="md" />
           <span className={`font-medium text-sm ${f.away_team_id === myTeamId ? 'text-bocce-green' : 'text-gray-800'}`}>
             {f.away_team?.club_name}
           </span>
@@ -518,7 +518,7 @@ export function LeagueDetail() {
           </div>
           {myTeam && (
             <div className="bg-bocce-green/5 border border-bocce-green/20 rounded-lg px-4 py-2 flex items-center gap-3">
-              <KlubskiGrb ime={myTeam.club_name} logoUrl={myTeam.club?.logo_url} velikost="md" />
+              <KlubskiGrb ime={myTeam.club_name} logoUrl={logoEkipe(myTeam)} velikost="md" />
               <div className="text-right">
                 <p className="text-xs text-gray-500">Moja ekipa</p>
                 <p className="font-semibold text-bocce-green">{myTeam.club_name}</p>
@@ -732,13 +732,13 @@ export function LeagueDetail() {
                                 className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 flex items-center gap-4 opacity-50">
                                 <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
                                   <span className="font-medium text-sm text-gray-500 text-right">{f.home_team?.club_name}</span>
-                                  <KlubskiGrb ime={f.home_team?.club_name} logoUrl={f.home_team?.club?.logo_url} velikost="md" />
+                                  <KlubskiGrb ime={f.home_team?.club_name} logoUrl={logoEkipe(f.home_team)} velikost="md" />
                                 </div>
                                 <div className="text-center min-w-[80px]">
                                   <span className="text-xs text-gray-400 italic">ni bila odigrana</span>
                                 </div>
                                 <div className="flex-1 flex items-center gap-2 min-w-0">
-                                  <KlubskiGrb ime={f.away_team?.club_name} logoUrl={f.away_team?.club?.logo_url} velikost="md" />
+                                  <KlubskiGrb ime={f.away_team?.club_name} logoUrl={logoEkipe(f.away_team)} velikost="md" />
                                   <span className="font-medium text-sm text-gray-500">{f.away_team?.club_name}</span>
                                 </div>
                               </div>
@@ -791,7 +791,7 @@ export function LeagueDetail() {
           {teams.map(team => (
             <div key={team.id} className="bg-white border border-gray-200 rounded-xl p-4">
               <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                <KlubskiGrb ime={team.club_name} logoUrl={team.club?.logo_url} velikost="lg" />
+                <KlubskiGrb ime={team.club_name} logoUrl={logoEkipe(team)} velikost="lg" />
                 <span>{team.club_name}</span>
               </h3>
               {team.captain && (

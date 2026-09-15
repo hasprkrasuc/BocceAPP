@@ -18,7 +18,8 @@ import { useAuth } from '../../contexts/AuthContext'
 import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
 import { oznakaIgralca } from '../../lib/playerNames'
 import { najdiKlub, predlagajPovezave, type KlubZaUjemanje } from '../../engines/ujemanjeKlubov'
-import KlubskiGrb from '../../components/KlubskiGrb'
+import KlubskiGrb, { logoEkipe } from '../../components/KlubskiGrb'
+import ImageUpload from '../../components/ImageUpload'
 import {
   polfinale, finale, zmagovalecSerije, prvoKoloPolfinala, prvoKoloFinala,
   turnirPolfinala, turnirZakljucek,
@@ -126,6 +127,8 @@ export default function LeagueAdmin() {
     berger_mirror: false, double_round: false,
   })
   const [teamForm, setTeamForm] = useState<TeamForm>({ club_name: '', short_name: '', captain_id: '' })
+  /** Vnos imena gostujočega igralca po ekipah (samo ekipni turnirji). */
+  const [gostIme, setGostIme] = useState<Record<string, string>>({})
   /**
    * Licencirani vodje ekip (tabela team_leaders). To NI isto kot `captain_id`
    * zgoraj: kapetan je eden, licenciranih vodij je lahko več, njihov vir pa je
@@ -449,6 +452,24 @@ export default function LeagueAdmin() {
   async function addPlayerToTeam(teamId: string, playerId: string) {
     if (!playerId) return
     await supabase.from('league_team_players').insert({ league_team_id: teamId, player_id: playerId })
+    loadTeams()
+  }
+
+  /** Logotip/zastava ekipe (ekipni turnirji — reprezentanca ni klub). */
+  async function saveTeamLogo(teamId: string, url: string | null) {
+    const { error } = await supabase.from('league_teams').update({ logo_url: url }).eq('id', teamId)
+    if (error) { setMessage(`⚠ Logotipa ni bilo mogoče shraniti: ${error.message}`); return }
+    loadTeams()
+  }
+
+  /** Gostujoči igralec (ekipni turnirji): prosto vpisano ime, brez računa. */
+  async function addGuestToTeam(teamId: string, ime: string) {
+    const cisto = ime.trim()
+    if (!cisto) return
+    const { error } = await supabase.from('league_team_players')
+      .insert({ league_team_id: teamId, guest_name: cisto })
+    if (error) { setMessage(`⚠ Gosta ni bilo mogoče dodati: ${error.message}`); return }
+    setGostIme(g => ({ ...g, [teamId]: '' }))
     loadTeams()
   }
 
@@ -1638,9 +1659,29 @@ export default function LeagueAdmin() {
                       </div>
                       <button onClick={() => removeTeam(team.id)} className="text-xs text-red-400 hover:text-red-600">Izbriši</button>
                     </div>
-                    {/* Klub ekipe — od tod pride logotip na javnih straneh. */}
+                    {/* Klub ekipe — od tod pride logotip na javnih straneh. Ekipni
+                        turnir: reprezentanca ni klub, zato namesto kluba naloži
+                        svoj logotip/zastavo (league_teams.logo_url). */}
+                    {selectedSeason.format === 'turnir' ? (
+                      <div className="flex items-center gap-3 mb-3 flex-wrap">
+                        <ImageUpload
+                          bucket="media"
+                          path={`teams/logos/${team.id}`}
+                          currentUrl={team.logo_url ?? null}
+                          onUpload={url => saveTeamLogo(team.id, url)}
+                          label="Logotip / zastava"
+                          shape="square"
+                        />
+                        {team.logo_url && (
+                          <button onClick={() => saveTeamLogo(team.id, null)}
+                            className="text-xs text-red-400 hover:text-red-600 self-end mb-2">
+                            Odstrani logotip
+                          </button>
+                        )}
+                      </div>
+                    ) : (
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
-                      <KlubskiGrb ime={team.club_name} logoUrl={team.club?.logo_url} velikost="md" />
+                      <KlubskiGrb ime={team.club_name} logoUrl={logoEkipe(team)} velikost="md" />
                       <select value={team.club_id ?? ''} onChange={e => changeTeamClub(team.id, e.target.value)}
                         className={`border rounded-lg px-2 py-1 text-xs bg-white focus:ring-2 focus:ring-bocce-green outline-none
                           ${team.club_id ? 'border-gray-300 text-gray-700' : 'border-amber-300 text-amber-700'}`}>
@@ -1663,6 +1704,7 @@ export default function LeagueAdmin() {
                         return <span className="text-xs text-gray-400">ni ujemanja po imenu</span>
                       })()}
                     </div>
+                    )}
 
                     {/* Licencirani vodje ekipe. NAMENOMA ločeno od `captain_id`
                         zgoraj: kapetan je eden, licenciranih vodij je lahko več
@@ -1723,13 +1765,14 @@ export default function LeagueAdmin() {
                     })()}
                     <div className="flex flex-wrap gap-2 mb-2">
                       {team.league_team_players?.map(p => (
-                        <span key={p.id} className="flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-full">
-                          {p.player?.full_name}
+                        <span key={p.id} className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${p.guest_name
+                          ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {p.player?.full_name ?? (p.guest_name ? `${p.guest_name} · gost` : '?')}
                           <button onClick={() => removePlayerFromTeam(p.id)} className="text-gray-400 hover:text-red-500 ml-1">×</button>
                         </span>
                       ))}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white"
                         defaultValue=""
                         onChange={e => { if (e.target.value) addPlayerToTeam(team.id, e.target.value); e.target.value = '' }}>
@@ -1737,6 +1780,20 @@ export default function LeagueAdmin() {
                         {players.filter(p => !team.league_team_players?.some(tp => tp.player_id === p.id))
                           .map(p => <option key={p.id} value={p.id}>{oznakaIgralca(p, { klub: true })}</option>)}
                       </select>
+                      {/* Gostujoči igralci (tuji reprezentanti) — samo na ekipnih turnirjih. */}
+                      {selectedSeason.format === 'turnir' && (
+                        <form className="flex gap-1"
+                          onSubmit={e => { e.preventDefault(); addGuestToTeam(team.id, gostIme[team.id] ?? '') }}>
+                          <input type="text" value={gostIme[team.id] ?? ''}
+                            onChange={e => setGostIme(g => ({ ...g, [team.id]: e.target.value }))}
+                            placeholder="+ Gost (ime in priimek)"
+                            className="border border-blue-200 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-bocce-green outline-none" />
+                          <button type="submit" disabled={!(gostIme[team.id] ?? '').trim()}
+                            className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-100 disabled:opacity-40">
+                            Dodaj gosta
+                          </button>
+                        </form>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1752,7 +1809,7 @@ export default function LeagueAdmin() {
                   className="text-xs bg-bocce-green text-white px-3 py-1.5 rounded-lg hover:bg-bocce-green-light">
                   + Dodaj disciplino
                 </button>
-                <button onClick={() => seedDisciplines(selectedSeason.id, selectedSeason.tier).then(loadDisciplines)}
+                <button onClick={() => seedDisciplines(selectedSeason.id, selectedSeason.format === 'turnir' ? 'super_liga' : selectedSeason.tier).then(loadDisciplines)}
                   className="text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50">
                   ↺ Ponastavi na privzete
                 </button>
