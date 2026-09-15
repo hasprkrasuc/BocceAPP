@@ -169,9 +169,11 @@ export function LeagueList() {
 
   useEffect(() => {
     // Pokal je tudi sezona (format 'pokal'), a ni liga — nima lestvice ne
-    // kolobarja in ima svojo stran /pokal. Brez tega bi se pojavil med ligami
-    // s prazno tabelo.
-    supabase.from('league_seasons').select('*, league_teams(count)').neq('format', 'pokal')
+    // kolobarja in ima svojo stran /pokal. Enako ekipni turnir (format
+    // 'turnir'), ki ima kartico na /turnirji. Brez tega bi se pojavila med
+    // ligami s prazno tabelo.
+    supabase.from('league_seasons').select('*, league_teams(count)')
+      .neq('format', 'pokal').neq('format', 'turnir')
       .order('year', { ascending: false })
       .then(({ data }) => {
         const list = (data ?? []) as SeasonWithCount[]

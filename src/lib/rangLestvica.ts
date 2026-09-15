@@ -218,6 +218,9 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     // Pokal je zraven NAMENOMA: pokalne tekme štejejo v rang s koeficientom 1.
     // Ker pokal nima ravni (`tier` je NULL), se v izračun preslika prek ključa
     // 'pokal' (glej tierKljuc spodaj in LIGA_KOEF.pokal).
+    // Ekipni turnirji (reprezentance) pa v rang NE štejejo — niso del
+    // slovenskega tekmovalnega sistema.
+    .neq('format', 'turnir')
     .gte('year', currentYear - 2)
     .order('year', { ascending: false })
   if (sErr) throw sErr
@@ -552,7 +555,8 @@ export async function computePlayerSeasonStats(playerId: string): Promise<Player
   const seasonMap = new Map<string, { id: string; name: string; tier: string; year: number; status: string; format: string | null }>()
   for (const r of ((tp ?? []) as any[])) {
     const s = r.league_teams?.season
-    if (s?.id) seasonMap.set(s.id, s)
+    // Ekipni turnirji (reprezentance) ne sodijo v rang statistiko igralca.
+    if (s?.id && s.format !== 'turnir') seasonMap.set(s.id, s)
   }
 
   const out = await Promise.all([...seasonMap.values()].map(async season => {

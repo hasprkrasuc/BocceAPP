@@ -174,7 +174,7 @@ export interface Match {
   team_b?: GroupTeam
 }
 
-export type LeagueSeasonFormat = 'flat' | 'groups' | 'split' | 'pokal'
+export type LeagueSeasonFormat = 'flat' | 'groups' | 'split' | 'pokal' | 'turnir'
 
 export interface LeagueSeason {
   id: string
