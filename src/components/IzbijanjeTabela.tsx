@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import {
-  sistemIzbijanja, napredovali, koncniVrstniRed, jeNastopil, IME_KROGA,
+  sistemIzbijanja, napredovali, koncniVrstniRed, izenacenjaZaRazresiti,
+  jeNastopil, IME_KROGA,
   type KrogIzbijanja, type Nastop,
 } from '../engines/izbijanje'
 
@@ -27,23 +28,32 @@ export interface IzbijanjeIzid {
   registration_id: string
   krog: KrogIzbijanja
   zadetki: number
+  /** Izid dodatnega izbijanja; vpisan samo pri izenačenih. */
+  dodatno?: number | null
 }
+
+/** Katero polje se vpisuje — redna serija ali dodatno izbijanje. */
+export type PoljeIzbijanja = 'zadetki' | 'dodatno'
 
 interface Props {
   prijave: PrijavaIzbijanja[]
   izidi: IzbijanjeIzid[]
   /** Kadar je podan, so izidi urejljivi. Brez njega je tabela samo za branje. */
-  shrani?: (registrationId: string, krog: KrogIzbijanja, zadetki: number | null) => void
+  shrani?: (registrationId: string, krog: KrogIzbijanja, vrednost: number | null,
+            polje: PoljeIzbijanja) => void
   /** Id prijave, ki se ravno shranjuje — polje je medtem onemogočeno. */
   zaposlen?: string | null
 }
 
 export default function IzbijanjeTabela({ prijave, izidi, shrani, zaposlen }: Props) {
-  const { sistem, nastopi, red, dovoljeni, izenacenja, poId } = useMemo(() => {
+  const { sistem, nastopi, red, dovoljeni, poId, zaRazresiti, dodatnoOdprto } = useMemo(() => {
     const sistem = sistemIzbijanja(Math.max(prijave.length, 1))
 
     const poId = new Map(prijave.map(p => [p.id, p]))
     const izidPo = new Map(izidi.map(i => [`${i.registration_id}|${i.krog}`, i.zadetki]))
+    const dodatnoPo = new Map(
+      izidi.filter(i => i.dodatno !== null && i.dodatno !== undefined)
+           .map(i => [`${i.registration_id}|${i.krog}`, i.dodatno as number]))
     const nastopi: Nastop[] = prijave.map((p, i) => ({
       id: p.id,
       // Brez žreba velja vrstni red prijave — številka mora biti stabilna,
@@ -54,22 +64,44 @@ export default function IzbijanjeTabela({ prijave, izidi, shrani, zaposlen }: Pr
           .map(k => [k, izidPo.get(`${p.id}|${k}`) ?? null])
           .filter(([, v]) => v !== null),
       ) as Nastop['izidi'],
+      dodatno: Object.fromEntries(
+        sistem.krogi
+          .map(k => [k, dodatnoPo.get(`${p.id}|${k}`) ?? null])
+          .filter(([, v]) => v !== null),
+      ) as Nastop['dodatno'],
     }))
 
     // Kdo sme nastopiti v katerem krogu: v prvem vsi, v naslednjih le tisti,
     // ki so se uvrstili iz prejšnjega.
     const dovoljeni = new Map<KrogIzbijanja, Set<string>>()
-    const izenacenja = new Map<KrogIzbijanja, string[]>()
     dovoljeni.set(sistem.krogi[0], new Set(prijave.map(p => p.id)))
     sistem.krogi.forEach((krog, i) => {
       if (i === 0) return
-      const { napreduje, izenaceni } = napredovali(
+      const { napreduje } = napredovali(
         nastopi, sistem.krogi[i - 1], sistem.napreduje[i - 1], sistem)
       dovoljeni.set(krog, new Set(napreduje))
-      if (izenaceni.length) izenacenja.set(sistem.krogi[i - 1], izenaceni)
     })
 
-    return { sistem, nastopi, red: koncniVrstniRed(nastopi, sistem), dovoljeni, izenacenja, poId }
+    // Kje je dodatno izbijanje potrebno — tam se odpre svoje polje.
+    const zaRazresiti = izenacenjaZaRazresiti(nastopi, sistem)
+    const dodatnoOdprto = new Map<KrogIzbijanja, Set<string>>()
+    for (const z of zaRazresiti) {
+      const ze = dodatnoOdprto.get(z.krog) ?? new Set<string>()
+      z.ids.forEach(id => ze.add(id))
+      dodatnoOdprto.set(z.krog, ze)
+    }
+    // Že vpisano dodatno izbijanje ostane vidno, tudi ko je izenačenje razrešeno.
+    for (const i of izidi) {
+      if (i.dodatno === null || i.dodatno === undefined) continue
+      const ze = dodatnoOdprto.get(i.krog) ?? new Set<string>()
+      ze.add(i.registration_id)
+      dodatnoOdprto.set(i.krog, ze)
+    }
+
+    return {
+      sistem, nastopi, red: koncniVrstniRed(nastopi, sistem),
+      dovoljeni, poId, zaRazresiti, dodatnoOdprto,
+    }
   }, [prijave, izidi])
 
   if (prijave.length === 0) {
@@ -87,11 +119,17 @@ export default function IzbijanjeTabela({ prijave, izidi, shrani, zaposlen }: Pr
         {prijave.length} tekmovalcev · {opisSistema}
       </p>
 
-      {[...izenacenja.entries()].map(([krog, ids]) => (
-        <div key={krog} className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-3">
-          ⚠ Izenačenje na meji napredovanja po seriji <strong>{IME_KROGA[krog]}</strong>:{' '}
-          {ids.map(id => poId.get(id)?.ime ?? id).join(', ')}. Potrebno je dodatno izbijanje —
-          vpiši popravljen izid, sicer je vrstni red le začasen.
+      {zaRazresiti.map((z, i) => (
+        <div key={`${z.krog}-${i}`}
+          className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-3">
+          ⚠ Izenačenje v seriji <strong>{IME_KROGA[z.krog]}</strong>:{' '}
+          {z.ids.map(id => poId.get(id)?.ime ?? id).join(', ')} —{' '}
+          {z.razlog === 'napredovanje'
+            ? 'odloča, kdo gre naprej.'
+            : 'odloča končno mesto.'}{' '}
+          Potrebno je dodatno izbijanje; izid vpiši v manjše polje <strong>DI</strong>.
+          Redni izid pusti pri miru — dodatno izbijanje loči samo izenačena med sabo
+          in nikogar ne dvigne nad tiste z boljšim rednim izidom.
         </div>
       ))}
 
@@ -128,34 +166,58 @@ export default function IzbijanjeTabela({ prijave, izidi, shrani, zaposlen }: Pr
                   <td className="px-3 py-2 text-gray-500 text-xs">{p?.klub ?? ''}</td>
                   {sistem.krogi.map(krog => {
                     const sme = dovoljeni.get(krog)?.has(u.id) ?? false
-                    const vrednost = nastop && jeNastopil(nastop, krog) ? nastop.izidi[krog] : null
+                    const vrednost: number | null =
+                      nastop && jeNastopil(nastop, krog) ? nastop.izidi[krog] ?? null : null
+                    const di = nastop?.dodatno?.[krog] ?? null
+                    const diOdprto = dodatnoOdprto.get(krog)?.has(u.id) ?? false
+
                     if (!shrani) {
                       return (
                         <td key={krog} className="px-3 py-2 text-center font-mono">
                           {vrednost ?? <span className="text-gray-300">—</span>}
+                          {di !== null && (
+                            <span className="ml-1 text-[10px] text-amber-700 bg-amber-100 px-1 rounded"
+                              title="Dodatno izbijanje">DI {di}</span>
+                          )}
                         </td>
                       )
                     }
+
+                    const polje = (
+                      p: 'zadetki' | 'dodatno', trenutna: number | null, omogoceno: boolean,
+                      sirina: string, naslov: string,
+                    ) => (
+                      <input
+                        type="number" min={0} inputMode="numeric"
+                        defaultValue={trenutna ?? ''}
+                        disabled={!omogoceno || zaposlen === u.id}
+                        title={naslov}
+                        onBlur={e => {
+                          const t = e.target.value.trim()
+                          const nova = t === '' ? null : Number(t)
+                          if (nova !== null && (!Number.isInteger(nova) || nova < 0)) {
+                            e.target.value = trenutna === null ? '' : String(trenutna)
+                            return
+                          }
+                          if (nova !== trenutna) shrani(u.id, krog, nova, p)
+                        }}
+                        className={`${sirina} text-center border rounded-lg px-1 py-1
+                                   disabled:bg-gray-100 disabled:text-gray-300
+                                   focus:outline-none focus:ring-2 focus:ring-bocce-green/40
+                                   ${p === 'dodatno'
+                                     ? 'border-amber-300 bg-amber-50 text-amber-900'
+                                     : 'border-gray-300'}`}
+                      />
+                    )
+
                     return (
-                      <td key={krog} className="px-3 py-2 text-center">
-                        <input
-                          type="number" min={0} inputMode="numeric"
-                          defaultValue={vrednost ?? ''}
-                          disabled={!sme || zaposlen === u.id}
-                          title={sme ? 'Število zadetkov' : 'Tekmovalec se v to serijo ni uvrstil'}
-                          onBlur={e => {
-                            const t = e.target.value.trim()
-                            const nova = t === '' ? null : Number(t)
-                            if (nova !== null && (!Number.isInteger(nova) || nova < 0)) {
-                              e.target.value = vrednost === null ? '' : String(vrednost)
-                              return
-                            }
-                            if (nova !== vrednost) shrani(u.id, krog, nova)
-                          }}
-                          className="w-16 text-center border border-gray-300 rounded-lg px-2 py-1
-                                     disabled:bg-gray-100 disabled:text-gray-300
-                                     focus:outline-none focus:ring-2 focus:ring-bocce-green/40"
-                        />
+                      <td key={krog} className="px-3 py-2">
+                        <div className="flex items-center justify-center gap-1">
+                          {polje('zadetki', vrednost, sme, 'w-14',
+                                 sme ? 'Število zadetkov' : 'Tekmovalec se v to serijo ni uvrstil')}
+                          {diOdprto && polje('dodatno', di, sme, 'w-12',
+                                 'Dodatno izbijanje — loči samo izenačena med sabo')}
+                        </div>
                       </td>
                     )
                   })}
@@ -169,7 +231,9 @@ export default function IzbijanjeTabela({ prijave, izidi, shrani, zaposlen }: Pr
       <p className="text-[11px] text-gray-400 leading-relaxed">
         Uvrstitev odloči najdaljša dosežena serija: finalisti zasedejo mesta 1–4 po finalnem izidu,
         četrtfinalisti brez finala 5–8 po četrtfinalnem, ostali od 9 naprej po kvalifikacijskem.
-        Prejšnje serije se ne seštevajo. Ob istem izidu odloči prejšnja serija, nazadnje žrebana številka.
+        Prejšnje serije se ne seštevajo. Ob istem izidu odloči dodatno izbijanje (DI), če je bilo
+        opravljeno, sicer prejšnja serija in nazadnje žrebana številka. Dodatno izbijanje se vpisuje
+        le pri izenačenih na meji napredovanja in v zadnji seriji; rednega izida ne spremeni.
       </p>
     </div>
   )

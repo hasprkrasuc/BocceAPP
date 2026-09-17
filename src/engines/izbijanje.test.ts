@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   sistemIzbijanja, napredovali, koncniVrstniRed, jeNastopil,
-  MEJA_ENA_SERIJA, MEJA_CETRTFINALE,
+  MEJA_ENA_SERIJA, MEJA_CETRTFINALE, izenacenjaZaRazresiti,
   type Nastop, type KrogIzbijanja,
 } from './izbijanje'
 
@@ -183,5 +183,82 @@ describe('DP natančno člani 2025 — vrstni red iz grafikona', () => {
     const red = koncniVrstniRed(nastopi, sistem)
     expect(red.find(u => u.id === 'Urban Završnik')!.mesto).toBe(14)
     expect(red.find(u => u.id === 'Jan Kreševič')!.mesto).toBe(15)
+  })
+})
+
+describe('dodatno izbijanje', () => {
+  const sistem = sistemIzbijanja(9)   // kvalifikacije → finale štirih
+
+  /** Peterica: tretji in četrti sta izenačena na 8, peti ima 4. */
+  const izenacena = (dodatno?: Record<string, number>): Nastop[] => ([
+    { id: 'prvi',  stZreba: 1, izidi: { kvalifikacije: 20 } },
+    { id: 'drugi', stZreba: 2, izidi: { kvalifikacije: 12 } },
+    { id: 'tretji', stZreba: 3, izidi: { kvalifikacije: 8 },
+      dodatno: dodatno ? { kvalifikacije: dodatno.tretji } : undefined },
+    { id: 'cetrti', stZreba: 4, izidi: { kvalifikacije: 8 },
+      dodatno: dodatno ? { kvalifikacije: dodatno.cetrti } : undefined },
+    { id: 'peti',  stZreba: 5, izidi: { kvalifikacije: 4 } },
+  ])
+
+  test('brez dodatnega izbijanja je izenačenje na meji označeno', () => {
+    const { izenaceni } = napredovali(izenacena(), 'kvalifikacije', 3, sistem)
+    expect(izenaceni.sort()).toEqual(['cetrti', 'tretji'])
+  })
+
+  test('dodatno izbijanje odloči, kdo od izenačenih gre naprej', () => {
+    const nastopi = izenacena({ tretji: 5, cetrti: 30 })
+    const { napreduje, izenaceni } = napredovali(nastopi, 'kvalifikacije', 3, sistem)
+    expect(napreduje).toEqual(['prvi', 'drugi', 'cetrti'])
+    expect(izenaceni).toEqual([])   // razrešeno, opozorila ni več
+  })
+
+  test('DODATNO IZBIJANJE NE DVIGNE NAD TISTE Z BOLJŠIM REDNIM IZIDOM', () => {
+    // Četrti v dodatnem izbijanju zadene 30 — več od kogarkoli v redni seriji.
+    // Kljub temu ostane za prvim (20) in drugim (12), ker dodatno izbijanje
+    // loči samo izenačena med sabo.
+    const nastopi = izenacena({ tretji: 5, cetrti: 30 })
+    const red = koncniVrstniRed(nastopi, sistem)
+    expect(red.map(u => u.id)).toEqual(['prvi', 'drugi', 'cetrti', 'tretji', 'peti'])
+    // in izpisani izid ostane redni, ne izid dodatnega izbijanja
+    expect(red.find(u => u.id === 'cetrti')!.izid).toBe(8)
+  })
+
+  test('enak izid dodatnega izbijanja izenačenja ne razreši', () => {
+    const nastopi = izenacena({ tretji: 7, cetrti: 7 })
+    expect(napredovali(nastopi, 'kvalifikacije', 3, sistem).izenaceni.sort())
+      .toEqual(['cetrti', 'tretji'])
+  })
+})
+
+describe('izenacenjaZaRazresiti', () => {
+  test('meja napredovanja in izenačenje v finalu', () => {
+    const sistem = sistemIzbijanja(9)
+    const nastopi: Nastop[] = [
+      { id: 'a', stZreba: 1, izidi: { kvalifikacije: 20, finale: 11 } },
+      { id: 'b', stZreba: 2, izidi: { kvalifikacije: 18, finale: 11 } },
+      { id: 'c', stZreba: 3, izidi: { kvalifikacije: 15, finale: 9 } },
+      { id: 'd', stZreba: 4, izidi: { kvalifikacije: 9, finale: 4 } },
+      { id: 'e', stZreba: 5, izidi: { kvalifikacije: 9 } },
+    ]
+    const zr = izenacenjaZaRazresiti(nastopi, sistem)
+    expect(zr).toEqual(expect.arrayContaining([
+      { krog: 'kvalifikacije', ids: expect.arrayContaining(['d', 'e']), razlog: 'napredovanje' },
+      { krog: 'finale', ids: expect.arrayContaining(['a', 'b']), razlog: 'uvrstitev' },
+    ]))
+  })
+
+  test('izenačenje med izpadlimi dodatnega izbijanja ne zahteva', () => {
+    // DP 2025: Završnik in Kreševič sta oba 3, a daleč od meje — grafikon ju
+    // razvrsti po žrebani številki in dodatnega izbijanja ni bilo.
+    const sistem = sistemIzbijanja(9)
+    const nastopi: Nastop[] = [
+      { id: 'a', stZreba: 1, izidi: { kvalifikacije: 20, finale: 9 } },
+      { id: 'b', stZreba: 2, izidi: { kvalifikacije: 18, finale: 7 } },
+      { id: 'c', stZreba: 3, izidi: { kvalifikacije: 15, finale: 5 } },
+      { id: 'd', stZreba: 4, izidi: { kvalifikacije: 12, finale: 2 } },
+      { id: 'e', stZreba: 5, izidi: { kvalifikacije: 3 } },
+      { id: 'f', stZreba: 6, izidi: { kvalifikacije: 3 } },
+    ]
+    expect(izenacenjaZaRazresiti(nastopi, sistem)).toEqual([])
   })
 })
