@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
+import IzbijanjeTabela, { type IzbijanjeIzid } from '../components/IzbijanjeTabela'
+import { imeIzbijanja } from '../lib/izbijanjePrijave'
 import { loadTournamentPlayers } from '../lib/tournamentPlayers'
 import { useRealtimeTable, mergeRowById } from '../lib/useRealtimeTable'
 import { useAuth } from '../contexts/AuthContext'
@@ -225,7 +227,8 @@ export function TournamentDetail() {
   const [matches, setMatches] = useState<Match[]>([])
   const [registrations, setRegistrations] = useState<TournamentRegistration[]>([])
   const [myReg, setMyReg] = useState<TournamentRegistration | null>(null)
-  const [tab, setTab] = useState<'groups' | 'knockout' | 'registrations' | 'standings'>('groups')
+  const [tab, setTab] = useState<'groups' | 'knockout' | 'registrations' | 'standings' | 'izbijanje'>('groups')
+  const [izbijanje, setIzbijanje] = useState<IzbijanjeIzid[]>([])
   const [scoreMatch, setScoreMatch] = useState<Match | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -257,6 +260,7 @@ export function TournamentDetail() {
   useEffect(() => {
     if (tournament?.format === 'knockout') setTab('knockout')
     else if (tournament?.format === 'round_robin') setTab('standings')
+    else if (tournament?.format === 'izbijanje') setTab('izbijanje')
   }, [tournament?.format])
 
   // Realtime: vpis rezultata pride kot UPDATE tekme. Vrstica je v payloadu,
@@ -286,6 +290,14 @@ export function TournamentDetail() {
       ])
       if (tErr) throw tErr
       setTournament(t as Tournament)
+
+      // Izidi izbijanja so svoja tabela — pri drugih sistemih je preprosto prazna.
+      const { data: iz, error: izErr } = await supabase
+        .from('izbijanje_izidi')
+        .select('registration_id, krog, zadetki, tournament_registrations!inner(tournament_id)')
+        .eq('tournament_registrations.tournament_id', id)
+      if (izErr) throw izErr
+      setIzbijanje((iz ?? []) as unknown as IzbijanjeIzid[])
       setGroups((g ?? []) as TournamentGroup[])
       setMatches((m ?? []) as Match[])
       const regs = (r ?? []) as TournamentRegistration[]
@@ -494,6 +506,11 @@ export function TournamentDetail() {
               { key: 'standings' as const, label: 'Lestvica' },
               { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
             ]
+          : tournament.format === 'izbijanje'
+          ? [
+              { key: 'izbijanje' as const, label: 'Grafikon' },
+              { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
+            ]
           : [
               { key: 'groups' as const, label: `Skupine (${groups.length})` },
               { key: 'knockout' as const, label: 'Izločilni del' },
@@ -507,6 +524,13 @@ export function TournamentDetail() {
           </button>
         ))}
       </div>
+
+      {tab === 'izbijanje' && (
+        <IzbijanjeTabela
+          prijave={registrations.filter(r => r.status === 'confirmed').map(imeIzbijanja)}
+          izidi={izbijanje}
+        />
+      )}
 
       {tab === 'groups' && (
         <div className="grid sm:grid-cols-2 gap-4">

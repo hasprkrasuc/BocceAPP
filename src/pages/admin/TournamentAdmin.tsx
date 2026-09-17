@@ -129,6 +129,7 @@ export default function TournamentAdmin() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                   <option value="groups">Skupinski + izločilni</option>
                   <option value="knockout">Direktni izločilni (brez skupin)</option>
+                  <option value="izbijanje">Izbijanje (hitrostno / natančno / štafetno)</option>
                 </select>
               </div>
               <div>

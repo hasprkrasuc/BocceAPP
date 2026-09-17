@@ -9,9 +9,14 @@ import { pairsFromSeededTeams, preRoundFirstRoundPairs, crossPairs, KO_STAGE_ORD
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers, PRIJAVA_SELECT } from '../../lib/tournamentPlayers'
+import IzbijanjeTabela, { type IzbijanjeIzid } from '../../components/IzbijanjeTabela'
+import { imeIzbijanja } from '../../lib/izbijanjePrijave'
+import {
+  sistemIzbijanja, koncniVrstniRed, jeNastopil, type KrogIzbijanja, type Nastop,
+} from '../../engines/izbijanje'
 import { oznakaIgralca } from '../../lib/playerNames'
 
-type Tab = 'registrations' | 'draw' | 'knockout'
+type Tab = 'registrations' | 'draw' | 'knockout' | 'izbijanje'
 
 function toRangCat(cat: string): RangCategory | null {
   return cat === 'men' || cat === 'women' || cat === 'u18' ? cat : null
@@ -32,6 +37,8 @@ export default function TournamentEdit() {
   const [groups, setGroups] = useState<TournamentGroup[]>([])
   const [groupTeams, setGroupTeams] = useState<(GroupTeam & { registration?: TournamentRegistration })[]>([])
   const [tab, setTab] = useState<Tab>('registrations')
+  const [izbijanje, setIzbijanje] = useState<IzbijanjeIzid[]>([])
+  const [izbijanjeBusy, setIzbijanjeBusy] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [drawLoading, setDrawLoading] = useState(false)
   const [message, setMessage] = useState('')
@@ -187,10 +194,82 @@ export default function TournamentEdit() {
       setGroups((g ?? []) as TournamentGroup[])
       setGroupTeams((gt ?? []) as (GroupTeam & { registration?: TournamentRegistration })[])
       setKoMatches((km ?? []) as KoMatchRow[])
+
+      // Izidi izbijanja: svoja tabela, pri drugih sistemih prazna.
+      const { data: iz, error: izErr } = await supabase
+        .from('izbijanje_izidi')
+        .select('registration_id, krog, zadetki, tournament_registrations!inner(tournament_id)')
+        .eq('tournament_registrations.tournament_id', id)
+      if (izErr) throw izErr
+      setIzbijanje((iz ?? []) as unknown as IzbijanjeIzid[])
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  /**
+   * Vpis izida ene serije. Prazno polje pomeni »ni nastopil« in vrstico
+   * pobriše — 0 je veljaven izid in ne sme pomeniti odsotnosti.
+   */
+  async function shraniIzbijanje(regId: string, krog: KrogIzbijanja, zadetki: number | null) {
+    setIzbijanjeBusy(regId); setMessage('')
+    try {
+      if (zadetki === null) {
+        const { error } = await supabase.from('izbijanje_izidi')
+          .delete().eq('registration_id', regId).eq('krog', krog)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('izbijanje_izidi')
+          .upsert({ registration_id: regId, krog, zadetki },
+                  { onConflict: 'registration_id,krog' })
+        if (error) throw error
+      }
+      await load()
+    } catch (e) {
+      setMessage(`❌ Izida ni bilo mogoče shraniti: ${(e as Error).message}`)
+    } finally {
+      setIzbijanjeBusy(null)
+    }
+  }
+
+  /**
+   * Zapiše končni vrstni red v `tournament_registrations.final_rank`.
+   *
+   * Od tam ga bere rang lestvica (src/lib/rangLestvica.ts) — izbijanje nima
+   * izločilne mreže, iz katere bi se uvrstitev dala izpeljati, zato mora biti
+   * tu zapisana izrecno.
+   */
+  async function zapisiVrstniRedIzbijanja() {
+    const potrjene = registrations.filter(r => r.status === 'confirmed')
+    const sistem = sistemIzbijanja(Math.max(potrjene.length, 1))
+    const izidPo = new Map(izbijanje.map(i => [`${i.registration_id}|${i.krog}`, i.zadetki]))
+    const nastopi: Nastop[] = potrjene.map((r, i) => ({
+      id: r.id,
+      stZreba: r.draw_number ?? i + 1,
+      izidi: Object.fromEntries(
+        sistem.krogi.map(k => [k, izidPo.get(`${r.id}|${k}`) ?? null])
+                    .filter(([, v]) => v !== null)) as Nastop['izidi'],
+    }))
+    const red = koncniVrstniRed(nastopi, sistem)
+    const brezIzida = red.filter(u => u.zadnjiKrog === null).length
+    if (!window.confirm(
+      `Zapišem končni vrstni red za ${red.length} tekmovalcev?` +
+      (brezIzida > 0 ? `\n\n${brezIzida} jih nima nobenega izida — zasedejo zadnja mesta.` : '') +
+      '\n\nOd tod se točke prenesejo na rang lestvico.')) return
+
+    setMessage('')
+    try {
+      for (const u of red) {
+        const { error } = await supabase.from('tournament_registrations')
+          .update({ final_rank: u.mesto }).eq('id', u.id)
+        if (error) throw error
+      }
+      setMessage(`✓ Končni vrstni red zapisan (${red.length} tekmovalcev)`)
+      await load()
+    } catch (e) {
+      setMessage(`❌ Vrstnega reda ni bilo mogoče zapisati: ${(e as Error).message}`)
     }
   }
 
@@ -909,7 +988,12 @@ export default function TournamentEdit() {
       )}
 
       <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {(tournament.format === 'knockout'
+        {(tournament.format === 'izbijanje'
+          ? [
+              { key: 'registrations' as Tab, label: `Prijave (${registrations.length})` },
+              { key: 'izbijanje' as Tab, label: 'Grafikon in izidi' },
+            ]
+          : tournament.format === 'knockout'
           ? [
               { key: 'registrations' as Tab, label: `Prijave (${registrations.length})` },
               { key: 'draw' as Tab, label: `Izločilni žreb${groups.length ? ' ✓' : ''}` },
@@ -927,6 +1011,26 @@ export default function TournamentEdit() {
           </button>
         ))}
       </div>
+
+      {tab === 'izbijanje' && (
+        <div className="space-y-4">
+          <IzbijanjeTabela
+            prijave={registrations.filter(r => r.status === 'confirmed').map(imeIzbijanja)}
+            izidi={izbijanje}
+            shrani={shraniIzbijanje}
+            zaposlen={izbijanjeBusy}
+          />
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={zapisiVrstniRedIzbijanja}
+              className="bg-bocce-green text-white text-sm px-4 py-2 rounded-lg hover:bg-bocce-green/90 transition-colors">
+              Zapiši končni vrstni red
+            </button>
+            <span className="text-xs text-gray-400">
+              Šele s tem se uvrstitve prenesejo na rang lestvico.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Registrations tab */}
       {tab === 'registrations' && (

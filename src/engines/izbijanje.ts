@@ -1,0 +1,179 @@
+/**
+ * IZBIJANJE — hitrostno, natančno in štafetno.
+ *
+ * Te discipline niso dvoboji: vsak tekmovalec izbija sam in dobi ŠTEVILO
+ * zadetkov. Zato tu ni pajka ne skupin — so SERIJE, po vsaki pa gre naprej
+ * najboljših nekaj.
+ *
+ * Koliko serij je, pove število prijavljenih (pravilo BZS):
+ *
+ *   do 6      — ena sama serija in ta da končni vrstni red
+ *   7 do 15   — kvalifikacije, štirje najboljši v finale
+ *   16 in več — kvalifikacije, osem v četrtfinale, štirje v finale
+ *
+ * KONČNI VRSTNI RED se bere od zadaj: kdor je prišel dlje, je pred tistim, ki
+ * ni. Finalisti zasedejo mesta 1–4 po finalnem izidu, četrtfinalisti brez
+ * finala 5–8 po četrtfinalnem, ostali od 9 naprej po kvalifikacijskem. Tako je
+ * razvrščen tudi priloženi grafikon DP 2025 (DP natančno člani: Korošec zmaga
+ * s 27 v finalu, čeprav je imel v kvalifikacijah 11 — finale prejšnjih serij
+ * NE sešteva, ampak jih nadomesti).
+ *
+ * IZENAČENJE. Znotraj kroga odloči izid tega kroga; ob istem izidu prejšnji
+ * krog in nazadnje žrebana številka. Na MEJI NAPREDOVANJA pa izenačenja ne
+ * razrešujemo sami: pravila BZS tam predvidevajo dodatno izbijanje, zato ga
+ * `napredovali()` samo označi in prepusti sodniku, ki vpiše popravljen izid.
+ */
+
+/** Serije, kolikor jih tekmovanje sploh pozna. */
+export type KrogIzbijanja = 'kvalifikacije' | 'cetrtfinale' | 'finale'
+
+/** Zaporedje krogov od prvega do finala, po vrsti. */
+export const VRSTNI_RED_KROGOV: readonly KrogIzbijanja[] = ['kvalifikacije', 'cetrtfinale', 'finale']
+
+export const IME_KROGA: Record<KrogIzbijanja, string> = {
+  kvalifikacije: 'Kvalifikacije',
+  cetrtfinale: 'Četrtfinale',
+  finale: 'Finale',
+}
+
+export interface Sistem {
+  /** Krogi, ki se odigrajo, po vrsti. */
+  krogi: KrogIzbijanja[]
+  /** `napreduje[i]` = koliko tekmovalcev gre iz `krogi[i]` v `krogi[i+1]`. */
+  napreduje: number[]
+}
+
+/** Meji med sistemi — šestica še spada k eni sami seriji. */
+export const MEJA_ENA_SERIJA = 6
+export const MEJA_CETRTFINALE = 16
+
+/**
+ * Sistem tekmovanja glede na število prijavljenih.
+ *
+ * Zgornje meje ni: pravilo govori o 16 do 32, a tekmovanje s 33 prijavljenimi
+ * ne sme ostati brez sistema — od 16 naprej velja isti trojni sistem.
+ */
+export function sistemIzbijanja(stTekmovalcev: number): Sistem {
+  if (!Number.isInteger(stTekmovalcev) || stTekmovalcev < 1) {
+    throw new Error(`Število tekmovalcev mora biti pozitivno celo število, dobil ${stTekmovalcev}`)
+  }
+  if (stTekmovalcev <= MEJA_ENA_SERIJA) return { krogi: ['finale'], napreduje: [] }
+  if (stTekmovalcev < MEJA_CETRTFINALE) {
+    return { krogi: ['kvalifikacije', 'finale'], napreduje: [4] }
+  }
+  return { krogi: ['kvalifikacije', 'cetrtfinale', 'finale'], napreduje: [8, 4] }
+}
+
+/** Nastop enega tekmovalca: žrebana številka in izidi po krogih. */
+export interface Nastop {
+  /** Id prijave (`tournament_registrations.id`). */
+  id: string
+  /** Žrebana številka — zadnje merilo pri izenačenju. */
+  stZreba: number
+  /** Izid posameznega kroga; manjka ali null = v tem krogu ni nastopil. */
+  izidi: Partial<Record<KrogIzbijanja, number | null>>
+}
+
+const izid = (n: Nastop, k: KrogIzbijanja): number | null => n.izidi[k] ?? null
+
+/** Ali je tekmovalec v tem krogu nastopil (ima vpisan izid). */
+export function jeNastopil(n: Nastop, k: KrogIzbijanja): boolean {
+  return izid(n, k) !== null
+}
+
+/**
+ * Primerjava dveh nastopov v danem krogu: več zadetkov je bolje, ob istem
+ * izidu odloči prejšnji krog in nazadnje nižja žrebana številka.
+ */
+function primerjaj(a: Nastop, b: Nastop, krog: KrogIzbijanja, sistem: Sistem): number {
+  const doKroga = sistem.krogi.slice(0, sistem.krogi.indexOf(krog) + 1).reverse()
+  for (const k of doKroga) {
+    const ia = izid(a, k), ib = izid(b, k)
+    if (ia === ib) continue
+    if (ia === null) return 1
+    if (ib === null) return -1
+    return ib - ia
+  }
+  return a.stZreba - b.stZreba
+}
+
+export interface Napredovanje {
+  /** Id-ji, ki gredo v naslednji krog. */
+  napreduje: string[]
+  /**
+   * Id-ji, ki jih izid tega kroga izenačuje ČEZ mejo napredovanja — eni bi
+   * šli naprej, drugi ne. Vrstni red v `napreduje` je zanje le začasen,
+   * dokler sodnik ne izvede dodatnega izbijanja in vpiše popravka.
+   */
+  izenaceni: string[]
+}
+
+/**
+ * Kdo gre iz tega kroga naprej.
+ *
+ * Šteje samo, kdor je v krogu nastopil — prijavljen, a neprisoten tekmovalec
+ * ne more zasesti mesta v finalu.
+ */
+export function napredovali(
+  nastopi: Nastop[],
+  krog: KrogIzbijanja,
+  koliko: number,
+  sistem: Sistem,
+): Napredovanje {
+  const nastopili = nastopi.filter(n => jeNastopil(n, krog))
+  const urejeni = [...nastopili].sort((a, b) => primerjaj(a, b, krog, sistem))
+  const napreduje = urejeni.slice(0, koliko).map(n => n.id)
+
+  // Izenačenje čez mejo: zadnji, ki gre naprej, in prvi, ki ne, imata isti izid.
+  let izenaceni: string[] = []
+  if (urejeni.length > koliko && koliko > 0) {
+    const mejni = izid(urejeni[koliko - 1], krog)
+    if (mejni !== null && izid(urejeni[koliko], krog) === mejni) {
+      izenaceni = urejeni.filter(n => izid(n, krog) === mejni).map(n => n.id)
+    }
+  }
+  return { napreduje, izenaceni }
+}
+
+export interface Uvrstitev {
+  id: string
+  /** Končno mesto, od 1 naprej. */
+  mesto: number
+  /** Najdlji krog, ki ga je tekmovalec odigral. */
+  zadnjiKrog: KrogIzbijanja | null
+  /** Izid v tem krogu; null, kadar tekmovalec ni nastopil nikjer. */
+  izid: number | null
+}
+
+/**
+ * Končni vrstni red celotnega tekmovanja.
+ *
+ * Tekmovalci so razdeljeni po najdaljšem doseženem krogu (finale pred
+ * četrtfinalom pred kvalifikacijami), znotraj skupine pa razvrščeni po izidu
+ * tega kroga. Kdor ni nastopil nikjer, pade na konec.
+ */
+export function koncniVrstniRed(nastopi: Nastop[], sistem: Sistem): Uvrstitev[] {
+  const odZadaj = [...sistem.krogi].reverse()
+
+  const zadnji = (n: Nastop): KrogIzbijanja | null =>
+    odZadaj.find(k => jeNastopil(n, k)) ?? null
+
+  const skupine = odZadaj.map(krog => ({
+    krog,
+    clani: nastopi.filter(n => zadnji(n) === krog).sort((a, b) => primerjaj(a, b, krog, sistem)),
+  }))
+  const brezNastopa = nastopi
+    .filter(n => zadnji(n) === null)
+    .sort((a, b) => a.stZreba - b.stZreba)
+
+  const out: Uvrstitev[] = []
+  for (const { krog, clani } of skupine) {
+    for (const n of clani) {
+      out.push({ id: n.id, mesto: out.length + 1, zadnjiKrog: krog, izid: izid(n, krog) })
+    }
+  }
+  for (const n of brezNastopa) {
+    out.push({ id: n.id, mesto: out.length + 1, zadnjiKrog: null, izid: null })
+  }
+  return out
+}
