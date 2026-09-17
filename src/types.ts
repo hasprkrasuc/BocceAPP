@@ -88,7 +88,8 @@ export interface Tournament {
   max_teams: number | null
   series_id: string | null
   discipline_type: DisciplineType | null
-  format: 'groups' | 'knockout' | 'round_robin'
+  /** izbijanje = serije brez nasprotnika (hitrostno, natančno, štafetno). */
+  format: 'groups' | 'knockout' | 'round_robin' | 'izbijanje'
 }
 
 /** Ponovno uporabni tuji/neregistrirani igralec (stabilen UUID, ni v auth.users). */
@@ -115,6 +116,8 @@ export interface TournamentRegistration {
   registered_at: string
   /** Ročna nosilna vrednost za žreb skupin (DP); prepiše izračun iz rang lestvice. NULL = izračunaj. */
   seed_points?: number | null
+  /** Žrebana številka (grafikon zveze »št. žreba«); pri izbijanju zadnje merilo ob izenačenju. */
+  draw_number?: number | null
   player1?: UserProfile
   player2?: UserProfile
   guest1?: GuestPlayer
