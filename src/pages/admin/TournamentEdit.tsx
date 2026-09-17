@@ -9,7 +9,9 @@ import { pairsFromSeededTeams, preRoundFirstRoundPairs, crossPairs, KO_STAGE_ORD
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
 import { birthYearOf, youthLevel } from '../../engines/doubleRegistration'
 import { loadTournamentPlayers, PRIJAVA_SELECT } from '../../lib/tournamentPlayers'
-import IzbijanjeTabela, { type IzbijanjeIzid } from '../../components/IzbijanjeTabela'
+import IzbijanjeTabela, {
+  type IzbijanjeIzid, type PoljeIzbijanja,
+} from '../../components/IzbijanjeTabela'
 import { imeIzbijanja } from '../../lib/izbijanjePrijave'
 import {
   sistemIzbijanja, koncniVrstniRed, jeNastopil, type KrogIzbijanja, type Nastop,
@@ -198,7 +200,7 @@ export default function TournamentEdit() {
       // Izidi izbijanja: svoja tabela, pri drugih sistemih prazna.
       const { data: iz, error: izErr } = await supabase
         .from('izbijanje_izidi')
-        .select('registration_id, krog, zadetki, tournament_registrations!inner(tournament_id)')
+        .select('registration_id, krog, zadetki, dodatno, tournament_registrations!inner(tournament_id)')
         .eq('tournament_registrations.tournament_id', id)
       if (izErr) throw izErr
       setIzbijanje((iz ?? []) as unknown as IzbijanjeIzid[])
@@ -210,19 +212,29 @@ export default function TournamentEdit() {
   }
 
   /**
-   * Vpis izida ene serije. Prazno polje pomeni »ni nastopil« in vrstico
-   * pobriše — 0 je veljaven izid in ne sme pomeniti odsotnosti.
+   * Vpis izida ene serije ali dodatnega izbijanja.
+   *
+   * Prazno polje pri REDNEM izidu pomeni »ni nastopil« in vrstico pobriše — 0
+   * je veljaven izid in ne sme pomeniti odsotnosti. Prazno polje pri DODATNEM
+   * izbijanju samo počisti ta stolpec; redni izid ostane.
    */
-  async function shraniIzbijanje(regId: string, krog: KrogIzbijanja, zadetki: number | null) {
+  async function shraniIzbijanje(
+    regId: string, krog: KrogIzbijanja, vrednost: number | null,
+    polje: PoljeIzbijanja = 'zadetki',
+  ) {
     setIzbijanjeBusy(regId); setMessage('')
     try {
-      if (zadetki === null) {
+      if (polje === 'dodatno') {
+        const { error } = await supabase.from('izbijanje_izidi')
+          .update({ dodatno: vrednost }).eq('registration_id', regId).eq('krog', krog)
+        if (error) throw error
+      } else if (vrednost === null) {
         const { error } = await supabase.from('izbijanje_izidi')
           .delete().eq('registration_id', regId).eq('krog', krog)
         if (error) throw error
       } else {
         const { error } = await supabase.from('izbijanje_izidi')
-          .upsert({ registration_id: regId, krog, zadetki },
+          .upsert({ registration_id: regId, krog, zadetki: vrednost },
                   { onConflict: 'registration_id,krog' })
         if (error) throw error
       }
@@ -245,12 +257,18 @@ export default function TournamentEdit() {
     const potrjene = registrations.filter(r => r.status === 'confirmed')
     const sistem = sistemIzbijanja(Math.max(potrjene.length, 1))
     const izidPo = new Map(izbijanje.map(i => [`${i.registration_id}|${i.krog}`, i.zadetki]))
+    const diPo = new Map(
+      izbijanje.filter(i => i.dodatno !== null && i.dodatno !== undefined)
+               .map(i => [`${i.registration_id}|${i.krog}`, i.dodatno as number]))
     const nastopi: Nastop[] = potrjene.map((r, i) => ({
       id: r.id,
       stZreba: r.draw_number ?? i + 1,
       izidi: Object.fromEntries(
         sistem.krogi.map(k => [k, izidPo.get(`${r.id}|${k}`) ?? null])
                     .filter(([, v]) => v !== null)) as Nastop['izidi'],
+      dodatno: Object.fromEntries(
+        sistem.krogi.map(k => [k, diPo.get(`${r.id}|${k}`) ?? null])
+                    .filter(([, v]) => v !== null)) as Nastop['dodatno'],
     }))
     const red = koncniVrstniRed(nastopi, sistem)
     const brezIzida = red.filter(u => u.zadnjiKrog === null).length

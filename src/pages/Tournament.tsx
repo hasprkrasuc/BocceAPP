@@ -294,7 +294,7 @@ export function TournamentDetail() {
       // Izidi izbijanja so svoja tabela — pri drugih sistemih je preprosto prazna.
       const { data: iz, error: izErr } = await supabase
         .from('izbijanje_izidi')
-        .select('registration_id, krog, zadetki, tournament_registrations!inner(tournament_id)')
+        .select('registration_id, krog, zadetki, dodatno, tournament_registrations!inner(tournament_id)')
         .eq('tournament_registrations.tournament_id', id)
       if (izErr) throw izErr
       setIzbijanje((iz ?? []) as unknown as IzbijanjeIzid[])

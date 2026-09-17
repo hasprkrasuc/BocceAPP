@@ -19,9 +19,19 @@
  * NE sešteva, ampak jih nadomesti).
  *
  * IZENAČENJE. Znotraj kroga odloči izid tega kroga; ob istem izidu prejšnji
- * krog in nazadnje žrebana številka. Na MEJI NAPREDOVANJA pa izenačenja ne
- * razrešujemo sami: pravila BZS tam predvidevajo dodatno izbijanje, zato ga
- * `napredovali()` samo označi in prepusti sodniku, ki vpiše popravljen izid.
+ * krog in nazadnje žrebana številka.
+ *
+ * DODATNO IZBIJANJE je SVOJ izid in NE popravek rednega. Kadar sta izenačena
+ * osmi in deveti, dodatno izbijanje odloči le, kateri od njiju gre naprej —
+ * dvigniti ju ne more nad tiste, ki so v redni seriji dosegli več. Zato se
+ * vpisuje v svoje polje (`dodatno`) in nikoli v izid serije: če bi popravek
+ * pisali v redno polje, bi se izenačenima rezultat povečal in bi preskočila
+ * tekmovalce pred sabo.
+ *
+ * Dodatno izbijanje je potrebno na dveh mestih:
+ *   - na MEJI NAPREDOVANJA (kdo gre v četrtfinale oziroma finale),
+ *   - v ZADNJI SERIJI, kjer izenačenje pomeni deljeno mesto na stopničkah.
+ * Kje je potrebno, pove `izenacenjaZaRazresiti()`.
  */
 
 /** Serije, kolikor jih tekmovanje sploh pozna. */
@@ -72,9 +82,15 @@ export interface Nastop {
   stZreba: number
   /** Izid posameznega kroga; manjka ali null = v tem krogu ni nastopil. */
   izidi: Partial<Record<KrogIzbijanja, number | null>>
+  /**
+   * Izid DODATNEGA izbijanja v posameznem krogu — vpisan samo pri izenačenih.
+   * Loči jih med sabo, na uvrstitev proti ostalim pa ne vpliva.
+   */
+  dodatno?: Partial<Record<KrogIzbijanja, number | null>>
 }
 
 const izid = (n: Nastop, k: KrogIzbijanja): number | null => n.izidi[k] ?? null
+const dodatno = (n: Nastop, k: KrogIzbijanja): number | null => n.dodatno?.[k] ?? null
 
 /** Ali je tekmovalec v tem krogu nastopil (ima vpisan izid). */
 export function jeNastopil(n: Nastop, k: KrogIzbijanja): boolean {
@@ -82,19 +98,34 @@ export function jeNastopil(n: Nastop, k: KrogIzbijanja): boolean {
 }
 
 /**
- * Primerjava dveh nastopov v danem krogu: več zadetkov je bolje, ob istem
- * izidu odloči prejšnji krog in nazadnje nižja žrebana številka.
+ * Primerjava dveh nastopov v danem krogu.
+ *
+ * Najprej izid serije, ob izenačenju DODATNO izbijanje te serije (kadar sta ga
+ * oba opravila), nato isto za prejšnje serije in nazadnje nižja žrebana
+ * številka. Dodatno izbijanje torej loči le tista dva, ki sta bila izenačena —
+ * na razmerje do ostalih ne more vplivati, ker se primerja šele po tem, ko sta
+ * redna izida že enaka.
  */
 function primerjaj(a: Nastop, b: Nastop, krog: KrogIzbijanja, sistem: Sistem): number {
   const doKroga = sistem.krogi.slice(0, sistem.krogi.indexOf(krog) + 1).reverse()
   for (const k of doKroga) {
     const ia = izid(a, k), ib = izid(b, k)
-    if (ia === ib) continue
-    if (ia === null) return 1
-    if (ib === null) return -1
-    return ib - ia
+    if (ia !== ib) {
+      if (ia === null) return 1
+      if (ib === null) return -1
+      return ib - ia
+    }
+    const da = dodatno(a, k), db = dodatno(b, k)
+    if (da !== null && db !== null && da !== db) return db - da
   }
   return a.stZreba - b.stZreba
+}
+
+/** Ali je skupina izenačenih med sabo razrešena z dodatnim izbijanjem. */
+function razreseno(skupina: Nastop[], krog: KrogIzbijanja): boolean {
+  const vrednosti = skupina.map(n => dodatno(n, krog))
+  if (vrednosti.some(v => v === null)) return false
+  return new Set(vrednosti).size === vrednosti.length
 }
 
 export interface Napredovanje {
@@ -103,7 +134,8 @@ export interface Napredovanje {
   /**
    * Id-ji, ki jih izid tega kroga izenačuje ČEZ mejo napredovanja — eni bi
    * šli naprej, drugi ne. Vrstni red v `napreduje` je zanje le začasen,
-   * dokler sodnik ne izvede dodatnega izbijanja in vpiše popravka.
+   * dokler ne opravijo dodatnega izbijanja. Ko ga imajo vpisanega in so izidi
+   * različni, je seznam prazen.
    */
   izenaceni: string[]
 }
@@ -129,10 +161,55 @@ export function napredovali(
   if (urejeni.length > koliko && koliko > 0) {
     const mejni = izid(urejeni[koliko - 1], krog)
     if (mejni !== null && izid(urejeni[koliko], krog) === mejni) {
-      izenaceni = urejeni.filter(n => izid(n, krog) === mejni).map(n => n.id)
+      const skupina = urejeni.filter(n => izid(n, krog) === mejni)
+      if (!razreseno(skupina, krog)) izenaceni = skupina.map(n => n.id)
     }
   }
   return { napreduje, izenaceni }
+}
+
+/** Skupina, ki mora opraviti dodatno izbijanje, in razlog. */
+export interface ZaRazresiti {
+  krog: KrogIzbijanja
+  ids: string[]
+  /** 'napredovanje' = odloča, kdo gre naprej; 'uvrstitev' = odloča mesto na koncu. */
+  razlog: 'napredovanje' | 'uvrstitev'
+}
+
+/**
+ * Kje je dodatno izbijanje potrebno.
+ *
+ * Dve mesti: meja napredovanja v vsakem krogu, ki ima naslednjega, in
+ * izenačenje v ZADNJI seriji, kjer se deli mesto na lestvici (1.–4. mesto
+ * prinaša različne točke, zato deljeno mesto ni sprejemljivo).
+ *
+ * Izenačenja niže v izpadlih skupinah ne zahtevajo dodatnega izbijanja —
+ * tam mesto odloči prejšnja serija in nazadnje žrebana številka, tako kot na
+ * grafikonu DP 2025.
+ */
+export function izenacenjaZaRazresiti(nastopi: Nastop[], sistem: Sistem): ZaRazresiti[] {
+  const out: ZaRazresiti[] = []
+
+  sistem.krogi.forEach((krog, i) => {
+    if (i + 1 >= sistem.krogi.length) return
+    const { izenaceni } = napredovali(nastopi, krog, sistem.napreduje[i], sistem)
+    if (izenaceni.length) out.push({ krog, ids: izenaceni, razlog: 'napredovanje' })
+  })
+
+  // Zadnja serija: vsako izenačenje pomeni deljeno končno mesto.
+  const zadnji = sistem.krogi[sistem.krogi.length - 1]
+  const vZadnji = nastopi.filter(n => jeNastopil(n, zadnji))
+  const poIzidu = new Map<number, Nastop[]>()
+  for (const n of vZadnji) {
+    const v = izid(n, zadnji)!
+    poIzidu.set(v, [...(poIzidu.get(v) ?? []), n])
+  }
+  for (const skupina of poIzidu.values()) {
+    if (skupina.length > 1 && !razreseno(skupina, zadnji)) {
+      out.push({ krog: zadnji, ids: skupina.map(n => n.id), razlog: 'uvrstitev' })
+    }
+  }
+  return out
 }
 
 export interface Uvrstitev {
