@@ -14,6 +14,19 @@ describe('kljucPrvenstva', () => {
     expect(kljucPrvenstva(izdaja({ date: '2026-01-01', discipline_type: 'dvojka' })))
       .not.toBe(kljucPrvenstva(izdaja({ date: '2026-01-01' })))
   })
+
+  it('isto disciplino z drugačnim zapisom šteje za isto prvenstvo', () => {
+    // DP igra v krog ima v bazi vpisano »igra v krog«, obrazec pa vpiše
+    // »krog«. Če bi bila to dva ključa, izdaja 2027 ne bi izrinila izdaje 2026
+    // in bi igralec nosil točke obeh.
+    expect(kljucPrvenstva(izdaja({ date: '2027-01-01', discipline_type: 'krog' })))
+      .toBe(kljucPrvenstva(izdaja({ date: '2026-01-01', discipline_type: 'igra v krog' })))
+  })
+
+  it('dveh neznanih disciplin ne zlije v eno', () => {
+    expect(kljucPrvenstva(izdaja({ date: '2026-01-01', discipline_type: 'nekaj' })))
+      .not.toBe(kljucPrvenstva(izdaja({ date: '2026-01-01', discipline_type: 'drugo' })))
+  })
 })
 
 describe('veljavneIzdaje', () => {
