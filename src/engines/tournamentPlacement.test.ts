@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
-  bucketPoints, isPairDiscipline, oznakaMesta, tournamentPlayerPoints, PLACEMENT_POINTS,
+  bucketPoints, isPairDiscipline, jeParnoTekmovanje, oznakaMesta,
+  tournamentPlayerPoints, PLACEMENT_POINTS,
 } from './tournamentPlacement'
 
 describe('bucketPoints', () => {
@@ -187,5 +188,31 @@ describe('tournamentPlayerPoints — oznake mest', () => {
       .find(p => p.player_id === 'p16')
     expect(p16?.placeLabel).toBe('9.–16. mesto')
     expect(p16?.points).toBe(1)
+  })
+})
+
+describe('jeParnoTekmovanje', () => {
+  test('vpisana disciplina odloči', () => {
+    expect(jeParnoTekmovanje('groups', 'dvojka')).toBe(true)
+    expect(jeParnoTekmovanje('groups', 'stafeta')).toBe(true)
+    expect(jeParnoTekmovanje('groups', 'posamezno')).toBe(false)
+    // tudi pri izbijanju: štafetno izbijanje je par
+    expect(jeParnoTekmovanje('izbijanje', 'stafeta')).toBe(true)
+    expect(jeParnoTekmovanje('izbijanje', 'hitrostno')).toBe(false)
+    expect(jeParnoTekmovanje('izbijanje', 'natancno')).toBe(false)
+  })
+
+  test('brez discipline je izbijanje POSAMIČNO', () => {
+    // Prav to je bila napaka: prvenstva v hitrostnem izbijanju so bila
+    // ustvarjena brez discipline in so zahtevala partnerja.
+    expect(jeParnoTekmovanje('izbijanje', null)).toBe(false)
+    expect(jeParnoTekmovanje('izbijanje', undefined)).toBe(false)
+  })
+
+  test('brez discipline ostanejo ostali sistemi PAR, kot doslej', () => {
+    // Obstoječi turnirji (Pazina, Kras Open) discipline nimajo in so dvojice.
+    for (const f of ['groups', 'knockout', 'round_robin', null, undefined]) {
+      expect(jeParnoTekmovanje(f, null)).toBe(true)
+    }
   })
 })

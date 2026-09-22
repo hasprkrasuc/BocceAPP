@@ -2,7 +2,7 @@ import { useEffect, useState, FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel, seededPotDraw } from '../../engines/tournament'
-import { isPairDiscipline } from '../../engines/tournamentPlacement'
+import { jeParnoTekmovanje } from '../../engines/tournamentPlacement'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
 import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
 import { pairsFromSeededTeams, preRoundFirstRoundPairs, crossPairs, KO_STAGE_ORDER } from '../../engines/knockout'
@@ -147,7 +147,8 @@ export default function TournamentEdit() {
     // Slot potrebuje ročno vrednost, če na njem ni registriranega igralca z rangom
     // (gost/tuji ali registriran brez rang točk).
     const slotUnranked = (id: string | null) => !id || (rp[id] ?? 0) === 0
-    const needsManual = slotUnranked(r.player1_id) || (isPairDiscipline(tournament?.discipline_type ?? 'dvojka') && slotUnranked(r.player2_id))
+    const needsManual = slotUnranked(r.player1_id)
+      || (jeParnoTekmovanje(tournament?.format, tournament?.discipline_type) && slotUnranked(r.player2_id))
     return { value: p1 + p2, manual: false, needsManual }
   }
 
@@ -407,7 +408,7 @@ export default function TournamentEdit() {
 
   async function handleManualRegister(e: FormEvent) {
     e.preventDefault()
-    const isPair = tournament?.discipline_type ? isPairDiscipline(tournament.discipline_type) : true
+    const isPair = jeParnoTekmovanje(tournament?.format, tournament?.discipline_type)
 
     // Validacija vnosa (pred morebitnim ustvarjanjem gosta).
     if (!guestSlotFilled(addForm.guest1, addForm.guest1Id, addForm.guest1NewName, addForm.player1)) {
@@ -973,7 +974,7 @@ export default function TournamentEdit() {
   if (error) return <div className="text-center py-12 text-red-500">Napaka: {error}</div>
   if (!tournament) return <div className="text-center py-12 text-gray-400">Turnir ni najden</div>
 
-  const isPair = tournament?.discipline_type ? isPairDiscipline(tournament.discipline_type) : true
+  const isPair = jeParnoTekmovanje(tournament?.format, tournament?.discipline_type)
 
   const confirmed = registrations.filter(r => r.status === 'confirmed')
   const pending = registrations.filter(r => r.status === 'pending')

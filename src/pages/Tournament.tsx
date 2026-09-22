@@ -15,7 +15,7 @@ import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
 import { GROUP_TEMPLATES, computePropagation } from '../engines/tournament'
 import { propagateKnockout } from '../lib/knockoutDraw'
-import { isPairDiscipline } from '../engines/tournamentPlacement'
+import { jeParnoTekmovanje } from '../engines/tournamentPlacement'
 import type {
   Tournament, TournamentGroup, Match, TournamentRegistration,
   TournamentStatus, TournamentCategory, TournamentKind, UserProfile, GroupSize,
@@ -237,12 +237,11 @@ export function TournamentDetail() {
    * Ali se na to tekmovanje prijavlja par ali posameznik.
    *
    * Enako privzeto kot v adminu (`TournamentEdit`): kadar disciplina ni
-   * vpisana, štejemo par — tako se vedenje obstoječih turnirjev ne spremeni.
-   * Prav zato je pomembno, da ima vsako tekmovanje disciplino vpisano.
+   * vpisana, odloči sistem: pri izbijanju nastopa tekmovalec sam, drugod velja
+   * par, tako se vedenje obstoječih turnirjev ne spremeni. Podrobneje v
+   * `jeParnoTekmovanje`.
    */
-  const jeDvojka = tournament?.discipline_type
-    ? isPairDiscipline(tournament.discipline_type)
-    : true
+  const jeDvojka = jeParnoTekmovanje(tournament?.format, tournament?.discipline_type)
   const [players, setPlayers] = useState<PlayerOption[]>([])
   const [judges, setJudges] = useState<JudgeOption[]>([])
   const [regLoading, setRegLoading] = useState(false)

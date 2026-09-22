@@ -50,6 +50,32 @@ export function isPairDiscipline(d: DisciplineType): boolean {
   return PAIR_DISCIPLINES.has(d)
 }
 
+/**
+ * Ali se na tekmovanje prijavlja PAR ali posameznik.
+ *
+ * Disciplina je merodajna, kadar je vpisana. Kadar ni, je privzetek odvisen od
+ * sistema tekmovanja in to NI okrasek:
+ *
+ *   - `izbijanje` (hitrostno, natančno) — POSAMEZNIK. Pri izbijanju tekmovalec
+ *     nastopa sam; edina parna izjema je štafetno izbijanje, ki pa se vpiše
+ *     izrecno kot `stafeta`.
+ *   - vse ostalo — PAR, kot doslej. Turnirji z dvoboji (Pazina, Kras Open …)
+ *     discipline nimajo vpisane in so dvojice; če bi tu privzeli posameznika,
+ *     bi se jim prijava tiho spremenila.
+ *
+ * Zakaj sploh privzetek: obrazec za ustvarjanje tekmovanja discipline dolgo ni
+ * ponujal, zato je `discipline_type` pri vseh skozi vmesnik ustvarjenih
+ * tekmovanjih NULL. Prvenstva v hitrostnem izbijanju so zato zahtevala
+ * partnerja, čeprav tekmovalec nastopa sam.
+ */
+export function jeParnoTekmovanje(
+  format: string | null | undefined,
+  discipline: DisciplineType | null | undefined,
+): boolean {
+  if (discipline) return isPairDiscipline(discipline)
+  return format !== 'izbijanje'
+}
+
 export function bucketPoints(bucket: PlacementBucket): number {
   switch (bucket) {
     case 1: return PLACEMENT_POINTS.p1
