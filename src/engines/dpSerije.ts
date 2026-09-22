@@ -18,6 +18,8 @@
  * kategorija (`mixed`), zato ne prevzamejo mesta članskim dvojicam.
  */
 
+import { normalizirajDisciplino } from './tournamentPlacement'
+
 /** Izdaja prvenstva, kolikor je je potrebno za izbor veljavnih. */
 export interface DpIzdaja {
   /** Datum prvenstva (ISO, `YYYY-MM-DD`). */
@@ -28,9 +30,22 @@ export interface DpIzdaja {
   imaIzide: boolean
 }
 
-/** Ključ prvenstva — kategorija in disciplina skupaj. */
+/**
+ * Ključ prvenstva — kategorija in disciplina skupaj.
+ *
+ * Disciplina gre skozi `normalizirajDisciplino`, ker je `discipline_type`
+ * navaden `text` brez CHECK in ima ista disciplina v bazi več zapisov: DP igra
+ * v krog je vpisano kot `igra v krog`, obrazec pa vpiše `krog`. Brez
+ * poenotenja bi bili to dve različni prvenstvi in izdaja 2027 ne bi izrinila
+ * izdaje 2026 — igralec bi na lestvici nosil točke obeh.
+ *
+ * Neprepoznan zapis obdrži samega sebe (le počiščenega), da se dve res
+ * različni disciplini ne zlijeta v eno.
+ */
 export function kljucPrvenstva(p: DpIzdaja): string {
-  return `${p.category ?? ''}|${p.discipline_type ?? ''}`
+  const raw = p.discipline_type?.trim().toLowerCase() ?? ''
+  const disciplina = normalizirajDisciplino(p.discipline_type) ?? raw
+  return `${p.category ?? ''}|${disciplina}`
 }
 
 /**

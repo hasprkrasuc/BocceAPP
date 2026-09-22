@@ -44,10 +44,82 @@ export function oznakaMesta(bucket: PlacementBucket, deljenBron: boolean): strin
   return `${bucket}. mesto`
 }
 
+/**
+ * Discipline, v katerih nastopa PAR. Vse ostale so posamične.
+ *
+ * Seznam je namenoma kratek in poimensko zaprt: v paru sta samo ŠTAFETA in
+ * DVOJICA. Posamezno, igra v krog, hitrostno in natančno izbijanje, bližanje
+ * in podaljšek so posamični — tekmovalec nastopa sam.
+ */
 const PAIR_DISCIPLINES: ReadonlySet<DisciplineType> = new Set(['dvojka', 'stafeta'])
+
+/** Znane discipline — ključi so že normalizirani zapisi. */
+const DISCIPLINE_SYNONYMS: ReadonlyMap<string, DisciplineType> = new Map([
+  ['trojka', 'trojka'], ['trojke', 'trojka'],
+  ['dvojka', 'dvojka'], ['dvojke', 'dvojka'], ['dvojica', 'dvojka'], ['dvojice', 'dvojka'],
+  ['posamezno', 'posamezno'], ['posamicno', 'posamezno'],
+  ['krog', 'krog'], ['igra v krog', 'krog'], ['igra_v_krog', 'krog'],
+  ['hitrostno', 'hitrostno'], ['hitrostno izbijanje', 'hitrostno'],
+  ['natancno', 'natancno'], ['natancno izbijanje', 'natancno'],
+  ['blizanje', 'blizanje'],
+  ['blizanje_krog', 'blizanje_krog'], ['blizanje v krog', 'blizanje_krog'],
+  ['stafeta', 'stafeta'], ['stafetno izbijanje', 'stafeta'],
+  ['podaljsek', 'podaljsek'],
+])
+
+/**
+ * Prosto besedilo iz baze → znana disciplina, ali `null`, če je ne prepoznamo.
+ *
+ * `tournaments.discipline_type` je navaden `text` brez CHECK, zato so se v
+ * bazi nabrali različni zapisi iste discipline: DP igra v krog ima vpisano
+ * `igra v krog`, tip `DisciplineType` in ligaške discipline pa poznajo `krog`.
+ *
+ * Razhajanje ni kozmetično. `dpSerije.kljucPrvenstva` istoveti izdaje
+ * prvenstva prek `kategorija|disciplina`, zato izdaja z zapisom `krog` NE bi
+ * prevzela mesta starejši izdaji z zapisom `igra v krog` — obe bi hkrati
+ * nosili točke na rang lestvici. Natanko to napako smo zapirali pri DP
+ * dvojice; pusti normalizacijo, da ne zraste nazaj prek pravopisa.
+ */
+export function normalizirajDisciplino(raw: string | null | undefined): DisciplineType | null {
+  if (!raw) return null
+  const kljuc = raw.trim().toLowerCase()
+    .replace(/[čć]/g, 'c').replace(/š/g, 's').replace(/ž/g, 'z')
+    .replace(/\s+/g, ' ')
+  return DISCIPLINE_SYNONYMS.get(kljuc) ?? null
+}
 
 export function isPairDiscipline(d: DisciplineType): boolean {
   return PAIR_DISCIPLINES.has(d)
+}
+
+/**
+ * Ali se na tekmovanje prijavlja PAR ali posameznik.
+ *
+ * Disciplina je merodajna, kadar je vpisana. Kadar ni, je privzetek odvisen od
+ * sistema tekmovanja in to NI okrasek:
+ *
+ *   - `izbijanje` (hitrostno, natančno) — POSAMEZNIK. Pri izbijanju tekmovalec
+ *     nastopa sam; edina parna izjema je štafetno izbijanje, ki pa se vpiše
+ *     izrecno kot `stafeta`.
+ *   - vse ostalo — PAR, kot doslej. Turnirji z dvoboji (Pazina, Kras Open …)
+ *     discipline nimajo vpisane in so dvojice; če bi tu privzeli posameznika,
+ *     bi se jim prijava tiho spremenila.
+ *
+ * Neprepoznan zapis discipline šteje enako kot nevpisan — odloči sistem. Tako
+ * tipkarska napaka v prostem besedilu ne spremeni tekmovanja v par.
+ *
+ * Zakaj sploh privzetek: obrazec za ustvarjanje tekmovanja discipline dolgo ni
+ * ponujal, zato je `discipline_type` pri vseh skozi vmesnik ustvarjenih
+ * tekmovanjih NULL. Prvenstva v hitrostnem izbijanju so zato zahtevala
+ * partnerja, čeprav tekmovalec nastopa sam.
+ */
+export function jeParnoTekmovanje(
+  format: string | null | undefined,
+  discipline: string | null | undefined,
+): boolean {
+  const d = normalizirajDisciplino(discipline)
+  if (d) return isPairDiscipline(d)
+  return format !== 'izbijanje'
 }
 
 export function bucketPoints(bucket: PlacementBucket): number {

@@ -20,6 +20,7 @@ interface TournamentForm {
   location: string
   group_size: string
   format: string
+  discipline_type: string
   max_teams: string
   registration_deadline: string
   notes: string
@@ -29,6 +30,7 @@ const EMPTY_FORM: TournamentForm = {
   name: '', kind: 'tournament', category: 'men', date: '', location: '',
   group_size: '4',
   format: 'groups',
+  discipline_type: '',
   max_teams: '', registration_deadline: '', notes: '',
 }
 
@@ -65,6 +67,8 @@ export default function TournamentAdmin() {
         location: form.location,
         group_size: form.group_size,
         format: form.format,
+        // Prazno pomeni »ni vpisana«; kaj takrat velja, pove jeParnoTekmovanje.
+        discipline_type: form.discipline_type || null,
         max_teams: form.max_teams ? Number(form.max_teams) : null,
         registration_deadline: form.registration_deadline || null,
         notes: form.notes || null,
@@ -131,6 +135,24 @@ export default function TournamentAdmin() {
                   <option value="knockout">Direktni izločilni (brez skupin)</option>
                   <option value="izbijanje">Izbijanje (hitrostno / natančno / štafetno)</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Disciplina</label>
+                <select value={form.discipline_type} onChange={set('discipline_type')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                  <option value="">— izberi —</option>
+                  <option value="posamezno">Posamezno</option>
+                  <option value="dvojka">Dvojice</option>
+                  <option value="trojka">Trojke</option>
+                  <option value="krog">Igra v krog</option>
+                  <option value="hitrostno">Hitrostno izbijanje</option>
+                  <option value="natancno">Natančno izbijanje</option>
+                  <option value="stafeta">Štafetno izbijanje</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Določa, ali se prijavlja posameznik ali par. Pri dvojicah in štafeti par,
+                  sicer posameznik.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ime *</label>

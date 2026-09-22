@@ -1,7 +1,9 @@
 import { describe, test, expect } from 'vitest'
 import {
-  bucketPoints, isPairDiscipline, oznakaMesta, tournamentPlayerPoints, PLACEMENT_POINTS,
+  bucketPoints, isPairDiscipline, jeParnoTekmovanje, normalizirajDisciplino,
+  oznakaMesta, tournamentPlayerPoints, PLACEMENT_POINTS,
 } from './tournamentPlacement'
+import type { DisciplineType } from '../types'
 
 describe('bucketPoints', () => {
   test('preslika koše v točke po tabeli (16/10/8/7/3/1)', () => {
@@ -187,5 +189,93 @@ describe('tournamentPlayerPoints — oznake mest', () => {
       .find(p => p.player_id === 'p16')
     expect(p16?.placeLabel).toBe('9.–16. mesto')
     expect(p16?.points).toBe(1)
+  })
+})
+
+describe('jeParnoTekmovanje', () => {
+  test('vpisana disciplina odloči', () => {
+    expect(jeParnoTekmovanje('groups', 'dvojka')).toBe(true)
+    expect(jeParnoTekmovanje('groups', 'stafeta')).toBe(true)
+    expect(jeParnoTekmovanje('groups', 'posamezno')).toBe(false)
+    // tudi pri izbijanju: štafetno izbijanje je par
+    expect(jeParnoTekmovanje('izbijanje', 'stafeta')).toBe(true)
+    expect(jeParnoTekmovanje('izbijanje', 'hitrostno')).toBe(false)
+    expect(jeParnoTekmovanje('izbijanje', 'natancno')).toBe(false)
+  })
+
+  test('brez discipline je izbijanje POSAMIČNO', () => {
+    // Prav to je bila napaka: prvenstva v hitrostnem izbijanju so bila
+    // ustvarjena brez discipline in so zahtevala partnerja.
+    expect(jeParnoTekmovanje('izbijanje', null)).toBe(false)
+    expect(jeParnoTekmovanje('izbijanje', undefined)).toBe(false)
+  })
+
+  test('brez discipline ostanejo ostali sistemi PAR, kot doslej', () => {
+    // Obstoječi turnirji (Pazina, Kras Open) discipline nimajo in so dvojice.
+    for (const f of ['groups', 'knockout', 'round_robin', null, undefined]) {
+      expect(jeParnoTekmovanje(f, null)).toBe(true)
+    }
+  })
+})
+
+describe('v paru sta samo štafeta in dvojica', () => {
+  /**
+   * Pravilo je poimensko zaprto. Seznam zajame VSE vrednosti `DisciplineType`,
+   * da nova disciplina ne more tiho pristati med pari — če jo kdo doda v tip,
+   * jo mora dodati tudi sem in se pri tem odločiti.
+   */
+  const PARNE: DisciplineType[] = ['dvojka', 'stafeta']
+  const POSAMICNE: DisciplineType[] = [
+    'posamezno', 'trojka', 'krog', 'hitrostno', 'natancno',
+    'blizanje', 'blizanje_krog', 'podaljsek',
+  ]
+
+  test('par samo pri dvojki in štafeti', () => {
+    for (const d of PARNE) expect(isPairDiscipline(d), d).toBe(true)
+  })
+
+  test('vse ostale discipline so posamične', () => {
+    // Natančno izbijanje in igra v krog sta posamični disciplini — tekmovalec
+    // nastopa sam. Trojka ni par (trije igralci), zato tudi ne sme biti tu.
+    for (const d of POSAMICNE) expect(isPairDiscipline(d), d).toBe(false)
+  })
+
+  test('seznama skupaj pokrijeta ves tip DisciplineType', () => {
+    // Če typecheck tu pade, je v `DisciplineType` prišla nova disciplina, ki v
+    // nobenem od seznamov ni navedena.
+    const vse = [...PARNE, ...POSAMICNE]
+    expect(new Set(vse).size, 'podvojena disciplina v seznamih').toBe(vse.length)
+    expect(vse.length).toBe(10)
+  })
+})
+
+describe('normalizirajDisciplino', () => {
+  test('poenoti zapise iste discipline', () => {
+    // V bazi je DP igra v krog vpisano kot »igra v krog«, obrazec vpiše »krog«.
+    expect(normalizirajDisciplino('igra v krog')).toBe('krog')
+    expect(normalizirajDisciplino('Igra v krog')).toBe('krog')
+    expect(normalizirajDisciplino('  IGRA   V  KROG ')).toBe('krog')
+    expect(normalizirajDisciplino('krog')).toBe('krog')
+    expect(normalizirajDisciplino('natančno')).toBe('natancno')
+    expect(normalizirajDisciplino('Štafeta')).toBe('stafeta')
+    expect(normalizirajDisciplino('dvojice')).toBe('dvojka')
+  })
+
+  test('prazno in neznano ne izmisli discipline', () => {
+    expect(normalizirajDisciplino(null)).toBe(null)
+    expect(normalizirajDisciplino(undefined)).toBe(null)
+    expect(normalizirajDisciplino('')).toBe(null)
+    expect(normalizirajDisciplino('balinanje po novem')).toBe(null)
+  })
+
+  test('igra v krog se prijavlja posamično', () => {
+    expect(jeParnoTekmovanje('groups', 'igra v krog')).toBe(false)
+    expect(jeParnoTekmovanje('round_robin', 'igra v krog')).toBe(false)
+    expect(jeParnoTekmovanje('groups', 'krog')).toBe(false)
+  })
+
+  test('neprepoznan zapis pade na privzetek sistema, ne na par', () => {
+    // Tipkarska napaka ne sme prvenstva v izbijanju spremeniti v par.
+    expect(jeParnoTekmovanje('izbijanje', 'hitrosno')).toBe(false)
   })
 })
