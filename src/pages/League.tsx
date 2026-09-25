@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import KlubskiGrb, { logoEkipe } from '../components/KlubskiGrb'
@@ -7,6 +7,7 @@ import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
 import LeagueTable from '../components/LeagueTable'
 import { calculateStandings, calculateGroupStandings, calculateSplitStandings, getFixturesByRound } from '../engines/league'
+import { aktualnoKolo, danesLokalno, oznakaStanjaKola, type StanjeKola } from '../engines/aktualnoKolo'
 import { SPLIT_PHASE1_ROUNDS, SPLIT_PHASE2_ROUNDS } from '../engines/leagueSplit'
 import { pickLeagueTreeSeasons, pickObzSeasons, type LeagueTreeSlot } from '../engines/leagueTree'
 import { format } from 'date-fns'
@@ -318,6 +319,25 @@ function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: s
   )
 }
 
+/**
+ * Značka ob naslovu kola, na katero razpored skoči.
+ *
+ * Brez nje bi bil skok nerazložen: stran bi se odprla sredi seznama in ne bi
+ * bilo videti, zakaj prav tam.
+ */
+function OznakaKola({ stanje }: { stanje: StanjeKola }) {
+  const barva = stanje === 'v_teku'
+    ? 'bg-bocce-green/10 text-bocce-green'
+    : stanje === 'naslednje'
+      ? 'bg-bocce-gold/20 text-yellow-700'
+      : 'bg-gray-100 text-gray-500'
+  return (
+    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full normal-case tracking-normal ${barva}`}>
+      {oznakaStanjaKola(stanje)}
+    </span>
+  )
+}
+
 const SL_DAYS = ['Nedelja', 'Ponedeljek', 'Torek', 'Sreda', 'Četrtek', 'Petek', 'Sobota']
 // Dnevni podnaslov iz "YYYY-MM-DD" (lokalno, brez TZ zamika): "Sobota, 25. 10. 2025".
 function dayHeading(datePart: string): string {
@@ -335,8 +355,11 @@ function sortFixturesChrono(fs: LeagueFixture[]): LeagueFixture[] {
     return (a.group_label ?? '').localeCompare(b.group_label ?? '')
   })
 }
+/** Sidro kola — po njem razpored skoči na aktualno kolo. */
+export const sidroKola = (round: number) => `kolo-${round}`
+
 // Kolo z datumskimi podnaslovi: tekme grupirane po datumu (kronološko), vsak s podnaslovom dan + datum.
-function RoundFixtures({ round, fixtures, myTeamId, showGroup }: { round: number; fixtures: LeagueFixture[]; myTeamId?: string; showGroup?: boolean }) {
+function RoundFixtures({ round, fixtures, myTeamId, showGroup, stanje }: { round: number; fixtures: LeagueFixture[]; myTeamId?: string; showGroup?: boolean; stanje?: StanjeKola | null }) {
   const groups = new Map<string, LeagueFixture[]>()
   for (const f of fixtures) {
     const dp = f.scheduled_date ? String(f.scheduled_date).slice(0, 10) : ''
@@ -345,8 +368,11 @@ function RoundFixtures({ round, fixtures, myTeamId, showGroup }: { round: number
   }
   const dateKeys = [...groups.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a < b ? -1 : 1))
   return (
-    <div>
-      <h3 className="text-sm font-bold text-bocce-green uppercase tracking-wide mb-3">{round}. kolo</h3>
+    <div id={sidroKola(round)} className="scroll-mt-24">
+      <h3 className="text-sm font-bold text-bocce-green uppercase tracking-wide mb-3 flex items-center gap-2">
+        {round}. kolo
+        {stanje && <OznakaKola stanje={stanje} />}
+      </h3>
       <div className="space-y-4">
         {dateKeys.map(dk => (
           <div key={dk || 'brez'}>
@@ -387,6 +413,35 @@ export function LeagueDetail() {
   const [names, setNames] = useState<Map<string, ResolvedPlayer>>(new Map())
 
   useEffect(() => { load() }, [id])
+
+  /**
+   * Kolo, ki je v teku oziroma je naslednje na vrsti — po datumu ob kliku.
+   *
+   * Razpored 1. lige je dolg 22 kol; brez skoka se odpre pri 1. kolu, ki je
+   * jeseni že zdavnaj odigrano. Odločitev je v `engines/aktualnoKolo`.
+   */
+  const aktualno = useMemo(() => aktualnoKolo(fixtures, danesLokalno()), [fixtures])
+
+  // Ob vsakem odprtju zavihka Razpored skočimo na aktualno kolo — a le enkrat,
+  // sicer bi vsak ozek refetch zapisnikov stran med branjem potegnil nazaj.
+  const skocenoNa = useRef<string | null>(null)
+  useEffect(() => {
+    if (tab !== 'fixtures') { skocenoNa.current = null; return }
+    if (loading || !aktualno) return
+    const kljuc = `${id}:${aktualno.kolo}`
+    if (skocenoNa.current === kljuc) return
+    skocenoNa.current = kljuc
+
+    // Po menjavi zavihka kola še niso v DOM — počakamo na naslednjo sliko.
+    const t = window.requestAnimationFrame(() => {
+      const el = document.getElementById(sidroKola(aktualno.kolo))
+      if (!el) return
+      // Navbar je lepljiv (h-16), zato odštejemo njegovo višino in nekaj zraka.
+      const y = el.getBoundingClientRect().top + window.scrollY - 80
+      window.scrollTo({ top: y > 0 ? y : 0, behavior: 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(t)
+  }, [tab, loading, aktualno, id])
 
   // Zapisniki (rezultati disciplin) — ozek refetch brez sezone, ekip in razporeda.
   // Vpis rezultata spremeni tudi punte, ki so kriterij razvrstitve v lestvici,
@@ -669,7 +724,8 @@ export function LeagueDetail() {
                     <span className="text-xs text-gray-400">(R1–{phase1Rounds[phase1Rounds.length - 1]})</span>
                   </div>
                   {phase1Rounds.map(round => (
-                    <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} showGroup />
+                    <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} showGroup
+                      stanje={aktualno?.kolo === round ? aktualno.stanje : null} />
                   ))}
                 </div>
               )}
@@ -683,7 +739,8 @@ export function LeagueDetail() {
                     <span className="text-xs text-gray-400">(R{phase2Rounds[0]}–{phase2Rounds[phase2Rounds.length - 1]})</span>
                   </div>
                   {phase2Rounds.map(round => (
-                    <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} showGroup />
+                    <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id} showGroup
+                      stanje={aktualno?.kolo === round ? aktualno.stanje : null} />
                   ))}
                 </div>
               )}
@@ -693,7 +750,8 @@ export function LeagueDetail() {
               {/* Regular rounds — pri razdelitvenem sistemu kola po razdelitvi nosijo oznako skupine */}
               {rounds.filter(r => r <= season.rounds_count).map(round => (
                 <RoundFixtures key={round} round={round} fixtures={byRound[round]} myTeamId={myTeam?.id}
-                  showGroup={isSplitLeague && round > SPLIT_PHASE1_ROUNDS} />
+                  showGroup={isSplitLeague && round > SPLIT_PHASE1_ROUNDS}
+                  stanje={aktualno?.kolo === round ? aktualno.stanje : null} />
               ))}
 
               {/* Playoff (končnica) */}
@@ -720,9 +778,15 @@ export function LeagueDetail() {
                   // Oznaka "1. tekma / 2. tekma / Odločilna" ima smisel le pri seriji
                   // na dve dobljeni; pri enodnevnem turnirju je vsak dvoboj ena tekma.
                   const gameLabel = !jeSerija ? '' : gameIdx === 0 ? '1. tekma' : gameIdx === 1 ? '2. tekma' : 'Odločilna tekma'
+                  const stanjeKola = aktualno?.kolo === round ? aktualno.stanje : null
                   return (
-                    <div key={round}>
-                      {gameLabel && <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{gameLabel}</h3>}
+                    <div key={round} id={sidroKola(round)} className="scroll-mt-24">
+                      {(gameLabel || stanjeKola) && (
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                          {gameLabel}
+                          {stanjeKola && <OznakaKola stanje={stanjeKola} />}
+                        </h3>
+                      )}
                       <div className="space-y-2">
                         {byRound[round].map(f => {
                           const notPlayed = f.status !== 'completed' && !f.scheduled_date
