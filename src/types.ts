@@ -90,6 +90,12 @@ export interface Tournament {
   discipline_type: DisciplineType | null
   /** izbijanje = serije brez nasprotnika (hitrostno, natančno, štafetno). */
   format: 'groups' | 'knockout' | 'round_robin' | 'izbijanje'
+  /**
+   * Glavni sodnik oziroma vodja tekmovanja. Sme vpisovati izide in končni
+   * vrstni red TEGA prvenstva, tudi če ni admin aplikacije.
+   */
+  chief_judge_id: string | null
+  chief_judge?: { full_name: string | null } | null
 }
 
 /** Ponovno uporabni tuji/neregistrirani igralec (stabilen UUID, ni v auth.users). */
@@ -440,6 +446,10 @@ export interface AuthContextValue {
   isClubAdmin: boolean
   /** Klubi, katerih skrbnik je; globalni admin ima lahko prazno. */
   managedClubIds: string[]
+  /** Vodi vsaj eno tekmovanje kot glavni sodnik (ni nujno globalni admin). */
+  isTournamentJudge: boolean
+  /** Tekmovanja, katerih glavni sodnik je; globalni admin ima lahko prazno. */
+  managedTournamentIds: string[]
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, fullName: string, club: string) => Promise<void>
   signOut: () => Promise<void>
