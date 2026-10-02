@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
-import IzbijanjeTabela, { type IzbijanjeIzid } from '../components/IzbijanjeTabela'
+import IzbijanjeTabela, { type IzbijanjeIzid, type PoljeIzbijanja } from '../components/IzbijanjeTabela'
+import { type KrogIzbijanja } from '../engines/izbijanje'
 import { imeIzbijanja } from '../lib/izbijanjePrijave'
 import { loadTournamentPlayers } from '../lib/tournamentPlayers'
 import { useRealtimeTable, mergeRowById } from '../lib/useRealtimeTable'
@@ -229,6 +230,9 @@ export function TournamentDetail() {
   const [myReg, setMyReg] = useState<TournamentRegistration | null>(null)
   const [tab, setTab] = useState<'groups' | 'knockout' | 'registrations' | 'standings' | 'izbijanje'>('groups')
   const [izbijanje, setIzbijanje] = useState<IzbijanjeIzid[]>([])
+  /** Id prijave, katere izid izbijanja se ravno shranjuje. */
+  const [izbijanjeBusy, setIzbijanjeBusy] = useState<string | null>(null)
+  const [izbijanjeMsg, setIzbijanjeMsg] = useState('')
   const [scoreMatch, setScoreMatch] = useState<Match | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -349,6 +353,40 @@ export function TournamentDetail() {
       setRegError((e as Error).message)
     }
     setRegLoading(false)
+  }
+
+  /**
+   * Vpis izida izbijanja na javni strani (samo admin — RLS to tudi vsiljuje).
+   * Ista pravila kot v administraciji: prazno REDNO polje pomeni »ni nastopil«
+   * in vrstico pobriše (0 je veljaven izid), prazno DODATNO polje samo počisti
+   * ta stolpec.
+   */
+  async function shraniIzbijanje(
+    regId: string, krog: KrogIzbijanja, vrednost: number | null,
+    polje: PoljeIzbijanja = 'zadetki',
+  ) {
+    setIzbijanjeBusy(regId); setIzbijanjeMsg('')
+    try {
+      if (polje === 'dodatno') {
+        const { error } = await supabase.from('izbijanje_izidi')
+          .update({ dodatno: vrednost }).eq('registration_id', regId).eq('krog', krog)
+        if (error) throw error
+      } else if (vrednost === null) {
+        const { error } = await supabase.from('izbijanje_izidi')
+          .delete().eq('registration_id', regId).eq('krog', krog)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('izbijanje_izidi')
+          .upsert({ registration_id: regId, krog, zadetki: vrednost },
+                  { onConflict: 'registration_id,krog' })
+        if (error) throw error
+      }
+      await load()
+    } catch (e) {
+      setIzbijanjeMsg(`❌ Izida ni bilo mogoče shraniti: ${(e as Error).message}`)
+    } finally {
+      setIzbijanjeBusy(null)
+    }
   }
 
   async function handleSaveScore(match: Match, scoreA: number, scoreB: number) {
@@ -525,10 +563,19 @@ export function TournamentDetail() {
       </div>
 
       {tab === 'izbijanje' && (
-        <IzbijanjeTabela
-          prijave={registrations.filter(r => r.status === 'confirmed').map(imeIzbijanja)}
-          izidi={izbijanje}
-        />
+        <div className="space-y-3">
+          {izbijanjeMsg && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
+              {izbijanjeMsg}
+            </div>
+          )}
+          <IzbijanjeTabela
+            prijave={registrations.filter(r => r.status === 'confirmed').map(imeIzbijanja)}
+            izidi={izbijanje}
+            shrani={isAdmin ? shraniIzbijanje : undefined}
+            zaposlen={izbijanjeBusy}
+          />
+        </div>
       )}
 
       {tab === 'groups' && (
