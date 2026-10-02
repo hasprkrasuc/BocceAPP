@@ -4,6 +4,10 @@ import povratek from '../../supabase/rollback/20261002_01_prvenstvo_glavni_sodni
 import routeSource from '../components/ProtectedRoute.tsx?raw'
 import editSource from '../pages/admin/TournamentEdit.tsx?raw'
 import createSource from '../pages/admin/TournamentAdmin.tsx?raw'
+import appSource from '../App.tsx?raw'
+import navbarSource from '../components/Navbar.tsx?raw'
+import seznamSource from '../pages/admin/MojaTekmovanja.tsx?raw'
+import javnaStran from '../pages/Tournament.tsx?raw'
 
 /**
  * GLAVNI SODNIK / VODJA TEKMOVANJA — kar se iz kode ne vidi.
@@ -103,5 +107,65 @@ describe('obrazca', () => {
     const panel = editSource.slice(editSource.indexOf('GLAVNI SODNIK / VODJA TEKMOVANJA'))
     expect(panel.length, 'panela za vodjo tekmovanja ni').toBeGreaterThan(0)
     expect(panel.slice(0, 1200), 'izbirnik ni pogojen z isAdmin').toMatch(/isAdmin \?/)
+  })
+})
+
+/**
+ * SEZNAM »MOJA TEKMOVANJA«
+ *
+ * Vodja ni admin in do `/admin` nima dostopa, zato je navigacija njegova
+ * edina pot do grafikona. Ko vodi več tekmovanj (pet prvenstev v hitrostnem
+ * izbijanju), mora peljati na seznam in ne na prvo od njih.
+ */
+describe('seznam Moja tekmovanja', () => {
+  test('pot obstaja in je zaprta za tuje', () => {
+    expect(appSource).toMatch(/path="\/admin\/moja-tekmovanja"/)
+    expect(appSource, 'seznam mora biti za zaporo TournamentJudgeRoute')
+      .toMatch(/<TournamentJudgeRoute><MojaTekmovanja \/><\/TournamentJudgeRoute>/)
+  })
+
+  test('seznam bere chief_judge_id in ne dolgega .in()', () => {
+    // Dolg `.in('id', […])` je v tem projektu že zrušil poizvedbo zaradi
+    // dolžine naslova. Komentarje odstranimo, ker to past OPISUJEJO — brez
+    // tega test pade nad lastno dokumentacijo.
+    const koda = seznamSource
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    expect(koda).toMatch(/\.eq\('chief_judge_id', user\.id\)/)
+    expect(koda, 'seznam ne sme sestavljati dolgega .in()').not.toMatch(/\.in\('id'/)
+  })
+
+  test('seznam loči zavrnjeno poizvedbo od praznega seznama', () => {
+    // »Nimaš tekmovanj« je pri sodniku, ki jih ima, zavajajoče — zato napaka.
+    expect(seznamSource).toMatch(/if \(error\)/)
+  })
+
+  test('navigacija pri več tekmovanjih pelje na seznam', () => {
+    expect(navbarSource, 'navigacija ne loči enega tekmovanja od več')
+      .toMatch(/managedTournamentIds\.length === 1/)
+    expect(navbarSource, 'pri več mora peljati na seznam')
+      .toMatch(/'\/admin\/moja-tekmovanja'/)
+    // Prej je pot vedno kazala na prvo tekmovanje; ta zapis ne sme ostati
+    // kot edina pot.
+    expect(navbarSource).toMatch(/vodiEno \? 'Moje tekmovanje' : 'Moja tekmovanja'/)
+  })
+
+  test('»Nazaj« iz urejanja ne vrže sodnika na domačo stran', () => {
+    // /admin/turnirji je AdminRoute; vodjo bi preusmerilo na /.
+    expect(editSource, 'Nazaj mora pri sodniku peljati na njegov seznam')
+      .toMatch(/isAdmin \? '\/admin\/turnirji' : '\/admin\/moja-tekmovanja'/)
+  })
+})
+
+describe('javna stran turnirja', () => {
+  test('izide sme vpisati tudi vodja tekmovanja, ne le admin', () => {
+    // #172 je vpis na javni strani odprl samo adminu. Baza vodji to že
+    // dovoli, zato bi brez tega pogoja gledal tabelo, ki je zanj po
+    // nepotrebnem samo za branje.
+    expect(javnaStran, 'pogoj za vpis se ne sme brati samo iz isAdmin')
+      .not.toMatch(/shrani=\{isAdmin \? shraniIzbijanje/)
+    expect(javnaStran).toMatch(/smeVpisovatiIzbijanje/)
+    expect(javnaStran, 'pogoj mora preveriti glavnega sodnika TEGA tekmovanja')
+      .toMatch(/chief_judge_id === user\?\.id/)
   })
 })

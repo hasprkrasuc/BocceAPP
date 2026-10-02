@@ -7,7 +7,7 @@ import type { Tournament, TournamentCategory } from '../types'
 
 const CATEGORY_LABELS: Record<TournamentCategory, string> = {
   men: 'Moški', women: 'Ženske', u18: 'U18', mixed: 'Mešano',
-  u18_women: 'U18 Ženske', u15: 'U15', u12: 'U12',
+  u18_women: 'U18 Ženske', u15: 'U15', u14: 'U14', u12: 'U12',
 }
 const CATEGORY_COLORS: Record<TournamentCategory, string> = {
   men: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -16,6 +16,7 @@ const CATEGORY_COLORS: Record<TournamentCategory, string> = {
   mixed: 'bg-amber-50 text-amber-700 border-amber-200',
   u18_women: 'bg-rose-50 text-rose-700 border-rose-200',
   u15: 'bg-orange-50 text-orange-700 border-orange-200',
+  u14: 'bg-teal-50 text-teal-700 border-teal-200',
   u12: 'bg-green-50 text-green-700 border-green-200',
 }
 

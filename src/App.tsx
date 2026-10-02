@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, Link } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { ProtectedRoute, AdminRoute, LeagueAdminRoute, ClubAdminRoute, TournamentEditRoute } from './components/ProtectedRoute'
+import { ProtectedRoute, AdminRoute, LeagueAdminRoute, ClubAdminRoute, TournamentEditRoute, TournamentJudgeRoute } from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
 import ErrorBoundary from './components/ErrorBoundary'
 import ChangePassword from './pages/ChangePassword'
@@ -36,6 +36,7 @@ import Zasebnost from './pages/Zasebnost'
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const TournamentAdmin = lazy(() => import('./pages/admin/TournamentAdmin'))
 const TournamentEdit = lazy(() => import('./pages/admin/TournamentEdit'))
+const MojaTekmovanja = lazy(() => import('./pages/admin/MojaTekmovanja'))
 const ZivZreb = lazy(() => import('./pages/admin/ZivZreb'))
 const LeagueAdmin = lazy(() => import('./pages/admin/LeagueAdmin'))
 const MojKlub = lazy(() => import('./pages/admin/MojKlub'))
@@ -149,6 +150,7 @@ export default function App() {
               <Route path="/admin" element={<LeagueAdminRoute><AdminDashboard /></LeagueAdminRoute>} />
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
               <Route path="/admin/turnir/:id" element={<TournamentEditRoute><TournamentEdit /></TournamentEditRoute>} />
+              <Route path="/admin/moja-tekmovanja" element={<TournamentJudgeRoute><MojaTekmovanja /></TournamentJudgeRoute>} />
               <Route path="/admin/turnir/:id/zreb" element={<AdminRoute><ZivZreb /></AdminRoute>} />
               <Route path="/admin/liga" element={<LeagueAdminRoute><LeagueAdmin /></LeagueAdminRoute>} />
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />

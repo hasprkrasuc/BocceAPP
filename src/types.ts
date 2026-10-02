@@ -3,7 +3,7 @@
 export type UserRole = 'player' | 'admin' | 'super_admin' | 'judge'
 export type TournamentKind = 'tournament' | 'championship'
 export type TournamentStatus = 'draft' | 'registration_open' | 'in_progress' | 'completed'
-export type TournamentCategory = 'men' | 'women' | 'u18' | 'mixed' | 'u18_women' | 'u15' | 'u12'
+export type TournamentCategory = 'men' | 'women' | 'u18' | 'mixed' | 'u18_women' | 'u15' | 'u14' | 'u12'
 export type RegistrationStatus = 'pending' | 'confirmed' | 'rejected'
 export type MatchStage = 'group' | 'r128' | 'r64' | 'r32' | 'r16' | 'qf' | 'sf' | 'final' | 'third_place'
 export type MatchType = 'zm' | 'po' | 'r' | 'bye' | 'knockout'
