@@ -10,6 +10,12 @@
  *   (nato po imenu kluba, deterministično)
  *
  * Kriteriji 2–4 pridejo v poštev LE ob enakem številu točk (kriterij 1).
+ *
+ * KAZEN: `league_teams.penalty_points` se od točk ODŠTEJE, preden se lestvica
+ * razvrsti — kazen po pravilu vpliva na mesto, ne le na prikazano številko.
+ * Odbitek je zato vštet v `TeamStats.points`, surova vsota pa ostane v
+ * `pointsFor`. Ker je odbitek na ekipi in ne poseben parameter, pride v vsak
+ * izračun sam; glej opombo v migraciji 20261002_02.
  */
 
 import type {
@@ -41,6 +47,7 @@ function emptyStats(team: LeagueTeam): TeamStats {
   return {
     team, played: 0, won: 0, drawn: 0, lost: 0,
     pointsFor: 0, pointsAgainst: 0, difference: 0, points: 0,
+    penaltyPoints: Math.max(0, team.penalty_points ?? 0),
     boulesFor: 0, boulesAgainst: 0, bouleDiff: 0,
   }
 }
@@ -59,6 +66,16 @@ function accumulate(
   const bh = boule?.home ?? 0, ba = boule?.away ?? 0
   h.boulesFor += bh; h.boulesAgainst += ba
   a.boulesFor += ba; a.boulesAgainst += bh
+}
+
+/**
+ * Uvrstitvene točke ekipe: osvojene minus odbitek za kazen.
+ *
+ * Ena sama izpeljava za vse tri lestvice (navadna, skupinska, razdelitvena),
+ * da se kazen ne more upoštevati v eni in izpustiti v drugi.
+ */
+function scoreTeam(s: TeamStats, winPts: number, drawPts: number, lossPts: number): void {
+  s.points = s.won * winPts + s.drawn * drawPts + s.lost * lossPts - s.penaltyPoints
 }
 
 /**
@@ -147,8 +164,8 @@ export function calculateStandings(
     counted.push(fixture)
   }
 
-  // Točke: zmaga 2 / remi 1 / poraz 0 (kriterij 1)
-  for (const s of Object.values(stats)) s.points = s.won * winPts + s.drawn * drawPts + s.lost * lossPts
+  // Točke: zmaga 2 / remi 1 / poraz 0 (kriterij 1), minus kazen
+  for (const s of Object.values(stats)) scoreTeam(s, winPts, drawPts, lossPts)
   return sortStandings(Object.values(stats), counted, boule)
 }
 
@@ -216,7 +233,7 @@ export function calculateGroupStandings(
       accumulate(h, a, f.home_score ?? 0, f.away_score ?? 0, boule[f.id])
       counted.push(f)
     }
-    for (const s of Object.values(stats)) s.points = s.won * winPts + s.drawn * drawPts + s.lost * lossPts
+    for (const s of Object.values(stats)) scoreTeam(s, winPts, drawPts, lossPts)
     return sortStandings(Object.values(stats), counted, boule)
   }
 
@@ -286,7 +303,7 @@ export function calculateSplitStandings(
     return { hasSplit: false, phase1: [], phase2: null }
   }
 
-  const score = (s: TeamStats) => { s.points = s.won * winPts + s.drawn * drawPts + s.lost * lossPts }
+  const score = (s: TeamStats) => scoreTeam(s, winPts, drawPts, lossPts)
 
   // Faza 1: vseh 10 ekip, vse tekme prvih 9 kol.
   const p1: Record<string, TeamStats> = {}

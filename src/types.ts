@@ -239,6 +239,14 @@ export interface LeagueTeam {
   logo_url?: string | null
   /** Ročno vnesena končna uvrstitev (za zgodovinske uvoze brez tekem); prepiše izračunano pri rang točkah. */
   final_rank?: number | null
+  /**
+   * Točke, odbite zaradi kazni (vedno POZITIVNO; 0 = brez kazni).
+   * Odšteje jih `engines/league.ts` pri vsaki lestvici. Ker je vrstica ekipe
+   * vezana na sezono, je kazen samodejno sezonska.
+   */
+  penalty_points?: number | null
+  /** Razlog kazni — izpiše se pod lestvico, da odbitek ni nerazložen. */
+  penalty_note?: string | null
   /** Samo za format='groups': v kateri skupini faze 1 je ekipa ('A'/'B'). NULL = žreb še ni vnešen. */
   group_label: 'A' | 'B' | null
   captain?: UserProfile
@@ -397,8 +405,13 @@ export interface TeamStats {
   pointsFor: number
   pointsAgainst: number
   difference: number
-  /** Uvrstitvena vrednost = seštevek osvojenih match točk (== pointsFor). */
+  /**
+   * Uvrstitvena vrednost: osvojene match točke MINUS odbitek za kazen.
+   * Razvrščamo po njej, ker kazen po pravilu vpliva na mesto na lestvici.
+   */
   points: number
+  /** Odbite točke zaradi kazni (pozitivno; 0 = brez). Že vštete v `points`. */
+  penaltyPoints: number
   /** Seštevek točk posameznih iger (boule/disciplinski score) — za / proti (tiebreak 3 & 4). */
   boulesFor: number
   boulesAgainst: number
