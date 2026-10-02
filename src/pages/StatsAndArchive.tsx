@@ -104,7 +104,7 @@ export function Statistics() {
 // ──────────────────────────────────────────────────────────────
 const CATEGORY_LABELS: Record<TournamentCategory, string> = {
   men: 'Moški', women: 'Ženske', u18: 'U18', mixed: 'Mešano',
-  u18_women: 'U18 Ženske', u15: 'U15', u12: 'U12',
+  u18_women: 'U18 Ženske', u15: 'U15', u14: 'U14', u12: 'U12',
 }
 
 export function Archive() {

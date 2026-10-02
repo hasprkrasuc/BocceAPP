@@ -1020,7 +1020,12 @@ export default function TournamentEdit() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between gap-3 mb-2">
-        <Link to="/admin/turnirji" className="text-sm text-gray-500 hover:text-bocce-green">← Nazaj</Link>
+        {/*
+          Vodja tekmovanja ni admin: /admin/turnirji je za njim zaprt in
+          »Nazaj« bi ga vrglo na domačo stran. Zato pelje na njegov seznam.
+        */}
+        <Link to={isAdmin ? '/admin/turnirji' : '/admin/moja-tekmovanja'}
+          className="text-sm text-gray-500 hover:text-bocce-green">← Nazaj</Link>
         <a
           href={`${tournament.kind === 'championship' ? '/prvenstva' : '/turnirji'}/${id}`}
           target="_blank" rel="noopener noreferrer"

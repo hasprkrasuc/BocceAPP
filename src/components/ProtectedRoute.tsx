@@ -70,6 +70,21 @@ export function TournamentEditRoute({ children }: { children: React.ReactNode })
   return <>{children}</>
 }
 
+/**
+ * Seznam »Moja tekmovanja«: globalni admin ALI vodja vsaj enega tekmovanja.
+ * Sam seznam je zgrajen iz `chief_judge_id`, zato tudi admin brez dodeljenih
+ * tekmovanj tu vidi prazen seznam — zapora je le udobje.
+ */
+export function TournamentJudgeRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAdmin, isTournamentJudge, loading } = useAuth()
+  const location = useLocation()
+
+  if (loading) return <Spinner />
+  if (!user) return <Navigate to="/prijava" state={{ from: location }} replace />
+  if (!isAdmin && !isTournamentJudge) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isAdmin, loading } = useAuth()
   const location = useLocation()

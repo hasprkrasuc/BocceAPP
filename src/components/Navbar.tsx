@@ -5,6 +5,15 @@ import { sl } from '../i18n/sl'
 
 export default function Navbar() {
   const { user, profile, isAdmin, isClubAdmin, isLeagueAdmin, managedTournamentIds, signOut } = useAuth()
+  /**
+   * Pri enem tekmovanju pelje naravnost nanj — seznam ene vrstice je odvečen
+   * klik. Pri več pelje na seznam; prej je peljala na prvo in do ostalih se
+   * je vodja prebijal prek javnih strani.
+   */
+  const vodiEno = managedTournamentIds.length === 1
+  const mojaTekmovanjaPot = vodiEno
+    ? `/admin/turnir/${managedTournamentIds[0]}`
+    : '/admin/moja-tekmovanja'
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -82,14 +91,14 @@ export default function Navbar() {
                 javnih strani. */}
             {!isAdmin && managedTournamentIds.length > 0 && (
               <Link
-                to={`/admin/turnir/${managedTournamentIds[0]}`}
+                to={mojaTekmovanjaPot}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isActive('/admin/turnir')
+                  isActive('/admin/turnir') || isActive('/admin/moja-tekmovanja')
                     ? 'bg-bocce-gold text-white'
                     : 'text-bocce-gold-light hover:bg-bocce-gold hover:text-white'
                 }`}
               >
-                Moje tekmovanje
+                {vodiEno ? 'Moje tekmovanje' : 'Moja tekmovanja'}
               </Link>
             )}
 
@@ -185,11 +194,11 @@ export default function Navbar() {
             )}
             {!isAdmin && managedTournamentIds.length > 0 && (
               <Link
-                to={`/admin/turnir/${managedTournamentIds[0]}`}
+                to={mojaTekmovanjaPot}
                 onClick={() => setMenuOpen(false)}
                 className="block px-3 py-2 rounded-md text-sm font-medium text-bocce-gold-light hover:bg-bocce-green"
               >
-                Moje tekmovanje
+                {vodiEno ? 'Moje tekmovanje' : 'Moja tekmovanja'}
               </Link>
             )}
             {(isAdmin || isLeagueAdmin) && (

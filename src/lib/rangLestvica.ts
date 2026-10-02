@@ -492,7 +492,12 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
         .select('id, round_number, home_team_id, away_team_id, home_score, away_score, status, scheduled_date, group_label')
         .eq('season_id', season.id),
       supabase.from('league_teams')
-        .select('id, club_name, draw_number, final_rank, league_team_players(player_id)')
+        // `penalty_points` MORA biti v seznamu. Spodaj iz teh ekip računamo
+        // končno uvrstitev v ligi (calculateStandings), ta pa odbitek za kazen
+        // jemlje z ekipe. Brez stolpca bi bil undefined → 0 in uvrstitvene
+        // točke na rang lestvici bi se računale po lestvici PRED kaznijo,
+        // medtem ko bi javna lestvica kazala drugačen vrstni red.
+        .select('id, club_name, draw_number, final_rank, penalty_points, league_team_players(player_id)')
         .eq('season_id', season.id),
     ])
     const odigrane = ((fixtures ?? []) as LeagueFixture[]).filter(f => f.status === 'completed')

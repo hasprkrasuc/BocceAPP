@@ -515,6 +515,29 @@ export default function LeagueAdmin() {
    * zgodovinski zapis prijave (migracija 20260804_01) — ekipa se je tisto
    * sezono res imenovala tako, tudi če se klub danes piše drugače.
    */
+  /**
+   * Odbitek točk za kazen. Piše se na ekipo, od koder ga `engines/league.ts`
+   * odšteje v VSEH lestvicah te sezone — zato ni dovolj spremeniti prikaza.
+   *
+   * Hranimo pozitivno število odbitih točk; prazno polje pomeni 0 (brez
+   * kazni) in takrat pobrišemo tudi razlog, da pod lestvico ne ostane viseti
+   * opomba brez odbitka.
+   */
+  const [kazenVnos, setKazenVnos] = useState<Record<string, { tocke: string; razlog: string }>>({})
+  const [kazenBusy, setKazenBusy] = useState<string | null>(null)
+  async function shraniKazen(teamId: string, tocke: string, razlog: string) {
+    const n = Math.max(0, Math.trunc(Number(tocke) || 0))
+    const opomba = n > 0 ? (razlog.trim() || null) : null
+    setKazenBusy(teamId)
+    const { error } = await supabase.from('league_teams')
+      .update({ penalty_points: n, penalty_note: opomba }).eq('id', teamId)
+    setKazenBusy(null)
+    if (error) { setMessage(`⚠ Kazni ni bilo mogoče shraniti: ${error.message}`); return }
+    setTeams(ts => ts.map(t => (t.id === teamId
+      ? { ...t, penalty_points: n, penalty_note: opomba } : t)))
+    setMessage(n > 0 ? `✓ Kazen shranjena: −${n}` : '✓ Kazen odstranjena')
+  }
+
   async function changeTeamClub(teamId: string, clubId: string) {
     const klub = klubi.find(k => k.id === clubId) ?? null
     setTeams(ts => ts.map(t => (t.id === teamId
@@ -1796,6 +1819,42 @@ export default function LeagueAdmin() {
                         </div>
                       )
                     })()}
+                    {/* KAZEN — odbitek točk na lestvici. Vpisan odbitek motor
+                        odšteje pri vsaki lestvici te sezone in vpliva na mesto,
+                        ne le na prikazano številko. */}
+                    <div className="mb-3 border-t border-gray-100 pt-3">
+                      <form className="flex items-center gap-2 flex-wrap"
+                        onSubmit={e => {
+                          e.preventDefault()
+                          shraniKazen(team.id, kazenVnos[team.id]?.tocke ?? '', kazenVnos[team.id]?.razlog ?? '')
+                        }}>
+                        <span className="text-xs font-medium text-gray-500">Kazen (odbitek točk):</span>
+                        <input type="number" min={0} step={1}
+                          value={kazenVnos[team.id]?.tocke ?? String(team.penalty_points ?? 0)}
+                          onChange={e => setKazenVnos(k => ({
+                            ...k,
+                            [team.id]: { tocke: e.target.value, razlog: k[team.id]?.razlog ?? (team.penalty_note ?? '') },
+                          }))}
+                          className="w-16 border border-gray-300 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-bocce-green outline-none" />
+                        <input type="text" placeholder="razlog (izpiše se pod lestvico)"
+                          value={kazenVnos[team.id]?.razlog ?? (team.penalty_note ?? '')}
+                          onChange={e => setKazenVnos(k => ({
+                            ...k,
+                            [team.id]: { tocke: k[team.id]?.tocke ?? String(team.penalty_points ?? 0), razlog: e.target.value },
+                          }))}
+                          className="flex-1 min-w-[180px] border border-gray-300 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-bocce-green outline-none" />
+                        <button type="submit" disabled={kazenBusy === team.id}
+                          className="text-xs bg-bocce-green text-white px-3 py-1 rounded-lg hover:bg-bocce-green-light disabled:opacity-40">
+                          Shrani
+                        </button>
+                        {(team.penalty_points ?? 0) > 0 && (
+                          <span className="text-xs text-red-600 font-semibold">
+                            trenutno −{team.penalty_points}
+                          </span>
+                        )}
+                      </form>
+                    </div>
+
                     <div className="flex flex-wrap gap-2 mb-2">
                       {team.league_team_players?.map(p => (
                         <span key={p.id} className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${p.guest_name

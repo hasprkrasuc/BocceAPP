@@ -24,7 +24,7 @@ import type {
 
 const CATEGORY_LABELS: Record<TournamentCategory, string> = {
   men: 'Moški', women: 'Ženske', u18: 'U18', mixed: 'Mešano',
-  u18_women: 'U18 Ženske', u15: 'U15', u12: 'U12',
+  u18_women: 'U18 Ženske', u15: 'U15', u14: 'U14', u12: 'U12',
 }
 const STATUS_LABELS: Record<TournamentStatus, string> = {
   draft: 'Osnutek', registration_open: 'Prijave odprte', in_progress: 'V teku', completed: 'Zaključen',
@@ -246,6 +246,9 @@ export function TournamentDetail() {
    * `jeParnoTekmovanje`.
    */
   const jeDvojka = jeParnoTekmovanje(tournament?.format, tournament?.discipline_type)
+  /** Admin ali glavni sodnik / vodja TEGA tekmovanja. */
+  const smeVpisovatiIzbijanje = isAdmin
+    || (!!tournament?.chief_judge_id && tournament.chief_judge_id === user?.id)
   const [players, setPlayers] = useState<PlayerOption[]>([])
   const [judges, setJudges] = useState<JudgeOption[]>([])
   const [regLoading, setRegLoading] = useState(false)
@@ -569,10 +572,17 @@ export function TournamentDetail() {
               {izbijanjeMsg}
             </div>
           )}
+          {/*
+            Izide vpisuje admin ALI glavni sodnik tega tekmovanja. Enak vzorec
+            kot pri skupinah spodaj (`canScore`), kjer sme dodeljeni sodnik
+            vpisati rezultat svoje skupine. Baza to že dovoli (politika
+            "Vodja tekmovanja vpisuje izbijanje"), zato bi sodnik brez tega
+            pogoja gledal tabelo, ki je zanj po nepotrebnem samo za branje.
+          */}
           <IzbijanjeTabela
             prijave={registrations.filter(r => r.status === 'confirmed').map(imeIzbijanja)}
             izidi={izbijanje}
-            shrani={isAdmin ? shraniIzbijanje : undefined}
+            shrani={smeVpisovatiIzbijanje ? shraniIzbijanje : undefined}
             zaposlen={izbijanjeBusy}
           />
         </div>
