@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { sl } from '../i18n/sl'
 
 export default function Navbar() {
-  const { user, profile, isAdmin, isClubAdmin, isLeagueAdmin, signOut } = useAuth()
+  const { user, profile, isAdmin, isClubAdmin, isLeagueAdmin, managedTournamentIds, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -72,6 +72,24 @@ export default function Navbar() {
                 }`}
               >
                 Moj klub
+              </Link>
+            )}
+
+
+            {/* Vodja tekmovanja tudi ni globalni admin — brez te povezave do
+                grafikona, kamor vpisuje izide, ne bi prišel. Vodi lahko več
+                prvenstev; takrat pelje na prvo, do ostalih pride z njihovih
+                javnih strani. */}
+            {!isAdmin && managedTournamentIds.length > 0 && (
+              <Link
+                to={`/admin/turnir/${managedTournamentIds[0]}`}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive('/admin/turnir')
+                    ? 'bg-bocce-gold text-white'
+                    : 'text-bocce-gold-light hover:bg-bocce-gold hover:text-white'
+                }`}
+              >
+                Moje tekmovanje
               </Link>
             )}
 
@@ -163,6 +181,15 @@ export default function Navbar() {
                 className="block px-3 py-2 rounded-md text-sm font-medium text-bocce-gold-light hover:bg-bocce-green"
               >
                 Moj klub
+              </Link>
+            )}
+            {!isAdmin && managedTournamentIds.length > 0 && (
+              <Link
+                to={`/admin/turnir/${managedTournamentIds[0]}`}
+                onClick={() => setMenuOpen(false)}
+                className="block px-3 py-2 rounded-md text-sm font-medium text-bocce-gold-light hover:bg-bocce-green"
+              >
+                Moje tekmovanje
               </Link>
             )}
             {(isAdmin || isLeagueAdmin) && (

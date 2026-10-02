@@ -13,18 +13,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [managedSeasonIds, setManagedSeasonIds] = useState<string[]>([])
   /** Klubi, katerih skrbnik je prijavljeni uporabnik (prazno pri globalnem adminu). */
   const [managedClubIds, setManagedClubIds] = useState<string[]>([])
+  /** Tekmovanja, katerih glavni sodnik je (prazno pri globalnem adminu). */
+  const [managedTournamentIds, setManagedTournamentIds] = useState<string[]>([])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) { fetchProfile(session.user.id); fetchManagedSeasons(session.user.id); fetchManagedClubs(session.user.id) }
+      if (session?.user) { fetchProfile(session.user.id); fetchManagedSeasons(session.user.id); fetchManagedClubs(session.user.id); fetchManagedTournaments(session.user.id) }
       else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) { fetchProfile(session.user.id); fetchManagedSeasons(session.user.id); fetchManagedClubs(session.user.id) }
-      else { setProfile(null); setManagedSeasonIds([]); setManagedClubIds([]); setLoading(false) }
+      if (session?.user) { fetchProfile(session.user.id); fetchManagedSeasons(session.user.id); fetchManagedClubs(session.user.id); fetchManagedTournaments(session.user.id) }
+      else { setProfile(null); setManagedSeasonIds([]); setManagedClubIds([]); setManagedTournamentIds([]); setLoading(false) }
     })
 
     return () => subscription.unsubscribe()
@@ -58,6 +60,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function fetchManagedClubs(userId: string) {
     const { data } = await supabase.from('club_admins').select('club_id').eq('user_id', userId)
     setManagedClubIds((data ?? []).map(r => r.club_id as string))
+  }
+
+  /**
+   * Tekmovanja, ki jih uporabnik vodi kot glavni sodnik.
+   *
+   * `tournaments` se bere javno, zato filter po uporabniku TU JE edina omejitev
+   * izbora — ne pa varnostna meja. To postavlja `is_tournament_judge()` v RLS
+   * politikah nad `izbijanje_izidi` in `tournament_registrations`, ki jih
+   * odjemalec ne more obiti.
+   */
+  async function fetchManagedTournaments(userId: string) {
+    const { data } = await supabase.from('tournaments').select('id').eq('chief_judge_id', userId)
+    setManagedTournamentIds((data ?? []).map(r => r.id as string))
   }
 
   async function signIn(email: string, password: string) {
@@ -96,11 +111,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isClubAdmin = managedClubIds.length > 0
   /** Ureja vsaj eno ligo, ni pa nujno globalni admin. */
   const isLeagueAdmin = managedSeasonIds.length > 0
+  /** Vodi vsaj eno tekmovanje, ni pa nujno globalni admin. */
+  const isTournamentJudge = managedTournamentIds.length > 0
 
   return (
     <AuthContext.Provider value={{
       user, profile, loading, isAdmin, isSuperAdmin, isLeagueAdmin, managedSeasonIds,
       isClubAdmin, managedClubIds,
+      isTournamentJudge, managedTournamentIds,
       signIn, signUp, signOut, updateProfile,
       refreshProfile: () => { if (user) fetchProfile(user.id) },
     }}>

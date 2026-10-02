@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, Link } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
-import { ProtectedRoute, AdminRoute, LeagueAdminRoute, ClubAdminRoute } from './components/ProtectedRoute'
+import { ProtectedRoute, AdminRoute, LeagueAdminRoute, ClubAdminRoute, TournamentEditRoute } from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
 import ErrorBoundary from './components/ErrorBoundary'
 import ChangePassword from './pages/ChangePassword'
@@ -148,7 +148,7 @@ export default function App() {
               {/* Admin */}
               <Route path="/admin" element={<LeagueAdminRoute><AdminDashboard /></LeagueAdminRoute>} />
               <Route path="/admin/turnirji" element={<AdminRoute><TournamentAdmin /></AdminRoute>} />
-              <Route path="/admin/turnir/:id" element={<AdminRoute><TournamentEdit /></AdminRoute>} />
+              <Route path="/admin/turnir/:id" element={<TournamentEditRoute><TournamentEdit /></TournamentEditRoute>} />
               <Route path="/admin/turnir/:id/zreb" element={<AdminRoute><ZivZreb /></AdminRoute>} />
               <Route path="/admin/liga" element={<LeagueAdminRoute><LeagueAdmin /></LeagueAdminRoute>} />
               <Route path="/admin/uvoz-igralcev" element={<AdminRoute><PlayerImport /></AdminRoute>} />

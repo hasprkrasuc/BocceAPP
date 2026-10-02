@@ -17,6 +17,8 @@ import {
   sistemIzbijanja, koncniVrstniRed, jeNastopil, type KrogIzbijanja, type Nastop,
 } from '../../engines/izbijanje'
 import { oznakaIgralca } from '../../lib/playerNames'
+import { useAuth } from '../../contexts/AuthContext'
+import type { JudgeOption } from '../../components/GroupBracket'
 
 type Tab = 'registrations' | 'draw' | 'knockout' | 'izbijanje'
 
@@ -34,6 +36,35 @@ function isYouthCategory(cat: string | null | undefined): boolean {
 
 export default function TournamentEdit() {
   const { id } = useParams<{ id: string }>()
+  const { isAdmin } = useAuth()
+
+  /**
+   * Kandidati za glavnega sodnika — enak seznam kot pri izbiri sodnika tekme
+   * (`MatchJudgeSelect`), da je odgovor na »kdo sme sodniti« en sam. Kdor na
+   * seznamu ni, potrebuje v Uporabnikih vlogo Sodnik.
+   */
+  const [judges, setJudges] = useState<JudgeOption[]>([])
+  useEffect(() => {
+    supabase.from('users').select('id, full_name')
+      .in('role', ['judge', 'admin', 'super_admin']).order('full_name')
+      .then(({ data }) => setJudges((data ?? []) as JudgeOption[]))
+  }, [])
+
+  const [sodnikBusy, setSodnikBusy] = useState(false)
+  /**
+   * Dodelitev vodje tekmovanja. Piše se le `chief_judge_id` — UPDATE na
+   * `tournaments` ima po RLS samo admin, zato je obrazec spodaj viden njemu.
+   */
+  async function shraniGlavnegaSodnika(userId: string) {
+    setSodnikBusy(true)
+    const { error } = await supabase.from('tournaments')
+      .update({ chief_judge_id: userId || null }).eq('id', id)
+    setSodnikBusy(false)
+    if (error) { setMessage(`❌ Vodje tekmovanja ni bilo mogoče shraniti: ${error.message}`); return }
+    setTournament(prev => (prev ? { ...prev, chief_judge_id: userId || null } : prev))
+    setMessage(userId ? '✓ Vodja tekmovanja shranjen' : '✓ Vodja tekmovanja odstranjen')
+  }
+
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [registrations, setRegistrations] = useState<TournamentRegistration[]>([])
   const [groups, setGroups] = useState<TournamentGroup[]>([])
@@ -1005,6 +1036,40 @@ export default function TournamentEdit() {
           {message}
         </div>
       )}
+
+      {/*
+        GLAVNI SODNIK / VODJA TEKMOVANJA
+        Dodeli ga admin; vpisuje pa izide dodeljeni sam, tudi če ni admin.
+        Nedodeljeno je pri izbijanju vredno opozorila — izide bi tam sicer
+        lahko vpisal samo admin, kar je prav tisto, kar nas je prineslo sem.
+      */}
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-6">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-semibold text-gray-700">Glavni sodnik / vodja tekmovanja</span>
+          {isAdmin ? (
+            <select value={tournament.chief_judge_id ?? ''} disabled={sodnikBusy}
+              onChange={e => shraniGlavnegaSodnika(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-50">
+              <option value="">— ni dodeljen —</option>
+              {judges.map(j => <option key={j.id} value={j.id}>{j.full_name}</option>)}
+            </select>
+          ) : (
+            <span className="text-sm text-gray-600">
+              {judges.find(j => j.id === tournament.chief_judge_id)?.full_name ?? 'ti'}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-1.5">
+          {isAdmin
+            ? 'Dodeljeni vpisuje izide in končni vrstni red tega tekmovanja, tudi če ni admin. Kdor na seznamu ni, potrebuje v Uporabnikih vlogo Sodnik.'
+            : 'Vpisuješ izide in končni vrstni red tega tekmovanja. Tekmovanja samega ne moreš urejati.'}
+        </p>
+        {isAdmin && !tournament.chief_judge_id && tournament.format === 'izbijanje' && (
+          <p className="text-xs text-amber-600 mt-1">
+            Ni dodeljen — izide lahko doslej vpiše samo admin.
+          </p>
+        )}
+      </div>
 
       <div className="flex gap-1 mb-6 border-b border-gray-200">
         {(tournament.format === 'izbijanje'

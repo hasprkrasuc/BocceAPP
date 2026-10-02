@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { format } from 'date-fns'
 import type { Tournament, TournamentStatus, TournamentCategory, TournamentKind } from '../../types'
+import type { JudgeOption } from '../../components/GroupBracket'
 
 const CATEGORY_LABELS: Record<TournamentCategory, string> = {
   men: 'Moški', women: 'Ženske', u18: 'U18', mixed: 'Mešano',
@@ -21,6 +22,7 @@ interface TournamentForm {
   group_size: string
   format: string
   discipline_type: string
+  chief_judge_id: string
   max_teams: string
   registration_deadline: string
   notes: string
@@ -31,6 +33,7 @@ const EMPTY_FORM: TournamentForm = {
   group_size: '4',
   format: 'groups',
   discipline_type: '',
+  chief_judge_id: '',
   max_teams: '', registration_deadline: '', notes: '',
 }
 
@@ -44,6 +47,14 @@ export default function TournamentAdmin() {
   const [activeTab, setActiveTab] = useState<TournamentKind>('tournament')
 
   useEffect(() => { load() }, [])
+
+  /** Kandidati za vodjo tekmovanja — enak seznam kot v TournamentEdit. */
+  const [judges, setJudges] = useState<JudgeOption[]>([])
+  useEffect(() => {
+    supabase.from('users').select('id, full_name')
+      .in('role', ['judge', 'admin', 'super_admin']).order('full_name')
+      .then(({ data }) => setJudges((data ?? []) as JudgeOption[]))
+  }, [])
 
   async function load() {
     const { data } = await supabase.from('tournaments').select('*').order('date', { ascending: false })
@@ -69,6 +80,8 @@ export default function TournamentAdmin() {
         format: form.format,
         // Prazno pomeni »ni vpisana«; kaj takrat velja, pove jeParnoTekmovanje.
         discipline_type: form.discipline_type || null,
+        // Glavni sodnik / vodja tekmovanja — sme vpisovati izide, tudi če ni admin.
+        chief_judge_id: form.chief_judge_id || null,
         max_teams: form.max_teams ? Number(form.max_teams) : null,
         registration_deadline: form.registration_deadline || null,
         notes: form.notes || null,
@@ -152,6 +165,18 @@ export default function TournamentAdmin() {
                 <p className="text-xs text-gray-400 mt-1">
                   Določa, ali se prijavlja posameznik ali par. Pri dvojicah in štafeti par,
                   sicer posameznik.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Glavni sodnik / vodja tekmovanja</label>
+                <select value={form.chief_judge_id} onChange={set('chief_judge_id')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                  <option value="">— ni dodeljen —</option>
+                  {judges.map(j => <option key={j.id} value={j.id}>{j.full_name}</option>)}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Dodeljeni vpisuje izide tega tekmovanja, tudi če ni admin. Lahko ga
+                  nastaviš tudi pozneje pri urejanju tekmovanja.
                 </p>
               </div>
               <div>

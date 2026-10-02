@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 const Spinner = () => (
@@ -46,6 +46,27 @@ export function ClubAdminRoute({ children }: { children: React.ReactNode }) {
   if (loading) return <Spinner />
   if (!user) return <Navigate to="/prijava" state={{ from: location }} replace />
   if (!isAdmin && !isClubAdmin) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
+/**
+ * Urejanje enega tekmovanja: globalni admin ALI glavni sodnik TEGA tekmovanja.
+ *
+ * Drugače kot pri ligaški in klubski zapori tu preverimo tudi `:id` — sodnik
+ * enega prvenstva ne sme odpreti drugega. Tudi to je le udobje; resnično mejo
+ * postavlja `is_tournament_judge()` v RLS politikah, ki jih odjemalec ne more
+ * obiti. Sodnik v tem zaslonu vidi le toliko, kolikor mu dovoli baza: pri
+ * izbijanju sta to prijave in grafikon, samega tekmovanja pa ne more urejati,
+ * ker je UPDATE na `tournaments` še naprej le za admina.
+ */
+export function TournamentEditRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAdmin, managedTournamentIds, loading } = useAuth()
+  const location = useLocation()
+  const { id } = useParams<{ id: string }>()
+
+  if (loading) return <Spinner />
+  if (!user) return <Navigate to="/prijava" state={{ from: location }} replace />
+  if (!isAdmin && !(id && managedTournamentIds.includes(id))) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
