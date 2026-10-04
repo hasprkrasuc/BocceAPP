@@ -7,6 +7,7 @@ import {
   pokalniPajek, pokalniDomacin, rangLige, RANG_NEZNAN, velikostPajka, oznakeKrogov,
   type PokalEkipa, type PokalIzid,
 } from '../engines/pokal'
+import { zapisnikJePrazen, type Zapisnik } from '../engines/zapisnikPrazen'
 
 /**
  * POKAL BZS — izločilno tekmovanje klubskih ekip.
@@ -185,17 +186,34 @@ export default function Pokal() {
 
   /**
    * Ročna zamenjava domačina — za pare iz istega ranga, kjer pravilo pravi
-   * »nižje uvrščeni iz lanske sezone«, tega pa baza ne pozna. Ne dovolimo je,
-   * ko ima tekma izid ali zapisnik: strani zapisnika bi se obrnili.
+   * »nižje uvrščeni iz lanske sezone«, tega pa baza ne pozna.
+   *
+   * Zavrnemo jo, ko ima tekma izid ali IZPOLNJEN zapisnik: postave in izidi
+   * disciplin so vpisani »doma« in »gost«, po obratu pa bi pripadli napačni
+   * ekipi.
+   *
+   * Prej smo zavrnili že ob OBSTOJU zapisnika. To je bilo preveč: odpiranje
+   * »Uredi zapisnik« vrstico in prazne discipline ustvari vnaprej, zato je že
+   * sam ogled trajno zaklenil ta gumb (pokal članic 2026, Šiška–Sivke).
+   * Odslej odloča vsebina — `zapisnikJePrazen` v engines/.
    */
   async function zamenjajDomacina(t: Tekma) {
     if (t.status === 'completed' || t.home_score !== null || t.away_score !== null) {
       setNapaka('Tekma ima izid — domačina ni več mogoče zamenjati.'); return
     }
-    const { count } = await supabase.from('league_match_results')
-      .select('id', { count: 'exact', head: true }).eq('fixture_id', t.id)
-    if ((count ?? 0) > 0) {
-      setNapaka('Tekma ima zapisnik — najprej ga izbriši, sicer bi se strani obrnile.'); return
+    const { data: zapisniki, error: zErr } = await supabase.from('league_match_results')
+      .select('judges, chief_judge, viewers, time_end, draw_natancno_field, draw_blok4, '
+        + 'discipline_results:league_match_discipline_results('
+        + 'playground_number, home_score, away_score, home_match_points, away_match_points, '
+        + 'home_players, away_players)')
+      .eq('fixture_id', t.id)
+    // Zavrnjene poizvedbe ne beremo kot »ni zapisnika«: tiho prazen odgovor bi
+    // tu pomenil, da obrnemo strani izpolnjenemu zapisniku.
+    if (zErr) {
+      setNapaka(`Zapisnika ni bilo mogoče preveriti: ${zErr.message}`); return
+    }
+    if (!zapisnikJePrazen(zapisniki as unknown as Zapisnik[] | null)) {
+      setNapaka('Tekma ima izpolnjen zapisnik — najprej ga izbriši, sicer bi se strani obrnile.'); return
     }
     const doma = poId.get(t.home_team_id)?.club_name ?? 'domači'
     const gost = poId.get(t.away_team_id)?.club_name ?? 'gost'
