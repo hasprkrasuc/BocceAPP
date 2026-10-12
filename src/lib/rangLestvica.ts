@@ -29,6 +29,7 @@ import { placementPoints, placementLabel } from './dpPlacement'
 import { calculateStandings } from '../engines/league'
 import { pokalniPajek, pokalneUvrstitve, type PokalIzid } from '../engines/pokal'
 import { veljavneIzdaje } from '../engines/dpSerije'
+import { steVRangSistem, FORMATI_BREZ_RANGA } from '../engines/rangSistem'
 import { tournamentPlayerPoints } from '../engines/tournamentPlacement'
 import {
   koncnaUvrstitevLige, tockeUvrstitveSuperLiga, tockeUvrstitvePokal, tockeEkipeIgralcem,
@@ -297,9 +298,10 @@ export async function computeRangLestvica(): Promise<RangLestvica> {
     // Pokal je zraven NAMENOMA: pokalne tekme štejejo v rang s koeficientom 1.
     // Ker pokal nima ravni (`tier` je NULL), se v izračun preslika prek ključa
     // 'pokal' (glej tierKljuc spodaj in LIGA_KOEF.pokal).
-    // Ekipni turnirji (reprezentance) pa v rang NE štejejo — niso del
-    // slovenskega tekmovalnega sistema.
-    .neq('format', 'turnir')
+    // Ekipni turnirji (reprezentance) in Super Pokal pa v rang NE štejejo.
+    // Kateri formati so to, pove `engines/rangSistem` — en sam odgovor za
+    // vsa štiri mesta, ki so se prej vsako zase odločala po svoje.
+    .not('format', 'in', `(${FORMATI_BREZ_RANGA.join(',')})`)
     .gte('year', currentYear - 2)
     .order('year', { ascending: false })
   if (sErr) throw sErr
@@ -639,8 +641,8 @@ export async function computePlayerSeasonStats(playerId: string): Promise<Player
   const seasonMap = new Map<string, { id: string; name: string; tier: string; year: number; status: string; format: string | null }>()
   for (const r of ((tp ?? []) as any[])) {
     const s = r.league_teams?.season
-    // Ekipni turnirji (reprezentance) ne sodijo v rang statistiko igralca.
-    if (s?.id && s.format !== 'turnir') seasonMap.set(s.id, s)
+    // Ekipni turnirji in Super Pokal ne sodijo v rang statistiko igralca.
+    if (s?.id && steVRangSistem(s.format)) seasonMap.set(s.id, s)
   }
 
   const out = await Promise.all([...seasonMap.values()].map(async season => {

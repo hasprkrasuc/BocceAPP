@@ -42,3 +42,39 @@ describe('zamenjava domačina', () => {
     expect(telo, 'napaka poizvedbe mora ustaviti menjavo').toMatch(/if \(zErr\)/)
   })
 })
+
+/**
+ * SUPER POKAL — kar se iz motorja ne vidi.
+ *
+ * Pravila so v engines/superPokal.ts s testi; tu varujemo, da jih stran res
+ * uporabi. Vsako od teh mest bi ob opustitvi dalo TIHO napačen izid, ne
+ * zloma: napačen domačin, ime kroga »1. krog« namesto »Finale«, prosto mesto
+ * namesto tekme.
+ */
+describe('Super Pokal na strani', () => {
+  test('zavihek zajame oba pokalna formata', () => {
+    expect(pokal, 'poizvedba sezon ne zajame super_pokal')
+      .toMatch(/\.in\('format', \['pokal', 'super_pokal'\]\)/)
+  })
+
+  test('domačin gre skozi svoje pravilo, ne skozi pokalno', () => {
+    // pokalniDomacin bi pri izzivalcu iz nižje lige strani OBRNIL.
+    expect(pokal).toMatch(/jeSuper\s*$|jeSuper\s*\n?\s*\?\s*superPokalDomacin/m)
+    expect(pokal).toMatch(/superPokalDomacin\(/)
+  })
+
+  test('krog se imenuje Finale, ne »1. krog«', () => {
+    expect(pokal).toMatch(/jeSuper \? superPokalKrogi\(\) : oznakeKrogov\(velikost\)/)
+  })
+
+  test('vnos se preveri nad VSEMI ekipami, ne le nad tistimi z mestom', () => {
+    // `vhod` je prefiltriran na draw_number !== null; ekipa brez mesta bi bila
+    // nevidna, ena sama ekipa pa bi pomenila prosto mesto in zmago brez tekme.
+    expect(pokal).toMatch(/preveriSuperPokal\(ekipe\)/)
+    expect(pokal, 'napake morajo biti vidne tudi obiskovalcu').toMatch(/napakeSuper\.length > 0/)
+  })
+
+  test('prostih mest v Super Pokalu ni', () => {
+    expect(pokal).toMatch(/!jeSuper && prosti\.length > 0/)
+  })
+})

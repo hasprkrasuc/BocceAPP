@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'vitest'
+import { FORMATI_BREZ_RANGA, steVRangSistem } from './rangSistem'
 import {
   pariPrvegaKroga, pokalniPajek, prostiVPrvemKrogu, tekmePrvegaKroga,
   pokalniDomacin, pokalneUvrstitve, rangLige, POKAL_VELIKOST, RANG_NEZNAN,
@@ -250,15 +251,23 @@ describe('domačin pokalne tekme', () => {
 describe('pokalna sezona ne sme uiti med lige', () => {
   // Pokal je `league_seasons` z drugim formatom, zato ga vsaka poizvedba čez
   // sezone potegne zraven, če je ne omejiš. Na seznamu lig bi se pokazal kot
-  // liga brez lestvice. (V rang lestvico pokal od zdaj šteje NAMENOMA, s
-  // koeficientom LIGA_KOEF.pokal — tam omejitve ne sme biti.)
+  // liga brez lestvice. (V rang lestvico pokal šteje NAMENOMA, s koeficientom
+  // LIGA_KOEF.pokal — tam omejitve ne sme biti.)
+  //
+  // Testi so prej zahtevali dobesedni `.neq('format', 'pokal')`. Odkar
+  // seznam formatov pove `engines/rangSistem`, zapis ni več dobeseden —
+  // zahtevamo torej NAMEN: da gre poizvedba skozi skupni seznam. Tako se
+  // pravilo drži tudi, ko pride nov format (super_pokal), ne da bi bilo treba
+  // popravljati vsako klicno mesto posebej.
   const viri = import.meta.glob('../**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
-  test('../pages/League.tsx izpušča pokalne sezone', () => {
+  test('../pages/League.tsx izpušča nelige prek skupnega seznama', () => {
     const vsebina = viri['../pages/League.tsx']
     expect(vsebina, 'datoteke ../pages/League.tsx ni med prebranimi').toBeDefined()
-    expect(vsebina, "seznam državnih lig ne izpušča pokala — dodaj .neq('format', 'pokal')")
-      .toMatch(/\.neq\(\s*['"]format['"]\s*,\s*['"]pokal['"]\s*\)/)
+    expect(vsebina, 'seznam državnih lig ne izpušča pokalnih formatov — uporabi FORMATI_NI_LIGA')
+      .toMatch(/FORMATI_NI_LIGA/)
+    expect(vsebina, 'podrobnost lige mora pokalne formate preusmeriti na /pokal')
+      .toMatch(/jePokalniFormat\(season\.format\)/)
   })
 
   test('rang lestvica pokal vključuje (koeficient 1)', () => {
@@ -269,16 +278,26 @@ describe('pokalna sezona ne sme uiti med lige', () => {
     expect(vsebina).toMatch(/'pokal'/)
   })
 
-  // Ekipni turnir (format 'turnir') je tudi sezona z ligaškim zapisnikom, a ni
-  // ne liga ne del rang sistema — kartico ima na /turnirji.
+  // Ekipni turnir (format 'turnir') in Super Pokal sta tudi sezoni z ligaškim
+  // zapisnikom, a nista ne ligi ne del rang sistema.
   test.each([
-    ['../pages/League.tsx', 'seznam državnih lig'],
-    ['../lib/rangLestvica.ts', 'rang lestvica'],
-  ])('%s izpušča ekipne turnirje', (pot, kaj) => {
+    ['../pages/League.tsx', 'seznam državnih lig', /FORMATI_NI_LIGA/],
+    ['../lib/rangLestvica.ts', 'rang lestvica', /FORMATI_BREZ_RANGA|steVRangSistem/],
+    ['../components/PlayerStats.tsx', 'ligaška pot igralca', /steVRangSistem/],
+  ])('%s izpušča nerangirne formate', (pot, kaj, vzorec) => {
     const vsebina = viri[pot]
     expect(vsebina, `datoteke ${pot} ni med prebranimi`).toBeDefined()
-    expect(vsebina, `${kaj} ne izpušča ekipnih turnirjev — dodaj .neq('format', 'turnir')`)
-      .toMatch(/\.neq\(\s*['"]format['"]\s*,\s*['"]turnir['"]\s*\)/)
+    expect(vsebina, `${kaj} ne gre skozi engines/rangSistem`).toMatch(vzorec)
+  })
+
+  test('seznam nerangirnih formatov je en sam in pozna oba', () => {
+    // Če bi kdo seznam prepisal na roko, bi se kopiji razšli ob naslednjem
+    // formatu — prav to je bila napaka, ki jo je ta razdelek podedoval.
+    expect([...FORMATI_BREZ_RANGA].sort()).toEqual(['super_pokal', 'turnir'])
+    expect(steVRangSistem('pokal'), 'pokal šteje v rang').toBe(true)
+    expect(steVRangSistem('super_pokal'), 'Super Pokal ne šteje v rang').toBe(false)
+    expect(steVRangSistem('turnir')).toBe(false)
+    expect(steVRangSistem(null), 'neznan format privzeto šteje').toBe(true)
   })
 })
 

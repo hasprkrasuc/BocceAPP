@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import KlubskiGrb, { logoEkipe } from '../components/KlubskiGrb'
 import { useRealtimeTable, useJitteredCallback, mergeRowById } from '../lib/useRealtimeTable'
@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import LeagueTable from '../components/LeagueTable'
 import { calculateStandings, calculateGroupStandings, calculateSplitStandings, getFixturesByRound } from '../engines/league'
 import { aktualnoKolo, danesLokalno, oznakaStanjaKola, type StanjeKola } from '../engines/aktualnoKolo'
+import { FORMATI_NI_LIGA, jePokalniFormat } from '../engines/rangSistem'
 import { SPLIT_PHASE1_ROUNDS, SPLIT_PHASE2_ROUNDS } from '../engines/leagueSplit'
 import { pickLeagueTreeSeasons, pickObzSeasons, type LeagueTreeSlot } from '../engines/leagueTree'
 import { format } from 'date-fns'
@@ -174,7 +175,7 @@ export function LeagueList() {
     // 'turnir'), ki ima kartico na /turnirji. Brez tega bi se pojavila med
     // ligami s prazno tabelo.
     supabase.from('league_seasons').select('*, league_teams(count)')
-      .neq('format', 'pokal').neq('format', 'turnir')
+      .not('format', 'in', `(${FORMATI_NI_LIGA.join(',')})`)
       .order('year', { ascending: false })
       .then(({ data }) => {
         const list = (data ?? []) as SeasonWithCount[]
@@ -538,6 +539,12 @@ export function LeagueDetail() {
 
   if (loading) return <div className="flex items-center justify-center min-h-[50vh]"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-bocce-green" /></div>
   if (!season) return <div className="text-center py-12 text-gray-400">Sezona ni najdena</div>
+  /*
+    Pokalno tekmovanje ni liga. Iz seznama lig je izločeno, a /liga/<id> ga
+    naloži po id-ju in bi ga izrisalo z lestvico, kolobarjem in razporedom
+    kol — česar pokal nima. Do te poti vodijo stare povezave in zaznamki.
+  */
+  if (jePokalniFormat(season.format)) return <Navigate to="/pokal" replace />
 
   const standings = calculateStandings(teams, fixtures, season, matchResults)
   const groupStandings = calculateGroupStandings(teams, fixtures, season, matchResults)

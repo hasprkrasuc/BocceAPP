@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { steVRangSistem } from '../engines/rangSistem'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import type { PlayerStatistics } from '../types'
@@ -28,7 +29,7 @@ const KATEGORIJA_LABELS: Record<string, string> = {
 
 interface LigaskaPot {
   id: string
-  season: { name: string; year: number; category: string }
+  season: { name: string; year: number; category: string; format?: string | null }
   team: { club_name: string }
 }
 
@@ -51,7 +52,7 @@ export default function PlayerStats({ playerId }: { playerId: string }) {
       computePlayerSeasonStats(playerId),
       supabase
         .from('league_team_players')
-        .select('id, league_team:league_teams(club_name, season:league_seasons(name, year, category))')
+        .select('id, league_team:league_teams(club_name, season:league_seasons(name, year, category, format))')
         .eq('player_id', playerId),
       supabase
         .from('player_statistics')
@@ -67,7 +68,10 @@ export default function PlayerStats({ playerId }: { playerId: string }) {
 
       setSezone(sezoneRes)
       setPot(((potRes.data ?? []) as any[])
-        .filter(r => r.league_team?.season)
+        // Ekipni turnirji in Super Pokal niso ligaška pot: igralec v njih ni
+        // odigral sezone, ampak en dogodek. Isti odgovor kot pri rang
+        // lestvici — `engines/rangSistem`.
+        .filter(r => r.league_team?.season && steVRangSistem(r.league_team.season.format))
         .map(r => ({
           id: r.id,
           season: r.league_team.season,
