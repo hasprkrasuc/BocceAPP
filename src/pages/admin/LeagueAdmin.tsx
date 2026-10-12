@@ -17,6 +17,7 @@ import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../l
 import { useAuth } from '../../contexts/AuthContext'
 import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
 import { oznakaIgralca } from '../../lib/playerNames'
+import { jePokalniFormat } from '../../engines/rangSistem'
 import { najdiKlub, predlagajPovezave, type KlubZaUjemanje } from '../../engines/ujemanjeKlubov'
 import KlubskiGrb, { logoEkipe } from '../../components/KlubskiGrb'
 import ImageUpload from '../../components/ImageUpload'
@@ -581,6 +582,21 @@ export default function LeagueAdmin() {
 
   async function handleGenerateFixtures() {
     if (!selectedSeason) return
+    /*
+      Pokalnih formatov ta generator NE sme dotakniti.
+      Nižje najprej POBRIŠE vse tekme sezone in jih nato ustvari po Bergerju —
+      pri pokalu bi to odneslo že odigrane tekme, domačina pa postavilo mimo
+      pravila (v pokalu gosti nižje rangirana ekipa, v Super Pokalu vedno
+      pokalni prvak). Pokalne tekme nastajajo na /pokal prek »+ Zapisnik«.
+
+      Varovalo je TU in ne v skritju gumba: zavihek Razpored pokalne formate
+      sicer ne ponudi, a vsak nov format pade v zadnjo vejo, kjer je gumb
+      omogočen — prav tako se je Super Pokal znašel korak od brisanja tekme.
+    */
+    if (jePokalniFormat(selectedSeason.format)) {
+      setMessage('⚠ Razporeda pokalnih tekmovanj se ne generira — tekma se ustvari na strani Pokal BZS.')
+      return
+    }
     if (selectedSeason.format === 'groups') {
       await handleGeneratePhase1Groups()
       return

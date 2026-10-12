@@ -8,6 +8,10 @@ import {
   type PokalEkipa, type PokalIzid,
 } from '../engines/pokal'
 import { zapisnikJePrazen, type Zapisnik } from '../engines/zapisnikPrazen'
+import {
+  superPokalDomacin, superPokalKrogi, preveriSuperPokal,
+  MESTO_PRVAKA, MESTO_NASPROTNIKA,
+} from '../engines/superPokal'
 
 /**
  * POKAL BZS — izločilno tekmovanje klubskih ekip.
@@ -34,6 +38,8 @@ interface Sezona {
   name: string
   status: string
   category: string | null
+  /** 'pokal' ali 'super_pokal'; od tega je odvisno pravilo o domačinu. */
+  format: string | null
 }
 
 interface Tekma {
@@ -67,8 +73,8 @@ export default function Pokal() {
     setNalagam(true); setNapaka('')
     try {
       const { data, error } = await supabase
-        .from('league_seasons').select('id, name, status, category')
-        .eq('format', 'pokal').neq('status', 'draft')
+        .from('league_seasons').select('id, name, status, category, format')
+        .in('format', ['pokal', 'super_pokal']).neq('status', 'draft')
         .order('year', { ascending: false }).order('name')
       if (error) throw error
       const vse = (data ?? []) as Sezona[]
@@ -141,11 +147,27 @@ export default function Pokal() {
         : t.away_score > t.home_score ? t.away_team_id : null,
   }))
 
+  /*
+    Super Pokal je svoje tekmovanje in ne majhen pokal: ena tekma med
+    pokalnim prvakom in prvakom Super lige, vedno pri pokalnem prvaku.
+    Mesto 1 je prvak in domačin, mesto 2 nasprotnik — žreba ni.
+  */
+  const jeSuper = sezona?.format === 'super_pokal'
+
   // Velikost pajka pove žreb te sezone, ne konstanta: moški pokal ima 64 mest,
   // pokal članic 16. Od nje so odvisna tudi imena krogov.
   const velikost = velikostPajka(vhod)
-  const krogi = oznakeKrogov(velikost)
+  // oznakeKrogov(2) bi dal »1. krog«, ker veja i === 0 prevlada nad IME_KROGA.
+  const krogi = jeSuper ? superPokalKrogi() : oznakeKrogov(velikost)
   const prviKrog = krogi[0]?.stage
+
+  /*
+    Napake vnosa Super Pokala pokažemo VSEM, ne le adminu, in nad VSEMI
+    vrsticami ekip — tudi tistimi brez mesta, ki jih `vhod` odfiltrira. Brez
+    tega bi ena sama vpisana ekipa pomenila prosto mesto in pokalni prvak bi
+    bil razglašen za zmagovalca brez tekme, tiho in brez opozorila.
+  */
+  const napakeSuper = jeSuper ? preveriSuperPokal(ekipe) : []
 
   let pajek: ReturnType<typeof pokalniPajek> = []
   let napakaPajka = ''
@@ -172,9 +194,17 @@ export default function Pokal() {
   async function ustvariZapisnik(krog: number, a: string, b: string) {
     if (!sezona) return
     setDelam(`${a}|${b}`)
-    // Pravilo BZS: nižje rangirana ekipa (nižja liga) je vedno domačin.
-    const rang = new Map([[a, rangEkipe(a)], [b, rangEkipe(b)]])
-    const [home, away] = pokalniDomacin(a, b, rang)
+    /*
+      Pravili sta dve in nasprotni si:
+        pokal       — gosti NIŽJE rangirana ekipa (nižja liga),
+        Super Pokal — gosti VEDNO pokalni prvak, torej mesto 1.
+      Letos bi `pokalniDomacin` dal isti izid, ker sta oba kluba v Super ligi
+      in pri izenačenem rangu obdrži vrstni red para. Odpove pa, brž ko je
+      izzivalec iz nižje lige — takrat strani obrne.
+    */
+    const [home, away] = jeSuper
+      ? superPokalDomacin(a, b)
+      : pokalniDomacin(a, b, new Map([[a, rangEkipe(a)], [b, rangEkipe(b)]]))
     const { error } = await supabase.from('league_fixtures').insert({
       season_id: sezona.id, round_number: krog,
       home_team_id: home, away_team_id: away,
@@ -267,13 +297,31 @@ export default function Pokal() {
           ))}
         </div>
       )}
-      <p className="text-sm text-gray-500 mb-6">
-        {ekipe.length} prijavljenih ekip · izločilni sistem s {velikost} mesti ·{' '}
-        {prosti.length} prostih mest v 1. krogu ·{' '}
-        <span title="Pri enakem rangu odloči lanska uvrstitev — domačina po potrebi zamenja admin (⇄).">
-          nižje rangirana ekipa je domačin (D)
-        </span>
-      </p>
+      {jeSuper ? (
+        <p className="text-sm text-gray-500 mb-6">
+          Ena tekma med pokalnim prvakom in prvakom Super lige · če je to ista ekipa, igra pokalni podprvak ·{' '}
+          <span title="Mesto 1 je pokalni prvak in domačin, mesto 2 nasprotnik.">
+            tekma je vedno pri pokalnem prvaku (D)
+          </span>
+        </p>
+      ) : (
+        <p className="text-sm text-gray-500 mb-6">
+          {ekipe.length} prijavljenih ekip · izločilni sistem s {velikost} mesti ·{' '}
+          {prosti.length} prostih mest v 1. krogu ·{' '}
+          <span title="Pri enakem rangu odloči lanska uvrstitev — domačina po potrebi zamenja admin (⇄).">
+            nižje rangirana ekipa je domačin (D)
+          </span>
+        </p>
+      )}
+
+      {napakeSuper.length > 0 && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-6">
+          <p className="font-semibold mb-1">⚠ Super Pokal ni pravilno vpisan</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {napakeSuper.map(n => <li key={n}>{n}</li>)}
+          </ul>
+        </div>
+      )}
 
       {napaka && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 mb-6">
@@ -375,7 +423,7 @@ export default function Pokal() {
         })}
       </div>
 
-      {prosti.length > 0 && (
+      {!jeSuper && prosti.length > 0 && (
         <section className="mt-8">
           <h2 className="text-lg font-bold text-gray-800 mb-1">Prosti v 1. krogu</h2>
           <p className="text-sm text-gray-500 mb-3">
