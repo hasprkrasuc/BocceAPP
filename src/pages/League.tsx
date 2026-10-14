@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import KlubskiGrb, { logoEkipe } from '../components/KlubskiGrb'
+import WhistleIcon from '../components/WhistleIcon'
 import { useRealtimeTable, useJitteredCallback, mergeRowById } from '../lib/useRealtimeTable'
 import { USER_PUBLIC_COLS } from '../lib/userColumns'
 import { useAuth } from '../contexts/AuthContext'
@@ -253,14 +254,6 @@ const GROUP_BADGE: Record<string, string> = {
   '3M':   'bg-gray-100 text-gray-500',
 }
 
-function WhistleIcon({ className }: { className?: string }) {
-  // preprosta ikona piščalke
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
-      <path d="M3 8a1 1 0 0 1 1-1h8.2l3.8-2.4V9.1A6 6 0 1 1 9.3 16H4a1 1 0 0 1-1-1V8zm7 3.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2z" />
-    </svg>
-  )
-}
 
 function FixtureRow({ f, myTeamId, showGroup }: { f: LeagueFixture; myTeamId?: string; showGroup?: boolean }) {
   const isMyMatch = f.home_team_id === myTeamId || f.away_team_id === myTeamId

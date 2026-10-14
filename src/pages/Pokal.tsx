@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useAuth } from '../contexts/AuthContext'
 import KlubskiGrb from '../components/KlubskiGrb'
+import WhistleIcon from '../components/WhistleIcon'
+import { formatMatchDateTime } from '../lib/matchDate'
 import {
   pokalniPajek, pokalniDomacin, rangLige, RANG_NEZNAN, velikostPajka, oznakeKrogov,
   type PokalEkipa, type PokalIzid,
@@ -51,6 +53,11 @@ interface Tekma {
   away_score: number | null
   status: string
   scheduled_date: string | null
+  /** Kraj tekme (balinišče). */
+  venue: string | null
+  /** Glavni sodnik; ime se dobere ločeno, enako kot pri ligaškem razporedu. */
+  chief_judge_id: string | null
+  sodnik?: string | null
 }
 
 export default function Pokal() {
@@ -97,7 +104,7 @@ export default function Pokal() {
           .select('id, club_name, draw_number, club_id, club:clubs(logo_url)')
           .eq('season_id', s.id).order('draw_number'),
         supabase.from('league_fixtures')
-          .select('id, round_number, home_team_id, away_team_id, home_score, away_score, status, scheduled_date')
+          .select('id, round_number, home_team_id, away_team_id, home_score, away_score, status, scheduled_date, venue, chief_judge_id')
           .eq('season_id', s.id).order('round_number'),
         // Vsa članstva klubov v nezaključenih sezonah — iz njih se izpelje rang
         // (Super liga 1 … OBZ 4) za pravilo, da je nižje rangirani domačin.
@@ -110,7 +117,28 @@ export default function Pokal() {
       if (tErr) throw tErr
       if (clErr) throw clErr
       setEkipe((e ?? []) as unknown as Ekipa[])
-      setTekme((t ?? []) as Tekma[])
+
+      /*
+        Imena glavnih sodnikov dobimo z ločeno poizvedbo in ne z vgnezdenim
+        embedom — enako kot ligaški razpored. Embed prek `users` zahteva ime
+        tujega ključa, ker od `league_fixtures` do `users` vodi več poti, in
+        se ob vsaki novi vezi tiho zlomi s 300 Multiple Choices.
+      */
+      const surove = (t ?? []) as Tekma[]
+      const sodnikiIds = [...new Set(surove.map(x => x.chief_judge_id).filter(Boolean))] as string[]
+      let imena: Record<string, string | null> = {}
+      if (sodnikiIds.length) {
+        const { data: su, error: suErr } = await supabase
+          .from('users').select('id, full_name').in('id', sodnikiIds)
+        // Napake ne požiramo, a tudi tekem zaradi nje ne skrijemo: brez imena
+        // sodnika je pajek še vedno uporaben.
+        if (suErr) setNapaka(`Imen sodnikov ni bilo mogoče prebrati: ${suErr.message}`)
+        imena = Object.fromEntries((su ?? []).map((u: { id: string; full_name: string | null }) => [u.id, u.full_name]))
+      }
+      setTekme(surove.map(x => ({
+        ...x,
+        sodnik: x.chief_judge_id ? imena[x.chief_judge_id] ?? null : null,
+      })))
 
       const rang = new Map<string, number>()
       for (const row of (cl ?? []) as unknown as Array<{ club_id: string; season: { tier: string | null; category: string | null; status: string; format: string | null } | null }>) {
@@ -414,6 +442,35 @@ export default function Pokal() {
                           )}
                         </div>
                       </div>
+
+                      {/*
+                        Termin, kraj in glavni sodnik — ista pasica kot na
+                        ligaškem razporedu (FixtureRow), le da je tu izpisan
+                        CEL datum: pokal tekem ne grupira po dnevih, zato bi
+                        sama ura ne povedala, kdaj se tekma igra.
+
+                        Pasica obstaja le ob vpisani tekmi. Dokler je ni, para
+                        v pajku poznamo iz žreba, termina pa še nihče ni
+                        določil — takrat ni česa izpisati.
+                      */}
+                      {tekma && (tekma.scheduled_date || tekma.venue || tekma.sodnik) && (
+                        <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between gap-2 text-xs text-gray-500">
+                          <span className="flex items-center gap-2 min-w-0">
+                            {tekma.scheduled_date && (
+                              <span className="font-medium text-gray-600 whitespace-nowrap">
+                                {formatMatchDateTime(tekma.scheduled_date)}
+                              </span>
+                            )}
+                            {tekma.venue && <span className="truncate">📍 {tekma.venue}</span>}
+                          </span>
+                          {tekma.sodnik && (
+                            <span className="flex items-center gap-1 whitespace-nowrap text-gray-600">
+                              <WhistleIcon className="w-3.5 h-3.5 text-bocce-green" />
+                              {tekma.sodnik}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

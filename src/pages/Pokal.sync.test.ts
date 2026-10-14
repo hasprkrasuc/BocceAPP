@@ -78,3 +78,44 @@ describe('Super Pokal na strani', () => {
     expect(pokal).toMatch(/!jeSuper && prosti\.length > 0/)
   })
 })
+
+/**
+ * TERMIN, KRAJ IN SODNIK NA POKALNI KARTICI.
+ *
+ * Pajek je prej kazal samo ekipi in izid. Kdaj in kje se tekma igra ter kdo
+ * jo sodi, je bilo mogoče izvedeti šele v zapisniku — na razporedu lige pa
+ * je to na vsaki vrstici. Vsak od teh podatkov ima svojo past, zato svoj
+ * test: izpadejo tiho, kot manjkajoče besedilo, ne kot zlom.
+ */
+describe('podatki o terminu na pokalni kartici', () => {
+  test('poizvedba prinese kraj in sodnika', () => {
+    // Brez stolpcev v selectu bi bila pasica vedno prazna.
+    expect(pokal, 'poizvedba tekem ne izbere venue').toMatch(/venue/)
+    expect(pokal, 'poizvedba tekem ne izbere chief_judge_id').toMatch(/chief_judge_id/)
+  })
+
+  test('ime sodnika gre skozi ločeno poizvedbo, ne skozi embed', () => {
+    // Od league_fixtures do users vodi več poti; embed brez imena tujega
+    // ključa vrne 300 Multiple Choices in pajek ostane prazen.
+    expect(pokal).toMatch(/from\('users'\)\.select\('id, full_name'\)/)
+    expect(pokal, 'embed sodnika prek users je krhek').not.toMatch(/chief_judge:users/)
+  })
+
+  test('izpiše se cel datum, ne le ura', () => {
+    // Pokal tekem ne grupira po dnevih kot ligaški razpored, zato bi sama ura
+    // ne povedala, kdaj se tekma igra.
+    expect(pokal).toMatch(/formatMatchDateTime\(tekma\.scheduled_date\)/)
+    expect(pokal, 'matchTimePart bi dal samo uro').not.toMatch(/matchTimePart/)
+  })
+
+  test('pasica se izriše le ob vpisani tekmi', () => {
+    // Pred vnosom termina par poznamo iz žreba, tekme pa ni — ni česa izpisati.
+    expect(pokal).toMatch(/tekma && \(tekma\.scheduled_date \|\| tekma\.venue \|\| tekma\.sodnik\)/)
+  })
+
+  test('ikona sodnika je deljena z ligo', () => {
+    // Kopija ikone bi se ob prvi spremembi razšla med stranema.
+    expect(pokal).toMatch(/import WhistleIcon from '\.\.\/components\/WhistleIcon'/)
+    expect(pokal, 'ikona ne sme biti prepisana v to datoteko').not.toMatch(/function WhistleIcon/)
+  })
+})
