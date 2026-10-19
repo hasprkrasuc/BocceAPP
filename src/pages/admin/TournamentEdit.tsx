@@ -1067,7 +1067,7 @@ export default function TournamentEdit() {
         <p className="text-xs text-gray-400 mt-1.5">
           {isAdmin
             ? 'Dodeljeni vpisuje izide in končni vrstni red tega tekmovanja, tudi če ni admin. Kdor na seznamu ni, potrebuje v Uporabnikih vlogo Sodnik.'
-            : 'Vpisuješ izide in končni vrstni red tega tekmovanja. Tekmovanja samega ne moreš urejati.'}
+            : 'Vpisuješ izide in končni vrstni red ter opraviš žreb (tudi žreb v živo) tega tekmovanja. Tekmovanja samega ne moreš urejati.'}
         </p>
         {isAdmin && !tournament.chief_judge_id && tournament.format === 'izbijanje' && (
           <p className="text-xs text-amber-600 mt-1">
