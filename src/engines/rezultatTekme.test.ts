@@ -25,10 +25,12 @@ describe('najvisjiRezultat', () => {
     expect(najvisjiRezultat('dvojice')).toBe(CILJ_BALINANJE)
   })
 
-  it('nezapisana disciplina šteje za balinanje', () => {
-    expect(najvisjiRezultat(null)).toBe(CILJ_BALINANJE)
-    expect(najvisjiRezultat(undefined)).toBe(CILJ_BALINANJE)
-    expect(najvisjiRezultat('   ')).toBe(CILJ_BALINANJE)
+  it('nezapisana disciplina ne obvelja za balinanje', () => {
+    // Disciplina je ob ustvarjanju tekmovanja neobvezna in je pozneje ni
+    // mogoče popraviti; stroga meja bi sodnika zaklenila brez izhoda.
+    expect(najvisjiRezultat(null)).toBe(MEJA_RAZUMNOSTI)
+    expect(najvisjiRezultat(undefined)).toBe(MEJA_RAZUMNOSTI)
+    expect(najvisjiRezultat('   ')).toBe(MEJA_RAZUMNOSTI)
   })
 
   it('neprepoznana disciplina ne obvelja za balinanje', () => {
@@ -81,5 +83,25 @@ describe('preveriRezultat — skupna pravila', () => {
     expect(preveriRezultat(-1, 5, 'krog')).toMatch(/negativen/)
     expect(preveriRezultat(NaN, 5, 'krog')).toMatch(/veljavni/)
     expect(preveriRezultat(5, 1.5, 'krog')).toMatch(/celo število/)
+  })
+})
+
+describe('zaostritev ne sme udariti po tekmovanjih brez discipline', () => {
+  // Stara koda je padla šele, če sta bila OBA rezultata nad 13. Na tekmovanju
+  // brez vpisane discipline bi zaostren pogoj zavrnil izide, ki so se prej
+  // shranili — in to je natanko tista zavrnitev sredi tekmovanja, ki jo
+  // popravek odpravlja, le po drugi poti.
+  it('enostranski točkovni izid se shrani kot prej', () => {
+    expect(preveriRezultat(20, 5, null)).toBeNull()
+    expect(preveriRezultat(13, 19, null)).toBeNull()
+  })
+
+  it('izid, ki je sprožil prijavo, se shrani tudi brez discipline', () => {
+    expect(preveriRezultat(18, 19, null)).toBeNull()
+    expect(preveriRezultat(18, 19, undefined)).toBeNull()
+  })
+
+  it('meja razumnosti pa še vedno velja', () => {
+    expect(preveriRezultat(2026, 5, null)).not.toBeNull()
   })
 })
