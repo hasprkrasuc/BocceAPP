@@ -51,3 +51,32 @@ describe('prijava na tekmovanje loči posamično od dvojic', () => {
       .toMatch(/player2_id:\s*jeDvojka\s*\?/)
   })
 })
+
+/**
+ * PREDOGLED IZLOČILNIH BOJEV.
+ *
+ * Dokler mreže ni, stran pokaže načrt iz žreba skupin. Vsako od teh mest bi
+ * ob opustitvi dalo tiho napačen izid in ne zloma.
+ */
+const stranT = viri[STRAN]
+
+describe('predogled izločilnih bojev', () => {
+  test('predogled se izriše, dokler mreže ni', () => {
+    expect(stranT).toMatch(/knockoutMatches\.length === 0 && groups\.length > 0/)
+    expect(stranT).toMatch(/<IzlocilniPredogled/)
+  })
+
+  test('prava mreža se izrisuje kot doslej', () => {
+    // Brž ko izločilne tekme obstajajo, se mora izvesti ista koda kot prej —
+    // KnockoutBracket riše žive boje vseh turnirjev.
+    expect(stranT).toMatch(/<KnockoutBracket/)
+  })
+
+  test('imena beremo iz vdelanih relacij, ne z novo poizvedbo', () => {
+    // Posodobitev v živo nese samo stolpce; vdelane relacije ostanejo prazne,
+    // zato bi ime ekipe, ki je med gledanjem napredovala, izpadlo.
+    expect(stranT).toMatch(/imenaEkip/)
+    expect(stranT, 'predogled ne sme sprožiti svoje poizvedbe group_teams')
+      .not.toMatch(/from\('group_teams'\)/)
+  })
+})

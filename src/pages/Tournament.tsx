@@ -16,6 +16,8 @@ import { format } from 'date-fns'
 import { sl as dateSl } from 'date-fns/locale'
 import { GROUP_TEMPLATES, computePropagation } from '../engines/tournament'
 import { propagateKnockout } from '../lib/knockoutDraw'
+import IzlocilniPredogled from '../components/IzlocilniPredogled'
+import { teamDisplayName } from '../engines/tournament'
 import { jeParnoTekmovanje } from '../engines/tournamentPlacement'
 import type {
   Tournament, TournamentGroup, Match, TournamentRegistration,
@@ -454,6 +456,28 @@ export function TournamentDetail() {
 
   const groupMatches = matches.filter(m => m.stage === 'group')
   const knockoutMatches = matches.filter(m => m.stage !== 'group')
+
+  /*
+    PREDOGLED IZLOČILNIH BOJEV — dokler mreže ni, pokažemo načrt iz žreba
+    skupin. Imena beremo iz VDELANIH relacij že naloženih tekem in ne z novo
+    poizvedbo: posodobitev v živo nese samo stolpce, vdelanih relacij pa ne
+    ustvari, zato bi ime ekipe, ki je med gledanjem napredovala, ostalo
+    prazno. Ekipa je igrala prejšnje tekme v skupini in tam ime je.
+  */
+  const imenaEkip = new Map<string, string>()
+  for (const m of matches) {
+    for (const gt of [m.team_a, m.team_b]) {
+      if (gt?.id && gt.registration && !imenaEkip.has(gt.id)) {
+        imenaEkip.set(gt.id, teamDisplayName(gt.registration))
+      }
+    }
+  }
+  const skupineZaNacrt = groups.map(g => ({
+    id: g.id, stevilka: g.group_number, velikost: (g.group_size ?? 4) as 3 | 4 | 5,
+  }))
+  const skupinskeTekmeZaNacrt = groupMatches.map(m => ({
+    group_id: m.group_id ?? '', match_number: m.match_number, winner_id: m.winner_id,
+  }))
   const confirmedRegs = registrations.filter(r => r.status === 'confirmed')
 
   const backPath = tournament.kind === 'championship' ? '/prvenstva' : '/turnirji'
@@ -609,7 +633,19 @@ export function TournamentDetail() {
         </div>
       )}
 
-      {tab === 'knockout' && (
+      {/*
+        Dokler ni nobene izločilne tekme, mreže ni — takrat kaže predogled.
+        Brž ko mreža obstaja, se izvaja ista koda kot doslej.
+      */}
+      {tab === 'knockout' && knockoutMatches.length === 0 && groups.length > 0 && (
+        <IzlocilniPredogled
+          skupine={skupineZaNacrt}
+          skupinskeTekme={skupinskeTekmeZaNacrt}
+          imeEkipe={id => imenaEkip.get(id)}
+        />
+      )}
+
+      {tab === 'knockout' && !(knockoutMatches.length === 0 && groups.length > 0) && (
         <KnockoutBracket
           matches={knockoutMatches}
           registrations={registrations}
