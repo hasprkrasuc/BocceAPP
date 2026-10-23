@@ -1,14 +1,21 @@
 import { useState } from 'react'
 import { teamDisplayName } from '../engines/tournament'
+import { najvisjiRezultat, preveriRezultat } from '../engines/rezultatTekme'
 import type { Match } from '../types'
 
 interface Props {
   match: Match
+  /**
+   * Disciplina tekmovanja. Določa, kje je zgornja meja rezultata — balinanje
+   * se igra na 13 točk, igra v krog in izbijanja pa so točkovne discipline
+   * brez te meje. Pravilo je v `engines/rezultatTekme`.
+   */
+  discipline?: string | null
   onSave: (match: Match, scoreA: number, scoreB: number) => Promise<void>
   onClose: () => void
 }
 
-export default function ScoreModal({ match, onSave, onClose }: Props) {
+export default function ScoreModal({ match, discipline, onSave, onClose }: Props) {
   const [scoreA, setScoreA] = useState<string>(match.score_a?.toString() ?? '')
   const [scoreB, setScoreB] = useState<string>(match.score_b?.toString() ?? '')
   const [error, setError] = useState('')
@@ -16,14 +23,13 @@ export default function ScoreModal({ match, onSave, onClose }: Props) {
 
   const nameA = match.team_a ? teamDisplayName(match.team_a.registration) : '???'
   const nameB = match.team_b ? teamDisplayName(match.team_b.registration) : '???'
+  const najvec = najvisjiRezultat(discipline)
 
   async function handleSave() {
     const a = parseInt(scoreA)
     const b = parseInt(scoreB)
-    if (isNaN(a) || isNaN(b)) { setError('Vnesi veljavni rezultat'); return }
-    if (a < 0 || b < 0)       { setError('Rezultat ne more biti negativen'); return }
-    if (a === b)               { setError('Izenačen rezultat ni dovoljen v bocce'); return }
-    if (a > 13 && b > 13)     { setError('Rezultat presega 13 točk za oba — preveri vnos'); return }
+    const napaka = preveriRezultat(a, b, discipline)
+    if (napaka) { setError(napaka); return }
     setError('')
     setSaving(true)
     try {
@@ -46,14 +52,14 @@ export default function ScoreModal({ match, onSave, onClose }: Props) {
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{nameA}</label>
-            <input type="number" min="0" max="13" value={scoreA}
+            <input type="number" min="0" max={najvec} value={scoreA}
               onChange={e => setScoreA(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-center text-2xl font-bold focus:ring-2 focus:ring-bocce-green focus:border-transparent"
               placeholder="0" autoFocus />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{nameB}</label>
-            <input type="number" min="0" max="13" value={scoreB}
+            <input type="number" min="0" max={najvec} value={scoreB}
               onChange={e => setScoreB(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-center text-2xl font-bold focus:ring-2 focus:ring-bocce-green focus:border-transparent"
               placeholder="0" />

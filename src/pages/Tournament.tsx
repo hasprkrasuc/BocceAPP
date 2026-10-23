@@ -506,7 +506,9 @@ export function TournamentDetail() {
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold text-bocce-green">{confirmedRegs.length}</div>
-            <div className="text-sm text-gray-500">prijavljenih parov</div>
+            <div className="text-sm text-gray-500">
+              {jeDvojka ? 'prijavljenih parov' : 'prijavljenih tekmovalcev'}
+            </div>
           </div>
         </div>
       </div>
@@ -702,6 +704,7 @@ export function TournamentDetail() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <ScoreModal
             match={scoreMatch}
+            discipline={tournament.discipline_type}
             onSave={handleSaveScore}
             onClose={() => setScoreMatch(null)}
           />
