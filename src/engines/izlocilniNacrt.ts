@@ -275,3 +275,72 @@ export function izpisMesta(
   if (teamId && ime) return { besedilo: ime, znano: true }
   return { besedilo: oznakaMesta(mesto), znano: false }
 }
+
+export interface PripravljenostIzlocilnih {
+  /** Ali so znani VSI napredovalci in je mrežo varno ustvariti. */
+  pripravljeno: boolean
+  /** Mesta, ki še niso znana. */
+  manjkajo: MestoSkupine[]
+  /** Besedilo za admina; prazno, kadar je pripravljeno. */
+  sporocilo: string
+}
+
+/**
+ * Ali je mrežo varno ustvariti.
+ *
+ * NAPAKA, KI JO TO ZAPIRA
+ *
+ * Gumb »Ustvari izločilni del« je preverjal, ali je število ZNANIH
+ * napredovalcev potenca 2 — ne pa, ali jih je toliko, kolikor jih mora biti.
+ * Ker je »lepo« število pogosto potenca 2 tudi sredi skupinskega dela, je
+ * preverjanje šlo skozi in tiho zgradilo mrežo NAPAČNE VELIKOSTI.
+ *
+ * Primer iz produkcije (DP Igra v krog 2026): 4 skupine, torej 8 pričakovanih
+ * napredovalcev, znana pa sta bila 2. Dve je potenca 2, zato bi pritisk gumba
+ * ustvaril eno samo tekmo, imenovano Finale, preostalih šest napredovalcev pa
+ * ne bi imelo kam.
+ *
+ * Dvoje to naredi hujše: `insertKnockoutBracket` najprej POBRIŠE vse izločilne
+ * tekme turnirja, zato napačen pritisk zamenja že pravilno mrežo; in križanje
+ * indeksira po dolžini prispelega seznama, zato je pri skrčenem seznamu
+ * napačna tudi razporeditev tistih, ki so notri.
+ *
+ * Pravilo je zato preprosto in strogo: mreža se sme ustvariti šele, ko sta iz
+ * VSAKE skupine znana oba napredovalca.
+ */
+export function pripravljenostIzlocilnih(
+  skupine: SkupinaNacrta[],
+  napredovali: Map<string, string>,
+): PripravljenostIzlocilnih {
+  if (skupine.length < 2) {
+    return {
+      pripravljeno: false,
+      manjkajo: [],
+      sporocilo: 'Za izločilne boje sta potrebni vsaj dve skupini.',
+    }
+  }
+
+  const manjkajo: MestoSkupine[] = []
+  for (const s of [...skupine].sort((a, b) => a.stevilka - b.stevilka)) {
+    for (const mesto of [1, 2] as const) {
+      const m = { skupina: s.stevilka, mesto }
+      if (!napredovali.get(kljucMesta(m))) manjkajo.push(m)
+    }
+  }
+
+  if (manjkajo.length === 0) {
+    return { pripravljeno: true, manjkajo: [], sporocilo: '' }
+  }
+
+  const pricakovanih = skupine.length * 2
+  const znanih = pricakovanih - manjkajo.length
+  // Naštejemo največ šest, da sporočilo ostane berljivo.
+  const nasteti = manjkajo.slice(0, 6).map(oznakaMesta).join(', ')
+  const se = manjkajo.length > 6 ? ` in še ${manjkajo.length - 6}` : ''
+  return {
+    pripravljeno: false,
+    manjkajo,
+    sporocilo: `Skupine še niso odigrane do konca — znanih je ${znanih} od ${pricakovanih} `
+      + `napredovalcev. Manjka: ${nasteti}${se}.`,
+  }
+}

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel, seededPotDraw } from '../../engines/tournament'
 import { jeParnoTekmovanje } from '../../engines/tournamentPlacement'
+import { pripravljenostIzlocilnih, kljucMesta } from '../../engines/izlocilniNacrt'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
 import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
 import { pairsFromSeededTeams, preRoundFirstRoundPairs, crossPairs, KO_STAGE_ORDER } from '../../engines/knockout'
@@ -905,6 +906,27 @@ export default function TournamentEdit() {
     }
   }
 
+  /** Skupine v obliki, ki jo pozna motor načrta. */
+  function skupineZaNacrt() {
+    return groups.map(g => ({ stevilka: g.group_number, velikost: (g.group_size ?? 4) as 3 | 4 | 5 }))
+  }
+
+  /**
+   * Varovalo pred mrežo napačne velikosti.
+   *
+   * Staro preverjanje je gledalo, ali je število ZNANIH napredovalcev potenca
+   * 2 — ne pa, ali jih je toliko, kolikor jih mora biti. Sredi skupinskega
+   * dela je »lepo« število pogosto potenca 2, zato je šlo skozi in tiho
+   * zgradilo prepolovljeno mrežo; ker insertKnockoutBracket najprej pobriše
+   * vse izločilne tekme, bi napačen pritisk povozil že pravilno mrežo.
+   */
+  function napredovalciSoPopolni(quals: KoQualifier[]): boolean {
+    const znani = new Map(quals.map(q => [kljucMesta({ skupina: q.groupNumber, mesto: q.position }), q.teamId]))
+    const p = pripravljenostIzlocilnih(skupineZaNacrt(), znani)
+    if (!p.pripravljeno) { setMessage(`❌ ${p.sporocilo}`); return false }
+    return true
+  }
+
   async function generateKnockout() {
     if (!window.confirm('Ustvarjanje izločilnega dela pobriše morebitne obstoječe izločilne tekme in njihove rezultate. Nadaljujem?')) return
     setMessage('')
@@ -917,6 +939,7 @@ export default function TournamentEdit() {
       if (dist.extraStage !== null) { await generateKnockoutWithPreRound(dist); return }
 
       const quals = await fetchQualifiers()
+      if (!napredovalciSoPopolni(quals)) return
       const n = quals.length
       if (n < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
       if ((n & (n - 1)) !== 0) { setMessage(`Število napredovalcev (${n}) ni potenca 2 — izločilni del ni mogoč`); return }
@@ -965,6 +988,9 @@ export default function TournamentEdit() {
    */
   async function generateKnockoutWithPreRound(dist: GroupDistribution) {
     const quals = await fetchQualifiers()
+    // Isto varovalo kot v veji brez predkola — ta je preverjala samo »manj kot
+    // dva«, kar je še ohlapneje.
+    if (!napredovalciSoPopolni(quals)) return
     const { direct, extra } = splitQualifiers(quals)
     if (direct.length + extra.length < 2) { setMessage('Ni dovolj napredovalcev za izločilni del'); return }
 

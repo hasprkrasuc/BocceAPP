@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'vitest'
 import {
   nacrtIzlocilnih, kljucMesta, razberiMesto, oznakaMesta,
-  napredovalciPoMestih, izpisMesta, type SkupinaNacrta,
+  napredovalciPoMestih, izpisMesta, pripravljenostIzlocilnih,
+  type SkupinaNacrta,
 } from './izlocilniNacrt'
 import type { GroupSize } from '../types'
 
@@ -235,5 +236,78 @@ describe('izpisMesta', () => {
 
   test('prazno mesto nima izpisa', () => {
     expect(izpisMesta(null, new Map(), ime)).toBe(null)
+  })
+})
+
+describe('pripravljenostIzlocilnih', () => {
+  const stiri = skupine(4)
+  /** Vsi napredovalci štirih skupin. */
+  const vsi = new Map(
+    stiri.flatMap(s => [
+      [`S${s.stevilka}:1`, `t${s.stevilka}a`],
+      [`S${s.stevilka}:2`, `t${s.stevilka}b`],
+    ] as Array<[string, string]>),
+  )
+
+  test('vsi znani — mrežo je varno ustvariti', () => {
+    const p = pripravljenostIzlocilnih(stiri, vsi)
+    expect(p.pripravljeno).toBe(true)
+    expect(p.manjkajo).toEqual([])
+    expect(p.sporocilo).toBe('')
+  })
+
+  test('PRAVI PRIMER: 4 skupine, znana 2 napredovalca — zavrnjeno', () => {
+    // Prav to je bilo v produkciji na DP Igra v krog 2026. Dve je potenca 2,
+    // zato je staro preverjanje šlo skozi in bi zgradilo eno samo »finale«.
+    const dva = new Map([['S1:1', 'a'], ['S1:2', 'b']])
+    const p = pripravljenostIzlocilnih(stiri, dva)
+    expect(p.pripravljeno).toBe(false)
+    expect(p.manjkajo).toHaveLength(6)
+    expect(p.sporocilo).toMatch(/znanih je 2 od 8/)
+  })
+
+  test('zavrne tudi, ko je znanih napredovalcev potenca 2', () => {
+    // Osem skupin (16 pričakovanih), znanih 8 — past, ki jo je staro
+    // preverjanje spustilo. Vmesna števila kot 6 ali 10 je ujelo že prej.
+    const osem = skupine(8)
+    const polovica = new Map(
+      osem.slice(0, 4).flatMap(s => [
+        [`S${s.stevilka}:1`, `w${s.stevilka}`],
+        [`S${s.stevilka}:2`, `r${s.stevilka}`],
+      ] as Array<[string, string]>),
+    )
+    expect(polovica.size, 'osem je potenca 2').toBe(8)
+    const p = pripravljenostIzlocilnih(osem, polovica)
+    expect(p.pripravljeno).toBe(false)
+    expect(p.manjkajo).toHaveLength(8)
+  })
+
+  test('manjka en sam napredovalec', () => {
+    const skoraj = new Map(vsi)
+    skoraj.delete('S3:2')
+    const p = pripravljenostIzlocilnih(stiri, skoraj)
+    expect(p.pripravljeno).toBe(false)
+    expect(p.manjkajo).toEqual([{ skupina: 3, mesto: 2 }])
+    expect(p.sporocilo).toMatch(/2\. mesto S3/)
+    expect(p.sporocilo).toMatch(/znanih je 7 od 8/)
+  })
+
+  test('manjkajoči so našteti po skupinah in mestih', () => {
+    const p = pripravljenostIzlocilnih(stiri, new Map())
+    expect(p.manjkajo.slice(0, 4)).toEqual([
+      { skupina: 1, mesto: 1 }, { skupina: 1, mesto: 2 },
+      { skupina: 2, mesto: 1 }, { skupina: 2, mesto: 2 },
+    ])
+  })
+
+  test('dolg seznam se skrajša, da sporočilo ostane berljivo', () => {
+    const p = pripravljenostIzlocilnih(skupine(8), new Map())
+    expect(p.manjkajo).toHaveLength(16)
+    expect(p.sporocilo).toMatch(/in še 10\./)
+  })
+
+  test('manj kot dve skupini', () => {
+    expect(pripravljenostIzlocilnih(skupine(1), new Map()).pripravljeno).toBe(false)
+    expect(pripravljenostIzlocilnih([], new Map()).sporocilo).toMatch(/vsaj dve skupini/)
   })
 })
