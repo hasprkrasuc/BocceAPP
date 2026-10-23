@@ -23,6 +23,11 @@ create policy "Admin ureja goste" on guest_players for all
 grant select on guest_players to anon, authenticated;
 grant insert, update, delete on guest_players to authenticated;
 
+-- service_role mora do tabele, ker jo berejo strežniške končne točke (api/*).
+-- Pravice zgoraj so namenoma ožje od privzetka Supabase (anon samo bere);
+-- to ostaja, dopolnjen je le strežniški ključ, ki RLS tako ali tako obide.
+grant all on public.guest_players to service_role;
+
 -- Reference iz prijav na gosta-igralca (poleg registriranega uporabnika / prostega imena).
 alter table tournament_registrations
   add column if not exists player1_guest_id uuid references guest_players(id) on delete set null,

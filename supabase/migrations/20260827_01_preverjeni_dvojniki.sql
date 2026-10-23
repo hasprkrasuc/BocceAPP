@@ -56,3 +56,19 @@ create policy "Admin upravlja preverjene dvojnike" on public.preverjeni_dvojniki
 
 comment on table public.preverjeni_dvojniki is
   'Pari zapisov, za katere je admin potrdil, da NISTA ista oseba. Skrije jih s plošče možnih dvojnikov.';
+
+-- ─────────────────────────────────────────────────────────────
+-- PRAVICE ZA DATA API
+--
+-- Supabase od 30. 10. 2026 novim tabelam v shemi `public` pravic ne podeli
+-- več sam (doslej je to opravil privzetek `alter default privileges`). Brez
+-- teh vrstic se migracija izvede BREZ NAPAKE, obnovljena baza pa prek
+-- PostgREST na vsako poizvedbo vrne »permission denied«.
+--
+-- RLS tega ne nadomesti: RLS izbira VRSTICE, grant pa odloča, ali odjemalec
+-- tabelo sploh vidi. Vse tabele spodaj imajo RLS vklopljen, zato je obseg
+-- enak produkcijskemu (primerjano 23. 10. 2026).
+--
+-- Na produkciji je to no-op — pravice tam že obstajajo.
+-- ─────────────────────────────────────────────────────────────
+grant all on public.preverjeni_dvojniki to anon, authenticated, service_role;

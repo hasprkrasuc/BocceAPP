@@ -27,3 +27,19 @@ create policy "Admin pisanje serije" on public.tournament_series
   for all using (
     auth.uid() in (select id from public.users where role = any (array['admin','super_admin']))
   );
+
+-- ─────────────────────────────────────────────────────────────
+-- PRAVICE ZA DATA API
+--
+-- Supabase od 30. 10. 2026 novim tabelam v shemi `public` pravic ne podeli
+-- več sam (doslej je to opravil privzetek `alter default privileges`). Brez
+-- teh vrstic se migracija izvede BREZ NAPAKE, obnovljena baza pa prek
+-- PostgREST na vsako poizvedbo vrne »permission denied«.
+--
+-- RLS tega ne nadomesti: RLS izbira VRSTICE, grant pa odloča, ali odjemalec
+-- tabelo sploh vidi. Vse tabele spodaj imajo RLS vklopljen, zato je obseg
+-- enak produkcijskemu (primerjano 23. 10. 2026).
+--
+-- Na produkciji je to no-op — pravice tam že obstajajo.
+-- ─────────────────────────────────────────────────────────────
+grant all on public.tournament_series to anon, authenticated, service_role;
