@@ -311,7 +311,15 @@ export function TournamentDetail() {
       const regs = (r ?? []) as TournamentRegistration[]
       setRegistrations(regs)
       if (user) {
-        const mine = regs.find(x => x.player1_id === user.id || x.player2_id === user.id)
+        // Mesto partnerja šteje za »že prijavljen« SAMO pri parni disciplini.
+        // Sicer nekdanji soigralec stare parne prijave na posamičnem
+        // tekmovanju ne bi mogel vstopiti sam: obrazec se skriva za `!myReg`.
+        // Disciplino beremo iz pravkar naložene vrstice in ne iz stanja, ki
+        // je ob tem klicu še staro.
+        const parno = jeParnoTekmovanje(
+          (t as Tournament)?.format, (t as Tournament)?.discipline_type)
+        const mine = regs.find(x =>
+          x.player1_id === user.id || (parno && x.player2_id === user.id))
         setMyReg(mine ?? null)
       }
     } catch (e) {
@@ -550,8 +558,18 @@ export function TournamentDetail() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
           <span className="text-blue-600">✓</span>
           <div>
+            {/*
+              Napis je prej vedno govoril o partnerju. Na posamični prijavi je
+              izpisal »Prijavljen si skupaj z« brez imena, na posamičnem
+              tekmovanju s staro parno prijavo pa partnerja, ki tam ne nastopa.
+            */}
             <p className="text-sm font-medium text-blue-800">
-              Prijavljen si skupaj z {myReg.player1_id === user?.id ? myReg.player2?.full_name : myReg.player1?.full_name}
+              {(() => {
+                const soigralec = myReg.player1_id === user?.id
+                  ? (myReg.player2?.full_name ?? myReg.guest2?.full_name ?? myReg.player2_name)
+                  : (myReg.player1?.full_name ?? myReg.guest1?.full_name ?? myReg.player1_name)
+                return jeDvojka && soigralec ? `Prijavljen si skupaj z ${soigralec}` : 'Prijavljen si'
+              })()}
             </p>
             <p className="text-xs text-blue-600">
               Status: {myReg.status === 'pending' ? 'Čaka na potrditev' : myReg.status === 'confirmed' ? 'Potrjena' : 'Zavrnjena'}

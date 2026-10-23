@@ -2,7 +2,7 @@ import { useEffect, useState, FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel, seededPotDraw } from '../../engines/tournament'
-import { jeParnoTekmovanje, DISCIPLINE_TEKMOVANJ, OZNAKE_DISCIPLIN } from '../../engines/tournamentPlacement'
+import { jeParnoTekmovanje, nosilnaVrednost, DISCIPLINE_TEKMOVANJ, OZNAKE_DISCIPLIN } from '../../engines/tournamentPlacement'
 import { vprasanjeZaPotrditev, oznakaDiscipline, type DrugoPrvenstvo } from '../../engines/spremembaDiscipline'
 import { normalizirajDisciplino } from '../../engines/tournamentPlacement'
 import { najvisjiRezultat } from '../../engines/rezultatTekme'
@@ -290,9 +290,9 @@ export default function TournamentEdit() {
     // Slot potrebuje ročno vrednost, če na njem ni registriranega igralca z rangom
     // (gost/tuji ali registriran brez rang točk).
     const slotUnranked = (id: string | null) => !id || (rp[id] ?? 0) === 0
-    const needsManual = slotUnranked(r.player1_id)
-      || (jeParnoTekmovanje(tournament?.format, tournament?.discipline_type) && slotUnranked(r.player2_id))
-    return { value: p1 + p2, manual: false, needsManual }
+    const jePar = jeParnoTekmovanje(tournament?.format, tournament?.discipline_type)
+    const needsManual = slotUnranked(r.player1_id) || (jePar && slotUnranked(r.player2_id))
+    return { value: nosilnaVrednost(p1, p2, jePar), manual: false, needsManual }
   }
 
   /** Shrani (ali počisti) ročno nosilno vrednost ekipe. Prazno → NULL (nazaj na izračun). */
@@ -508,19 +508,23 @@ export default function TournamentEdit() {
 
   async function handleEditRegistration() {
     if (!editingRegId) return
+    if (!editForm.player1) { setMessage('❌ Igralec 1 mora biti izbran'); return }
     if (editForm.player1 === editForm.player2) { setMessage('❌ Igralca morata biti različna'); return }
+    const izbrani = [editForm.player1, editForm.player2].filter(Boolean)
     const conflict = registrations.find(r =>
-      r.id !== editingRegId && (
-        r.player1_id === editForm.player1 || r.player2_id === editForm.player1 ||
-        r.player1_id === editForm.player2 || r.player2_id === editForm.player2
-      )
+      r.id !== editingRegId
+      && izbrani.some(id => r.player1_id === id || r.player2_id === id)
     )
     if (conflict) { setMessage('❌ Eden od igralcev je že prijavljen v drugi ekipi'); return }
     setEditLoading(true)
     setMessage('')
     const { error: err } = await supabase
       .from('tournament_registrations')
-      .update({ player1_id: editForm.player1, player2_id: editForm.player2 })
+      // Prazna izbira pomeni »brez partnerja« in mora biti NULL. Prazen niz je
+      // doslej potoval naravnost v stolpec `uuid`, kjer ga je Postgres zavrnil
+      // z 22P02 — zato urejanja posamične prijave sploh ni bilo mogoče
+      // shraniti (23. 10. 2026: 84 potrjenih prijav v tem položaju).
+      .update({ player1_id: editForm.player1, player2_id: editForm.player2 || null })
       .eq('id', editingRegId)
     setEditLoading(false)
     if (err) { setMessage(`❌ Napaka: ${err.message}`); return }
@@ -669,8 +673,14 @@ export default function TournamentEdit() {
           if (cat) for (const row of rang.byCategory[cat]) rp[row.playerId] = row.rang
           setRangByPlayer(rp)
         }
+        // Isto pravilo kot `teamSeed` — seštevek je bil prej zapisan dvakrat in
+        // nobeden ni vprašal discipline.
+        const jePar = jeParnoTekmovanje(tournament?.format, tournament?.discipline_type)
         const teams = confirmed.map(r => ({ id: r.id, seed: r.seed_points != null ? r.seed_points
-          : (r.player1_id ? rp![r.player1_id] ?? 0 : 0) + (r.player2_id ? rp![r.player2_id] ?? 0 : 0) }))
+          : nosilnaVrednost(
+              r.player1_id ? rp![r.player1_id] ?? 0 : 0,
+              r.player2_id ? rp![r.player2_id] ?? 0 : 0,
+              jePar) }))
         const drawn = seededPotDraw(teams, groupSizes, shuffleIdx)
         assignments = groupSizes.map((size, gi) => ({ size, teams: drawn[gi].map(rid => byId.get(rid)!) }))
       } else {
@@ -1491,19 +1501,37 @@ export default function TournamentEdit() {
                               ))}
                             </select>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Igralec 2</label>
-                            <select
-                              value={editForm.player2}
-                              onChange={e => setEditForm(f => ({ ...f, player2: e.target.value }))}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
-                              {players.map(p => (
-                                <option key={p.id} value={p.id} disabled={p.id === editForm.player1}>
-                                  {oznakaIgralca(p, { klub: true })}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                          {/*
+                            Igralec 2 se pokaže pri parnih disciplinah, pri
+                            posamičnih pa le, kadar prijava partnerja ŠE ima —
+                            to je edina pot, da ga admin odstrani. Doslej je
+                            ni bilo: obrazec je brez prazne izbire prazen niz
+                            poslal v stolpec `uuid` in shranjevanje je padlo.
+                          */}
+                          {(isPair || r.player2_id) && (
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                {isPair ? 'Igralec 2' : 'Igralec 2 (s prejšnje discipline)'}
+                              </label>
+                              <select
+                                value={editForm.player2}
+                                onChange={e => setEditForm(f => ({ ...f, player2: e.target.value }))}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
+                                <option value="">— brez partnerja —</option>
+                                {players.map(p => (
+                                  <option key={p.id} value={p.id} disabled={p.id === editForm.player1}>
+                                    {oznakaIgralca(p, { klub: true })}
+                                  </option>
+                                ))}
+                              </select>
+                              {!isPair && r.player2_id && (
+                                <p className="text-xs text-amber-600 mt-1">
+                                  Tekmovanje je posamično. Dokler je partner vpisan, se izpisuje v imenu
+                                  ekipe, uvrstitev pa se točkuje za oba igralca.
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-2">
                           <button onClick={handleEditRegistration} disabled={editLoading}
