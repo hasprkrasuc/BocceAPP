@@ -3,6 +3,7 @@ import {
   CILJ_BALINANJE, MEJA_RAZUMNOSTI,
   najvisjiRezultat, preveriRezultat, seIgraNaTrinajst,
 } from './rezultatTekme'
+import { normalizirajDisciplino } from './tournamentPlacement'
 
 describe('najvisjiRezultat', () => {
   it('balinanje se igra na 13', () => {
@@ -20,8 +21,18 @@ describe('najvisjiRezultat', () => {
   })
 
   it('disciplina gre skozi normalizacijo zapisa', () => {
+    // Sama meja tega NE dokaže: neprepoznana disciplina dobi prav tako
+    // MEJA_RAZUMNOSTI, zato bi trditev o `igra v krog` obstala tudi, če bi
+    // zapis iz slovarja izpadel. Zato najprej preverimo, da je zapis res
+    // prepoznan, in šele nato mejo.
+    expect(normalizirajDisciplino('igra v krog'), 'zapis »igra v krog« mora biti prepoznan').toBe('krog')
+    expect(normalizirajDisciplino('Igra v krog')).toBe('krog')
     expect(najvisjiRezultat('igra v krog')).toBe(MEJA_RAZUMNOSTI)
     expect(najvisjiRezultat('Igra v krog')).toBe(MEJA_RAZUMNOSTI)
+
+    // Balinarska smer je edina, ki mejo spremeni, zato normalizacijo dokaže
+    // tudi brez pomoči.
+    expect(normalizirajDisciplino('dvojice')).toBe('dvojka')
     expect(najvisjiRezultat('dvojice')).toBe(CILJ_BALINANJE)
   })
 

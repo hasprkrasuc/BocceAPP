@@ -129,16 +129,60 @@ describe('ustvarjanje izločilnega dela', () => {
  * Igra v krog sodnik ni mogel vpisati 18:19 — meja 13 je pravilo balinanja,
  * ne pravilo vseh disciplin. Odtlej odloča `engines/rezultatTekme`.
  *
- * Test varuje oboje: da obrazec pravilo res vpraša in da stran disciplino res
+ * Test varuje oboje: da obrazec pravilo res vpraša IN da stran disciplino res
  * poda. Brez drugega bi modal vsako tekmovanje imel za balinanje in sodnik bi
  * obtičal natanko tako kot prej.
+ *
+ * Prva različica teh trditev je bila prešibka in bi točno to spustila skozi:
+ * iskala je samo besedilo `preveriRezultat(` in `discipline=`, ne pa, s čim
+ * sta klicana. `preveriRezultat(a, b, 'dvojka')` v modalu, ki disciplino
+ * prezre, je bil zelen. Zato trditve spodaj preverjajo ARGUMENT in tečejo
+ * nad kodo brez komentarjev.
  */
 const modalVir = import.meta.glob('../components/ScoreModal.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 const MODAL = '../components/ScoreModal.tsx'
 
-/** Komentarji smejo govoriti o 13; koda ne. */
+/**
+ * Koda brez komentarjev — vrstičnih, blokovnih in JSX.
+ *
+ * Z navadnim regularnim izrazom ni šlo: znak za vrstični komentar se pojavi
+ * tudi sredi niza (vsak naslov `https://…`), zato je izraz požrl preostanek
+ * PRAVE vrstice in trdo zakodirana meja bi se skrila za URL-jem. Zato beremo
+ * znak za znakom in nize preskočimo.
+ *
+ * (Isti razlog, zakaj ta opis ne sme vsebovati zaporedja, ki konča blokovni
+ * komentar — prva različica ga je in je datoteka nehala biti razčlenljiva.)
+ */
 function brezKomentarjev(s: string): string {
-  return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+  let out = ''
+  let i = 0
+  let narekovaj: string | null = null
+  while (i < s.length) {
+    const c = s[i], d = s[i + 1]
+    if (narekovaj) {
+      if (c === '\\') { out += c + (d ?? ''); i += 2; continue }
+      if (c === narekovaj) narekovaj = null
+      out += c; i++; continue
+    }
+    if (c === '"' || c === "'" || c === '`') { narekovaj = c; out += c; i++; continue }
+    if (c === '/' && d === '/') { while (i < s.length && s[i] !== '\n') i++; continue }
+    if (c === '/' && d === '*') {
+      i += 2
+      while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++
+      i += 2; continue
+    }
+    out += c; i++
+  }
+  return out
+}
+
+/** Besedilo elementa `<ScoreModal … />`, brez komentarjev in brez sosedov. */
+function elementScoreModal(src: string): string {
+  const koda = brezKomentarjev(src)
+  const i = koda.indexOf('<ScoreModal')
+  if (i < 0) return ''
+  const j = koda.indexOf('/>', i)
+  return j < 0 ? '' : koda.slice(i, j + 2)
 }
 
 describe('meja rezultata pozna disciplino', () => {
@@ -148,21 +192,42 @@ describe('meja rezultata pozna disciplino', () => {
     expect(vir, `datoteke ${MODAL} ni med prebranimi`).toBeDefined()
   })
 
-  test('obrazec vpraša pravilo in ga ne pozna sam', () => {
-    expect(vir, 'ScoreModal ne kliče preveriRezultat — pravilo mora priti iz motorja')
-      .toMatch(/preveriRezultat\s*\(/)
-    expect(brezKomentarjev(vir), 'v kodi obrazca ne sme biti več svoje meje 13')
-      .not.toMatch(/\b13\b/)
+  test('obrazec pravilo vpraša in mu poda SVOJO disciplino', () => {
+    const koda = brezKomentarjev(vir)
+    // Ne zadošča, da je `preveriRezultat` omenjen — pomemben je tretji
+    // argument. `preveriRezultat(a, b, 'dvojka')` bi spet omejil vse na 13.
+    expect(koda, 'preveriRezultat mora dobiti lastnost `discipline`, ne zabite discipline')
+      .toMatch(/preveriRezultat\s*\(\s*a\s*,\s*b\s*,\s*discipline\s*\)/)
+    expect(koda, 'najvisjiRezultat mora dobiti lastnost `discipline`')
+      .toMatch(/najvisjiRezultat\s*\(\s*discipline\s*\)/)
   })
 
-  test('zgornja meja vnosnega polja ni zabita', () => {
-    expect(vir, 'max polja mora priti iz najvisjiRezultat').toMatch(/max=\{najvec\}/)
-    expect(vir).not.toMatch(/max="13"/)
+  test('obrazec nima svoje meje 13', () => {
+    // Iščemo 13 v vlogi MEJE (primerjava, prireditev, `max`), ne vsake
+    // trinajstice: `mb-13` v razredu Tailwind ni pravilo tekmovanja.
+    const koda = brezKomentarjev(vir)
+    expect(koda, 'v kodi obrazca ne sme biti več svoje meje 13')
+      .not.toMatch(/(?:[<>!=]=?|max=)\s*"?13\b/)
+    expect(koda, 'tudi obrnjena primerjava ne').not.toMatch(/\b13\s*[<>]/)
+  })
+
+  test('zgornja meja vnosnega polja pride iz motorja', () => {
+    const koda = brezKomentarjev(vir)
+    const polja = [...koda.matchAll(/max=\{?"?([^\s"}]+)"?\}?/g)].map(m => m[1])
+    expect(polja.length, 'vnosni polji morata imeti max').toBe(2)
+    for (const v of polja) {
+      expect(v, 'max polja mora priti iz najvisjiRezultat, ne biti zabit').toBe('najvec')
+    }
   })
 
   test('stran modalu poda disciplino', () => {
-    expect(stranT, 'brez discipline modal vsako tekmovanje šteje za balinanje')
-      .toMatch(/<ScoreModal[\s\S]{0,240}discipline=\{tournament\.discipline_type\}/)
+    const el = elementScoreModal(stranT)
+    expect(el.length, 'elementa <ScoreModal … /> ni bilo mogoče najti').toBeGreaterThan(0)
+    // Trditev velja NAD ELEMENTOM, ne nad oknom znakov: prejšnji vzorec je
+    // segal čez konec elementa in bi ga zadovoljila že pojavitev pri
+    // naslednji komponenti ali zakomentirana vrstica.
+    expect(el, 'brez discipline modal vsako tekmovanje šteje za balinanje')
+      .toMatch(/discipline=\{tournament\.discipline_type\}/)
   })
 })
 
