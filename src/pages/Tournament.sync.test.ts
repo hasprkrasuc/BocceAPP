@@ -80,3 +80,44 @@ describe('predogled izločilnih bojev', () => {
       .not.toMatch(/from\('group_teams'\)/)
   })
 })
+
+/**
+ * VAROVALO PRED MREŽO NAPAČNE VELIKOSTI.
+ *
+ * Gumb je preverjal, ali je število ZNANIH napredovalcev potenca 2 — ne pa,
+ * ali jih je toliko, kolikor jih mora biti. Pri DP Igra v krog 2026 (4
+ * skupine, 8 pričakovanih, 2 znana) bi pritisk ustvaril eno samo »finale«.
+ * Ker insertKnockoutBracket najprej pobriše vse izločilne tekme, bi napačen
+ * pritisk povozil tudi že pravilno mrežo.
+ */
+const adminVir = import.meta.glob('./admin/TournamentEdit.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+
+describe('ustvarjanje izločilnega dela', () => {
+  const vir = adminVir['./admin/TournamentEdit.tsx']
+
+  test('datoteka je prebrana', () => {
+    expect(vir, 'TournamentEdit.tsx ni med prebranimi').toBeDefined()
+  })
+
+  test('pred ustvarjanjem preveri POPOLNOST napredovalcev', () => {
+    expect(vir, 'pravilo mora priti iz motorja').toMatch(/pripravljenostIzlocilnih\(/)
+    expect(vir).toMatch(/napredovalciSoPopolni\(/)
+  })
+
+  test('varovalo velja za OBE veji — z predkolom in brez', () => {
+    // Veja s predkolom je prej preverjala samo »manj kot dva«, kar je še
+    // ohlapneje od potence 2.
+    const klici = vir.match(/if \(!napredovalciSoPopolni\(quals\)\) return/g) ?? []
+    expect(klici.length, 'varovalo manjka v eni od vej').toBe(2)
+  })
+
+  test('potenca 2 sama po sebi ne zadošča več', () => {
+    // Stara preverba sme ostati kot dodatna, ne sme pa biti edina — zato
+    // zahtevamo, da je klic varovala PRED njo.
+    const i = vir.indexOf('napredovalciSoPopolni(quals)')
+    const j = vir.indexOf('ni potenca 2')
+    expect(i, 'varovala ni').toBeGreaterThan(-1)
+    expect(j, 'stare preverbe ni').toBeGreaterThan(-1)
+    expect(i, 'varovalo mora teči pred preverbo potence 2').toBeLessThan(j)
+  })
+})
