@@ -21,6 +21,11 @@ import type { DisciplineType } from './leagueDisciplines'
  * Pri balinanju je torej 13 res zgornja meja in ne le domneva — zato je
  * pogoj hkrati ZAOSTREN. Prej je vnos padel šele, če sta bila OBA rezultata
  * nad 13, tako da je 13:99 mirno shranil. Zdaj pade vsak rezultat nad ciljem.
+ *
+ * Zaostritev pa sme veljati samo tam, kjer disciplino ZARES poznamo — sicer
+ * bi bila popravek v regresijo: izid 20:5 na tekmovanju brez vpisane
+ * discipline je stara koda shranila, zaostrena pa bi ga zavrnila. Glej
+ * `najvisjiRezultat`.
  */
 
 /** Balinanje se igra na 13 točk. */
@@ -47,16 +52,22 @@ export const MEJA_RAZUMNOSTI = 200
 /**
  * Najvišji smiselni rezultat za disciplino.
  *
- * Nezapisana disciplina (`null`) šteje za balinanje: vseh 435 tekem brez
- * discipline v bazi ima najvišji rezultat 13, prav tako pa so brez discipline
- * vpisani klubski turnirji, ki so balinanje. Discipline, ki je `normalizirajDisciplino`
- * ne prepozna, ne obravnavamo kot balinanje — tam je zavrnitev vnosa dražja
- * od prepuščenega tipkarskega spodrsljaja.
+ * Meja 13 velja SAMO, kadar je disciplina vpisana in je balinarska. Kadar je
+ * ni ali je ne prepoznamo, velja ohlapna meja.
+ *
+ * Nezapisana disciplina je mamljivo šteti za balinanje — vseh 435 tekem brez
+ * discipline v bazi ima res najvišji rezultat 13. A `discipline_type` je ob
+ * ustvarjanju tekmovanja NEOBVEZEN (`TournamentAdmin`: `form.discipline_type
+ * || null`) in ga pozneje ni mogoče popraviti, ker `TournamentEdit` polja
+ * zanj nima — disciplino samo bere. Prvo prvenstvo v igri v krog, ki bi ga
+ * kdo ustvaril brez izbrane discipline, bi tako spet obtičalo pri 18:19, iz
+ * česar sodnik ne bi mogel sam, ker discipline nikjer ne more vpisati.
+ *
+ * Zato velja isto kot za neprepoznano disciplino: ne vemo, torej ne
+ * ugibamo strogo. Zavrnjen vnos sodnika sredi tekmovanja je dražji od
+ * prepuščenega tipkarskega spodrsljaja, ki ga je mogoče popraviti.
  */
 export function najvisjiRezultat(discipline: string | null | undefined): number {
-  if (discipline === null || discipline === undefined || discipline.trim() === '') {
-    return CILJ_BALINANJE
-  }
   const d = normalizirajDisciplino(discipline)
   if (d === null) return MEJA_RAZUMNOSTI
   return NA_TRINAJST.has(d) ? CILJ_BALINANJE : MEJA_RAZUMNOSTI
