@@ -170,6 +170,26 @@ export function oznakaZaLigo(d: DisciplineType): string {
 export const DISCIPLINE_MLADINSKE: readonly DisciplineType[] =
   DISCIPLINE_TEKMOVANJ.filter(d => d !== 'trojka')
 
+/**
+ * NOSILNA VREDNOST EKIPE ZA ŽREB — vsota velja samo, kadar ekipa res je par.
+ *
+ * Seštevek `p1 + p2` je bil zapisan na DVEH mestih (seznam nosilcev in
+ * `handleDraw`) in nobeno ni vprašalo discipline. Dokler je bila disciplina
+ * nespremenljiva, to ni bilo vidno. Odkar jo je mogoče popraviti, pa star par
+ * na posamični disciplini obdrži partnerja — njegova nosilna vrednost je
+ * vsota dveh igralcev in sede v prvi boben nad prave posameznike.
+ *
+ * Opozorilo ob spremembi discipline tega ne ujame: vrstica o nosilcih se
+ * pokaže šele, kadar so skupine ŽE žrebane, precenitev pa zadene prav
+ * tekmovanje, ki še ni žrebano.
+ *
+ * `seededPotDraw` ureja padajoče po vrednosti, zato je precenitev sistematična
+ * in ne naključna.
+ */
+export function nosilnaVrednost(tocke1: number, tocke2: number, jePar: boolean): number {
+  return jePar ? tocke1 + tocke2 : tocke1
+}
+
 export function isPairDiscipline(d: DisciplineType): boolean {
   return PAIR_DISCIPLINES.has(d)
 }

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   bucketPoints, isPairDiscipline, jeParnoTekmovanje, normalizirajDisciplino,
-  oznakaMesta, tournamentPlayerPoints, PLACEMENT_POINTS,
+  oznakaMesta, tournamentPlayerPoints, PLACEMENT_POINTS, nosilnaVrednost
 } from './tournamentPlacement'
 import type { DisciplineType } from '../types'
 
@@ -277,5 +277,23 @@ describe('normalizirajDisciplino', () => {
   test('neprepoznan zapis pade na privzetek sistema, ne na par', () => {
     // Tipkarska napaka ne sme prvenstva v izbijanju spremeniti v par.
     expect(jeParnoTekmovanje('izbijanje', 'hitrosno')).toBe(false)
+  })
+})
+
+describe('nosilnaVrednost', () => {
+  test('par sešteje oba igralca', () => {
+    expect(nosilnaVrednost(120, 80, true)).toBe(200)
+  })
+
+  test('posamična disciplina upošteva samo prvega', () => {
+    // Star par, ki mu je admin spremenil disciplino v posamično, obdrži
+    // partnerja. Brez tega bi njegova vsota sedla v prvi boben.
+    expect(nosilnaVrednost(120, 80, false)).toBe(120)
+  })
+
+  test('manjkajoče točke so nič in ne pokvarijo vsote', () => {
+    expect(nosilnaVrednost(0, 0, true)).toBe(0)
+    expect(nosilnaVrednost(50, 0, true)).toBe(50)
+    expect(nosilnaVrednost(0, 50, false)).toBe(0)
   })
 })
