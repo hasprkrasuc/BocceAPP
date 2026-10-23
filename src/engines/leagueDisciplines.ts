@@ -1,6 +1,18 @@
 import type { LeagueTier } from '../types'
 
-export type DisciplineType = 'trojka' | 'dvojka' | 'posamezno' | 'krog' | 'hitrostno' | 'natancno' | 'blizanje' | 'blizanje_krog' | 'stafeta' | 'podaljsek'
+/**
+ * Tip je deklariran v `src/types.ts`; tu ga samo re-izvozimo.
+ *
+ * Doslej sta obstajali DVE besedno enaki deklaraciji in večina kode je
+ * uvažala tisto iz `types.ts`. Trditev, da popolnost oznak drži typecheck
+ * (`Record<DisciplineType, string>`), je zato veljala samo za en izvod:
+ * disciplina, dodana temu izvodu, bi se prevedla brez napake, oznake pa ne
+ * bi dobila in bi se v spustnem seznamu izpisala kot prazna — ista napaka
+ * kot prazna značka za U14.
+ */
+import type { DisciplineType } from '../types'
+
+export type { DisciplineType }
 
 export interface DisciplineTemplate {
   name: string

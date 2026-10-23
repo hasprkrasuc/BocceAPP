@@ -2,18 +2,19 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { loadSeriesStandings, type SeriesStandingRow } from '../../lib/series'
+import { DISCIPLINE_MLADINSKE, OZNAKE_DISCIPLIN } from '../../engines/tournamentPlacement'
 import type { TournamentSeries, Tournament, DisciplineType } from '../../types'
 
-const YOUTH_DISCIPLINES: { value: DisciplineType; label: string }[] = [
-  { value: 'posamezno', label: 'Posamezno' },
-  { value: 'dvojka', label: 'Dvojka' },
-  { value: 'hitrostno', label: 'Hitrostno izbijanje' },
-  { value: 'natancno', label: 'Natančno izbijanje' },
-  { value: 'blizanje', label: 'Natančno bližanje' },
-  { value: 'blizanje_krog', label: 'Bližanje v krog' },
-  { value: 'krog', label: 'Krog' },
-  { value: 'stafeta', label: 'Štafeta' },
-]
+/**
+ * Mladinske serije nimajo trojk; oznake so skupne z ostalimi zasloni.
+ *
+ * Seznam je bil prej zapisan tu po svoje in je za isto disciplino govoril
+ * drugače kot obrazec za tekmovanja (»Dvojka« proti »Dvojice«, »Krog« proti
+ * »Igra v krog«). Izločitev trojk je zdaj edina razlika in je zapisana v
+ * `DISCIPLINE_MLADINSKE`.
+ */
+const YOUTH_DISCIPLINES: { value: DisciplineType; label: string }[] =
+  DISCIPLINE_MLADINSKE.map(d => ({ value: d, label: OZNAKE_DISCIPLIN[d] }))
 
 export default function SeriesEdit() {
   const { id } = useParams<{ id: string }>()

@@ -2,7 +2,11 @@ import { useEffect, useState, FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { GROUP_TEMPLATES, teamDisplayName, suggestGroupDistribution, stageLabel, seededPotDraw } from '../../engines/tournament'
-import { jeParnoTekmovanje } from '../../engines/tournamentPlacement'
+import { jeParnoTekmovanje, DISCIPLINE_TEKMOVANJ, OZNAKE_DISCIPLIN } from '../../engines/tournamentPlacement'
+import { vprasanjeZaPotrditev, oznakaDiscipline, type DrugoPrvenstvo } from '../../engines/spremembaDiscipline'
+import { normalizirajDisciplino } from '../../engines/tournamentPlacement'
+import { najvisjiRezultat } from '../../engines/rezultatTekme'
+import type { DisciplineType } from '../../engines/leagueDisciplines'
 import { pripravljenostIzlocilnih, kljucMesta } from '../../engines/izlocilniNacrt'
 import type { Tournament, TournamentRegistration, TournamentGroup, GroupTeam, GroupDistribution, UserProfile, GuestPlayer, MatchStage } from '../../types'
 import { drawKnockout, insertKnockoutBracket } from '../../lib/knockoutDraw'
@@ -64,6 +68,113 @@ export default function TournamentEdit() {
     if (error) { setMessage(`❌ Vodje tekmovanja ni bilo mogoče shraniti: ${error.message}`); return }
     setTournament(prev => (prev ? { ...prev, chief_judge_id: userId || null } : prev))
     setMessage(userId ? '✓ Vodja tekmovanja shranjen' : '✓ Vodja tekmovanja odstranjen')
+  }
+
+  const [disciplinaBusy, setDisciplinaBusy] = useState(false)
+  /**
+   * Zamenjava discipline tekmovanja.
+   *
+   * Disciplino je bilo doslej mogoče nastaviti samo ob ustvarjanju. Polje
+   * obstaja, ker je prav ta vrzel 23. 10. 2026 zaklenila sodnika: prvenstvo
+   * brez vpisane discipline je dobilo mejo rezultata balinanja in popraviti
+   * je ni bilo mogoče nikjer.
+   *
+   * Posledice presodi `engines/spremembaDiscipline`; tu samo zberemo, česar
+   * motor ne more vedeti sam. Vse troje beremo SPROTI in ne iz že naloženega
+   * stanja:
+   *
+   *   - odigrane tekme, ker `koMatches` nosi le izločilne in bi prvenstvo,
+   *     odigrano po skupinah, veljalo za »brez izidov«;
+   *   - tekme nad mejo NOVE discipline, ker je meja znana šele zdaj;
+   *   - druga prvenstva iste kategorije, ker o izdajah na rang lestvici
+   *     odloča ključ `kategorija|disciplina` in trk ni viden s tega zaslona.
+   */
+  async function shraniDisciplino(vrednost: string) {
+    if (!tournament) return
+    const nova = (vrednost || null) as DisciplineType | null
+    if (normalizirajDisciplino(tournament.discipline_type) === nova) return
+
+    setDisciplinaBusy(true)
+    try {
+      const novaMeja = najvisjiRezultat(nova)
+      const [{ count: odigranih, error: e1 }, { count: nadMejo, error: e2 }] = await Promise.all([
+        supabase.from('matches').select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournament.id).eq('status', 'completed'),
+        supabase.from('matches').select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournament.id)
+          .or(`score_a.gt.${novaMeja},score_b.gt.${novaMeja}`),
+      ])
+      if (e1 ?? e2) throw (e1 ?? e2)
+
+      // Druga prvenstva iste kategorije — samo pri prvenstvih, ker se turnirji
+      // po tem ključu ne točkujejo.
+      let drugaPrvenstva: DrugoPrvenstvo[] = []
+      if (tournament.kind === 'championship') {
+        const { data: drugi, error: e3 } = await supabase.from('tournaments')
+          .select('id, name, date, discipline_type')
+          .eq('kind', 'championship').eq('category', tournament.category).neq('id', tournament.id)
+        if (e3) throw e3
+        const ids = (drugi ?? []).map(t => t.id)
+        if (ids.length > 0) {
+          const [{ data: uvr, error: e4 }, { data: odi, error: e5 }] = await Promise.all([
+            supabase.from('tournament_registrations').select('tournament_id')
+              .in('tournament_id', ids).not('final_rank', 'is', null),
+            supabase.from('matches').select('tournament_id')
+              .in('tournament_id', ids).eq('status', 'completed'),
+          ])
+          if (e4 ?? e5) throw (e4 ?? e5)
+          const steviloUvrstitev = new Map<string, number>()
+          for (const r of (uvr ?? []) as { tournament_id: string }[]) {
+            steviloUvrstitev.set(r.tournament_id, (steviloUvrstitev.get(r.tournament_id) ?? 0) + 1)
+          }
+          const odigrane = new Set((odi ?? []).map(m => (m as { tournament_id: string }).tournament_id))
+          drugaPrvenstva = (drugi ?? []).map(t => ({
+            ime: t.name as string,
+            disciplina: t.discipline_type as string | null,
+            datum: t.date as string,
+            stUvrstitev: steviloUvrstitev.get(t.id as string) ?? 0,
+            imaIzide: (steviloUvrstitev.get(t.id as string) ?? 0) > 0 || odigrane.has(t.id as string),
+          }))
+        }
+      }
+
+      const potrjene = registrations.filter(r => r.status === 'confirmed')
+      const vprasanje = vprasanjeZaPotrditev({
+        format: tournament.format,
+        disciplina: tournament.discipline_type,
+        kind: tournament.kind,
+        kategorija: tournament.category,
+        datum: tournament.date,
+        stPrijav: potrjene.length,
+        stPrijavSPartnerjem: potrjene.filter(
+          r => r.player2_id || r.player2_guest_id || r.player2_name).length,
+        imaSkupine: groups.length > 0,
+        imaIzide: (odigranih ?? 0) > 0
+          || izbijanje.length > 0
+          || registrations.some(r => r.final_rank != null),
+        stUvrstitev: registrations.filter(r => r.final_rank != null).length,
+      }, nova, {
+        stTekemNadNovoMejo: nadMejo ?? 0,
+        drugaPrvenstva,
+      })
+      if (vprasanje && !window.confirm(vprasanje)) return
+
+      // `.select()` ni okras: UPDATE, ki ga zavrne RLS, ne vrne napake, ampak
+      // NIČ VRSTIC. Brez tega bi neadmin videl »✓« in neshranjeno vrednost.
+      const { data: posodobljeno, error } = await supabase.from('tournaments')
+        .update({ discipline_type: nova }).eq('id', id).select('id')
+      if (error) throw error
+      if (!posodobljeno || posodobljeno.length === 0) {
+        setMessage('❌ Discipline ni bilo mogoče shraniti — za to je potrebna pravica administratorja.')
+        return
+      }
+      setTournament(prev => (prev ? { ...prev, discipline_type: nova } : prev))
+      setMessage(`✓ Disciplina: ${oznakaDiscipline(nova)}`)
+    } catch (e) {
+      setMessage(`❌ Discipline ni bilo mogoče shraniti: ${(e as Error).message}`)
+    } finally {
+      setDisciplinaBusy(false)
+    }
   }
 
   const [tournament, setTournament] = useState<Tournament | null>(null)
@@ -1098,6 +1209,41 @@ export default function TournamentEdit() {
         {isAdmin && !tournament.chief_judge_id && tournament.format === 'izbijanje' && (
           <p className="text-xs text-amber-600 mt-1">
             Ni dodeljen — izide lahko doslej vpiše samo admin.
+          </p>
+        )}
+      </div>
+
+      {/*
+        DISCIPLINA
+        Določa troje: ali se prijavlja par ali posameznik, kje je meja
+        rezultata in katera izdaja prvenstva je to na rang lestvici. Zato
+        sprememba gre skozi potrditev — ne pa skozi prepoved, ker je prav
+        nemožnost popravka tista, ki je sodnika zaklenila.
+      */}
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-6">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-semibold text-gray-700">Disciplina</span>
+          {isAdmin ? (
+            <select value={tournament.discipline_type ?? ''} disabled={disciplinaBusy}
+              onChange={e => shraniDisciplino(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none disabled:opacity-50">
+              <option value="">— ni vpisana —</option>
+              {DISCIPLINE_TEKMOVANJ.map(d => (
+                <option key={d} value={d}>{OZNAKE_DISCIPLIN[d]}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-sm text-gray-600">{oznakaDiscipline(tournament.discipline_type)}</span>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-1.5">
+          Določa, ali se prijavlja par ali posameznik, in zgornjo mejo rezultata —
+          balinanje se igra na 13 točk, igra v krog in izbijanja ne.
+        </p>
+        {isAdmin && !tournament.discipline_type && (
+          <p className="text-xs text-amber-600 mt-1">
+            Ni vpisana — tekmovanje se obravnava po sistemu tekmovanja, kar pri točkovnih
+            disciplinah ni nujno prav.
           </p>
         )}
       </div>
