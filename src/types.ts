@@ -124,6 +124,12 @@ export interface TournamentRegistration {
   seed_points?: number | null
   /** Žrebana številka (grafikon zveze »št. žreba«); pri izbijanju zadnje merilo ob izenačenju. */
   draw_number?: number | null
+  /**
+   * Ročno vpisana končna uvrstitev prvenstva. Stolpec obstaja že od začetka
+   * (piše ga `TournamentEdit`, bere `rangLestvica`), v tipu pa ga ni bilo —
+   * zato ga je `rangLestvica` brala prek `as unknown`.
+   */
+  final_rank?: number | null
   player1?: UserProfile
   player2?: UserProfile
   guest1?: GuestPlayer

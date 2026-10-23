@@ -2,6 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { opozoriloOLetnici, opozoriloOOznakiSezone } from '../../engines/seasonYear'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
+import { OZNAKE_DISCIPLIN, oznakaZaLigo } from '../../engines/tournamentPlacement'
+
+/**
+ * Ligaška sezona pozna VSE discipline, tudi podaljšek — ta je razsodišče ob
+ * izenačenju tekme. Zato tu ne uporabimo `DISCIPLINE_TEKMOVANJ`, ki podaljšek
+ * namenoma izpušča.
+ */
+const VRSTNI_RED_LIGA = Object.keys(OZNAKE_DISCIPLIN) as DisciplineType[]
 import { USER_PUBLIC_COLS } from '../../lib/userColumns'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { bergerFixtures, MAX_BERGER_TEAMS } from '../../engines/berger'
@@ -1953,16 +1961,9 @@ export default function LeagueAdmin() {
                     <select value={discForm.discipline_type}
                       onChange={e => setDiscForm(f => ({ ...f, discipline_type: e.target.value as DisciplineType }))}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
-                      <option value="posamezno">Posamezno</option>
-                      <option value="krog">Krog</option>
-                      <option value="hitrostno">Hitrostno zbijanje</option>
-                      <option value="natancno">Natančno zbijanje</option>
-                      <option value="blizanje">Natančno bližanje</option>
-                      <option value="blizanje_krog">Bližanje v krog</option>
-                      <option value="stafeta">Štafeta</option>
-                      <option value="dvojka">Dvojka</option>
-                      <option value="trojka">Trojka</option>
-                      <option value="podaljsek">Podaljšek</option>
+                      {VRSTNI_RED_LIGA.map(d => (
+                        <option key={d} value={d}>{oznakaZaLigo(d)}</option>
+                      ))}
                     </select>
                   </div>
                   <div>

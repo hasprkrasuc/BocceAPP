@@ -88,6 +88,88 @@ export function normalizirajDisciplino(raw: string | null | undefined): Discipli
   return DISCIPLINE_SYNONYMS.get(kljuc) ?? null
 }
 
+/**
+ * OZNAKE DISCIPLIN — en sam vir za vse izbirnike.
+ *
+ * Seznami disciplin so bili prej trije in vsak je povedal nekaj drugega:
+ * obrazec za ustvarjanje tekmovanja ni ponujal bližanj, mladinske serije ne
+ * trojk, tip `DisciplineType` pa pozna oboje. Isti disciplini sta hkrati
+ * rekla »Dvojka« in »Dvojice«, »Krog« in »Igra v krog«.
+ *
+ * Zapis je `Record<DisciplineType, string>` namerno: ko tipu dodaš
+ * disciplino, prevajalnik zahteva oznako TUKAJ. Razhajanja torej ne lovi
+ * test, ampak typecheck — česar ni mogoče pozabiti.
+ */
+export const OZNAKE_DISCIPLIN: Readonly<Record<DisciplineType, string>> = {
+  posamezno: 'Posamezno',
+  dvojka: 'Dvojice',
+  trojka: 'Trojke',
+  krog: 'Igra v krog',
+  hitrostno: 'Hitrostno izbijanje',
+  natancno: 'Natančno izbijanje',
+  stafeta: 'Štafetno izbijanje',
+  blizanje: 'Natančno bližanje',
+  blizanje_krog: 'Bližanje v krog',
+  podaljsek: 'Podaljšek',
+}
+
+/**
+ * Discipline, ki se NE tekmujejo na turnirjih in prvenstvih.
+ *
+ * `podaljsek` je ligaško razsodišče ob izenačenju tekme in ne disciplina, na
+ * katero bi se kdo prijavil.
+ */
+export const NI_ZA_TEKMOVANJA: readonly DisciplineType[] = ['podaljsek']
+
+/**
+ * Discipline, ki se tekmujejo na turnirjih in prvenstvih.
+ *
+ * IZPELJANO iz oznak in ne prepisano. Prepisan seznam je bil prav tista
+ * luknja, skozi katero sta padli bližanji: obrazec ju ni ponujal, zato ju ni
+ * bilo mogoče vpisati. Zdaj nova disciplina samodejno pride v obrazec ali pa
+ * jo je treba zavestno izločiti zgoraj.
+ *
+ * Vrstni red je namenski (igralne, nato tehnične) in ga drži spodnji seznam;
+ * test preverja, da pokrije vse ključe.
+ */
+const VRSTNI_RED: readonly DisciplineType[] = [
+  'posamezno', 'dvojka', 'trojka',
+  'krog', 'hitrostno', 'natancno', 'stafeta', 'blizanje', 'blizanje_krog',
+  'podaljsek',
+]
+
+export const DISCIPLINE_TEKMOVANJ: readonly DisciplineType[] = VRSTNI_RED
+  .filter(d => !NI_ZA_TEKMOVANJA.includes(d))
+
+/**
+ * Ligaški odstopi od skupnih oznak.
+ *
+ * Liga govori o »DVOJKA 1/2/3« in »TROJKA«, tekmovanja pa o »Dvojicah« in
+ * »Trojkah«. To je resnična razlika v besednjaku, zato je tu zapisana kot
+ * izjema z razlogom — in ne kot tih prepis celotnega seznama, kakršen je bil
+ * doslej v `LeagueAdmin` in `leagueStatsViews` (ta dva si o isti disciplini
+ * nista povedala istega: »Hitrostno zbijanje« proti »Hitrostno izbijanje«).
+ */
+export const OZNAKE_LIGA: Partial<Readonly<Record<DisciplineType, string>>> = {
+  dvojka: 'Dvojka',
+  trojka: 'Trojka',
+  stafeta: 'Štafeta',
+}
+
+/** Oznaka discipline v ligaških zaslonih. */
+export function oznakaZaLigo(d: DisciplineType): string {
+  return OZNAKE_LIGA[d] ?? OZNAKE_DISCIPLIN[d]
+}
+
+/**
+ * Discipline mladinskih serij — brez trojk, ki jih mladinci ne igrajo.
+ *
+ * Izpeljano iz zgornjega seznama in ne prepisano, da oznake ne uidejo
+ * narazen; izločitev je ena sama in je tu zapisana z razlogom.
+ */
+export const DISCIPLINE_MLADINSKE: readonly DisciplineType[] =
+  DISCIPLINE_TEKMOVANJ.filter(d => d !== 'trojka')
+
 export function isPairDiscipline(d: DisciplineType): boolean {
   return PAIR_DISCIPLINES.has(d)
 }

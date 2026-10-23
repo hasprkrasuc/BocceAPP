@@ -3,6 +3,7 @@ import type {
   LeagueMatchResult, LeagueMatchDisciplineResult,
 } from '../types'
 import { aggregateTeamDisciplineStats, type PlayerSeasonStat } from './leagueStats'
+import { OZNAKE_DISCIPLIN, oznakaZaLigo } from './tournamentPlacement'
 
 /** Discipline s številčnim rezultatom → prikažemo povprečje doseženega. */
 export const AVERAGE_DISCIPLINES: ReadonlySet<DisciplineType> = new Set<DisciplineType>([
@@ -12,19 +13,19 @@ export function showsAverage(t: DisciplineType): boolean {
   return AVERAGE_DISCIPLINES.has(t)
 }
 
-/** Prikazna oznaka tipa discipline (več instanc, npr. "DVOJKA 1/2/3", se združi v eno). */
-export const DISCIPLINE_TYPE_LABELS: Record<DisciplineType, string> = {
-  posamezno: 'Posamezno',
-  dvojka: 'Dvojka',
-  trojka: 'Trojka',
-  krog: 'Igra v krog',
-  hitrostno: 'Hitrostno izbijanje',
-  natancno: 'Natančno izbijanje',
-  blizanje: 'Natančno bližanje',
-  blizanje_krog: 'Bližanje v krog',
-  stafeta: 'Štafeta',
-  podaljsek: 'Podaljšek',
-}
+/**
+ * Prikazna oznaka tipa discipline (več instanc, npr. "DVOJKA 1/2/3", se
+ * združi v eno).
+ *
+ * Vrednosti so iste kot doslej, le da niso več prepisane: izhajajo iz
+ * skupnih oznak z ligaškimi odstopi (`oznakaZaLigo`). Prepis je bil peti
+ * izvod istega seznama in se je z ligaškim adminom razhajal pri treh
+ * disciplinah.
+ */
+export const DISCIPLINE_TYPE_LABELS: Record<DisciplineType, string> =
+  Object.fromEntries(
+    (Object.keys(OZNAKE_DISCIPLIN) as DisciplineType[]).map(d => [d, oznakaZaLigo(d)]),
+  ) as Record<DisciplineType, string>
 
 /** Skupina po tipu discipline (instance istega tipa so združene). */
 export interface DisciplineGroup<Row> {

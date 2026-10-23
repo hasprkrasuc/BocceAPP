@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../supabase'
+import { DISCIPLINE_TEKMOVANJ, OZNAKE_DISCIPLIN } from '../../engines/tournamentPlacement'
 import { format } from 'date-fns'
 import type { Tournament, TournamentStatus, TournamentCategory, TournamentKind } from '../../types'
 import type { JudgeOption } from '../../components/GroupBracket'
@@ -154,17 +155,15 @@ export default function TournamentAdmin() {
                 <select value={form.discipline_type} onChange={set('discipline_type')}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
                   <option value="">— izberi —</option>
-                  <option value="posamezno">Posamezno</option>
-                  <option value="dvojka">Dvojice</option>
-                  <option value="trojka">Trojke</option>
-                  <option value="krog">Igra v krog</option>
-                  <option value="hitrostno">Hitrostno izbijanje</option>
-                  <option value="natancno">Natančno izbijanje</option>
-                  <option value="stafeta">Štafetno izbijanje</option>
+                  {DISCIPLINE_TEKMOVANJ.map(d => (
+                    <option key={d} value={d}>{OZNAKE_DISCIPLIN[d]}</option>
+                  ))}
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
-                  Določa, ali se prijavlja posameznik ali par. Pri dvojicah in štafeti par,
-                  sicer posameznik.
+                  Določa, ali se prijavlja posameznik ali par (par pri dvojicah in štafeti),
+                  in zgornjo mejo rezultata — balinanje se igra na 13 točk, igra v krog in
+                  izbijanja ne. Če ostane prazna, se vpiše »ni vpisana«; popraviti jo je
+                  mogoče pozneje v urejanju tekmovanja.
                 </p>
               </div>
               <div>
