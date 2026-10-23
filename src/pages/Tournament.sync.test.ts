@@ -121,3 +121,58 @@ describe('ustvarjanje izločilnega dela', () => {
     expect(i, 'varovalo mora teči pred preverbo potence 2').toBeLessThan(j)
   })
 })
+
+/**
+ * MEJA REZULTATA PRIPADA DISCIPLINI, NE OBRAZCU.
+ *
+ * `ScoreModal` je imel vgrajeno `a > 13 && b > 13`. 23. 10. 2026 sredi DP
+ * Igra v krog sodnik ni mogel vpisati 18:19 — meja 13 je pravilo balinanja,
+ * ne pravilo vseh disciplin. Odtlej odloča `engines/rezultatTekme`.
+ *
+ * Test varuje oboje: da obrazec pravilo res vpraša in da stran disciplino res
+ * poda. Brez drugega bi modal vsako tekmovanje imel za balinanje in sodnik bi
+ * obtičal natanko tako kot prej.
+ */
+const modalVir = import.meta.glob('../components/ScoreModal.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+const MODAL = '../components/ScoreModal.tsx'
+
+/** Komentarji smejo govoriti o 13; koda ne. */
+function brezKomentarjev(s: string): string {
+  return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+}
+
+describe('meja rezultata pozna disciplino', () => {
+  const vir = modalVir[MODAL]
+
+  test('datoteka je prebrana', () => {
+    expect(vir, `datoteke ${MODAL} ni med prebranimi`).toBeDefined()
+  })
+
+  test('obrazec vpraša pravilo in ga ne pozna sam', () => {
+    expect(vir, 'ScoreModal ne kliče preveriRezultat — pravilo mora priti iz motorja')
+      .toMatch(/preveriRezultat\s*\(/)
+    expect(brezKomentarjev(vir), 'v kodi obrazca ne sme biti več svoje meje 13')
+      .not.toMatch(/\b13\b/)
+  })
+
+  test('zgornja meja vnosnega polja ni zabita', () => {
+    expect(vir, 'max polja mora priti iz najvisjiRezultat').toMatch(/max=\{najvec\}/)
+    expect(vir).not.toMatch(/max="13"/)
+  })
+
+  test('stran modalu poda disciplino', () => {
+    expect(stranT, 'brez discipline modal vsako tekmovanje šteje za balinanje')
+      .toMatch(/<ScoreModal[\s\S]{0,240}discipline=\{tournament\.discipline_type\}/)
+  })
+})
+
+/**
+ * Napis o prijavljenih sledi istemu pravilu kot prijava: v paru sta samo
+ * štafeta in dvojica, drugod tekmovalec nastopa sam.
+ */
+describe('napis o prijavljenih', () => {
+  test('»parov« samo tam, kjer tekmujejo pari', () => {
+    expect(stranT, 'napis mora biti pogojen z jeDvojka')
+      .toMatch(/jeDvojka\s*\?\s*'prijavljenih parov'/)
+  })
+})
