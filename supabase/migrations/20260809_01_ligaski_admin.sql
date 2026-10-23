@@ -114,3 +114,19 @@ create policy "Ligaski admin upravlja discipline zapisnika" on public.league_mat
     join public.league_fixtures f on f.id = r.fixture_id
     where r.id = league_match_discipline_results.match_result_id and public.is_league_admin(f.season_id)
   ));
+
+-- ─────────────────────────────────────────────────────────────
+-- PRAVICE ZA DATA API
+--
+-- Supabase od 30. 10. 2026 novim tabelam v shemi `public` pravic ne podeli
+-- več sam (doslej je to opravil privzetek `alter default privileges`). Brez
+-- teh vrstic se migracija izvede BREZ NAPAKE, obnovljena baza pa prek
+-- PostgREST na vsako poizvedbo vrne »permission denied«.
+--
+-- RLS tega ne nadomesti: RLS izbira VRSTICE, grant pa odloča, ali odjemalec
+-- tabelo sploh vidi. Vse tabele spodaj imajo RLS vklopljen, zato je obseg
+-- enak produkcijskemu (primerjano 23. 10. 2026).
+--
+-- Na produkciji je to no-op — pravice tam že obstajajo.
+-- ─────────────────────────────────────────────────────────────
+grant all on public.league_season_admins to anon, authenticated, service_role;

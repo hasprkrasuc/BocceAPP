@@ -146,3 +146,20 @@ create policy "Ligaski admin upravlja kartone" on public.match_cards
     join public.league_fixtures f on f.id = r.fixture_id
     where r.id = match_cards.match_result_id and public.is_league_admin(f.season_id)
   ));
+
+-- ─────────────────────────────────────────────────────────────
+-- PRAVICE ZA DATA API
+--
+-- Supabase od 30. 10. 2026 novim tabelam v shemi `public` pravic ne podeli
+-- več sam (doslej je to opravil privzetek `alter default privileges`). Brez
+-- teh vrstic se migracija izvede BREZ NAPAKE, obnovljena baza pa prek
+-- PostgREST na vsako poizvedbo vrne »permission denied«.
+--
+-- RLS tega ne nadomesti: RLS izbira VRSTICE, grant pa odloča, ali odjemalec
+-- tabelo sploh vidi. Vse tabele spodaj imajo RLS vklopljen, zato je obseg
+-- enak produkcijskemu (primerjano 23. 10. 2026).
+--
+-- Na produkciji je to no-op — pravice tam že obstajajo.
+-- ─────────────────────────────────────────────────────────────
+grant all on public.team_leaders to anon, authenticated, service_role;
+grant all on public.match_cards to anon, authenticated, service_role;

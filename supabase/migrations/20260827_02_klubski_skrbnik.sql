@@ -101,3 +101,14 @@ comment on view public.club_members is
   'Člani klubov, ki jih prijavljeni ureja kot klubski skrbnik (ali vsi, če je globalni admin). Brez EMŠO, datuma rojstva in naslova.';
 
 grant select on public.club_members to authenticated;
+
+-- ─────────────────────────────────────────────────────────────
+-- PRAVICE ZA DATA API
+--
+-- Migracija je doslej podelila pravice le funkciji `is_club_admin` in pogledu
+-- `club_members`, sami tabeli `club_admins` pa ne — do zdaj je to opravil
+-- privzetek `alter default privileges`, ki ga Supabase po 30. 10. 2026 za
+-- nove tabele ne uporablja več. Dostop omejuje RLS (dve politiki), ne
+-- odsotnost pravic.
+-- ─────────────────────────────────────────────────────────────
+grant all on public.club_admins to anon, authenticated, service_role;

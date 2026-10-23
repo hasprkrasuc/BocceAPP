@@ -153,3 +153,22 @@ alter table public.users add constraint users_role_check
 -- OPOMBA: prožilca trg_sync_user_club in trg_prevent_role_escalation NISTA tu —
 -- vezana sta na svoji funkciji (20260707_01_sync_user_club.sql,
 -- 20260628_02_security_hardening.sql), ki tečeta pozneje in ju že ustvarita.
+
+-- ─────────────────────────────────────────────────────────────
+-- PRAVICE ZA DATA API
+--
+-- Supabase od 30. 10. 2026 novim tabelam v shemi `public` pravic ne podeli
+-- več sam (doslej je to opravil privzetek `alter default privileges`). Brez
+-- teh vrstic se migracija izvede BREZ NAPAKE, obnovljena baza pa prek
+-- PostgREST na vsako poizvedbo vrne »permission denied«.
+--
+-- RLS tega ne nadomesti: RLS izbira VRSTICE, grant pa odloča, ali odjemalec
+-- tabelo sploh vidi. Vse tabele spodaj imajo RLS vklopljen, zato je obseg
+-- enak produkcijskemu (primerjano 23. 10. 2026).
+--
+-- Na produkciji je to no-op — pravice tam že obstajajo.
+-- ─────────────────────────────────────────────────────────────
+grant all on public.clubs to anon, authenticated, service_role;
+grant all on public.league_season_disciplines to anon, authenticated, service_role;
+grant all on public.league_match_results to anon, authenticated, service_role;
+grant all on public.league_match_discipline_results to anon, authenticated, service_role;

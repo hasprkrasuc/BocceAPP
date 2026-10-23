@@ -217,3 +217,32 @@ create policy "Prijava na turnir" on public.tournament_registrations for insert
 -- ─── REALTIME ─────────────────────────────────────────────────
 alter publication supabase_realtime add table public.matches;
 alter publication supabase_realtime add table public.league_fixtures;
+
+-- ─────────────────────────────────────────────────────────────
+-- PRAVICE ZA DATA API
+--
+-- Supabase od 30. 10. 2026 novim tabelam v shemi `public` pravic ne podeli
+-- več sam (doslej je to opravil privzetek `alter default privileges`). Brez
+-- teh vrstic se migracija izvede BREZ NAPAKE, obnovljena baza pa prek
+-- PostgREST na vsako poizvedbo vrne »permission denied«.
+--
+-- RLS tega ne nadomesti: RLS izbira VRSTICE, grant pa odloča, ali odjemalec
+-- tabelo sploh vidi. Vse tabele spodaj imajo RLS vklopljen, zato je obseg
+-- enak produkcijskemu (primerjano 23. 10. 2026).
+--
+-- Na produkciji je to no-op — pravice tam že obstajajo.
+-- ─────────────────────────────────────────────────────────────
+
+-- users dobi tu polne pravice, branje pa mu pozneje zožita
+-- 20260628_01 in 20260729_04 na javne stolpce (USER_PUBLIC_COLS).
+grant all on public.users to anon, authenticated, service_role;
+grant all on public.tournaments to anon, authenticated, service_role;
+grant all on public.tournament_registrations to anon, authenticated, service_role;
+grant all on public.tournament_groups to anon, authenticated, service_role;
+grant all on public.group_teams to anon, authenticated, service_role;
+grant all on public.matches to anon, authenticated, service_role;
+grant all on public.league_seasons to anon, authenticated, service_role;
+grant all on public.league_teams to anon, authenticated, service_role;
+grant all on public.league_team_players to anon, authenticated, service_role;
+grant all on public.league_fixtures to anon, authenticated, service_role;
+grant all on public.player_statistics to anon, authenticated, service_role;
