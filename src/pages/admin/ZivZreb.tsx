@@ -18,6 +18,9 @@ import {
   nacrtZivegaZreba, prosteSkupine, prostaMesta, type ZrebDodelitev,
 } from '../../engines/zivZreb'
 import { computeRangLestvica, type RangCategory } from '../../lib/rangLestvica'
+import {
+  jeParnoTekmovanje, nosilnaVrednost as nosilnaVrednostMotor,
+} from '../../engines/tournamentPlacement'
 import { PRIJAVA_SELECT } from '../../lib/tournamentPlayers'
 import type { Tournament, TournamentRegistration } from '../../types'
 
@@ -77,10 +80,22 @@ export default function ZivZreb() {
   }
 
   /** Nosilna vrednost para: ročni seed_points, sicer vsota rang točk igralcev. */
+  /**
+   * Nosilna vrednost prijave — ISTO pravilo kot v administraciji.
+   *
+   * Tu je bila doslej lokalna funkcija z istim imenom, ki je rang točke obeh
+   * igralcev seštela brez pogoja o disciplini. Zaslona istega tekmovanja sta
+   * zato o istem žrebu povedala različno: seznam nosilcev v administraciji je
+   * za star par na posamični disciplini pokazal 120, žreb v živo pa 200 — in
+   * `shrani()` je zapisal prav tisto, kar je pokazal žreb v živo.
+   */
   function nosilnaVrednost(r: TournamentRegistration): number {
     if (r.seed_points != null) return r.seed_points
     const rp = rangByPlayer ?? {}
-    return (r.player1_id ? rp[r.player1_id] ?? 0 : 0) + (r.player2_id ? rp[r.player2_id] ?? 0 : 0)
+    return nosilnaVrednostMotor(
+      r.player1_id ? rp[r.player1_id] ?? 0 : 0,
+      r.player2_id ? rp[r.player2_id] ?? 0 : 0,
+      jeParnoTekmovanje(tournament?.format, tournament?.discipline_type))
   }
 
   const poId = useMemo(() => new Map(prijave.map(r => [r.id, r])), [prijave])

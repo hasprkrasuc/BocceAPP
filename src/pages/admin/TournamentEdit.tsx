@@ -509,11 +509,21 @@ export default function TournamentEdit() {
   async function handleEditRegistration() {
     if (!editingRegId) return
     if (!editForm.player1) { setMessage('❌ Igralec 1 mora biti izbran'); return }
+    // Prazna izbira je namenjena ČIŠČENJU partnerja na posamični disciplini.
+    // Pri parni bi bila tiho brisanje polovice ekipe: ime ekipe bi se skrčilo
+    // na enega, uvrstitvene točke bi dobil samo on, nosilna vrednost pa bi
+    // padla. Ročno dodajanje ima isto varovalo (`isPair && !guestSlotFilled`).
+    if (isPair && !editForm.player2) { setMessage('❌ Izberi igralca 2'); return }
     if (editForm.player1 === editForm.player2) { setMessage('❌ Igralca morata biti različna'); return }
+    // Mesto partnerja TUJE prijave šteje za zasedeno samo pri parni disciplini
+    // — enako kot `myReg` na javni strani. Sicer igralke, ki je obstala kot
+    // partnerica stare parne prijave in se je na posamično tekmovanje prijavila
+    // sama, ne bi bilo mogoče niti urediti niti ročno dodati.
     const izbrani = [editForm.player1, editForm.player2].filter(Boolean)
+    const zaseden = (r: TournamentRegistration, id: string) =>
+      r.player1_id === id || (isPair && r.player2_id === id)
     const conflict = registrations.find(r =>
-      r.id !== editingRegId
-      && izbrani.some(id => r.player1_id === id || r.player2_id === id)
+      r.id !== editingRegId && izbrani.some(id => zaseden(r, id))
     )
     if (conflict) { setMessage('❌ Eden od igralcev je že prijavljen v drugi ekipi'); return }
     setEditLoading(true)
@@ -783,7 +793,10 @@ export default function TournamentEdit() {
       const rangPoints: Record<string, number> = {}
       if (cat) for (const row of rang.byCategory[cat]) rangPoints[row.playerId] = row.rang
       const regs = confirmed.map(r => ({ id: r.id, player1_id: r.player1_id, player2_id: r.player2_id }))
-      const res = await drawKnockout(id!, regs, rangPoints, { thirdPlace: koThirdPlace })
+      const res = await drawKnockout(id!, regs, rangPoints, {
+        thirdPlace: koThirdPlace,
+        jePar: jeParnoTekmovanje(tournament?.format, tournament?.discipline_type),
+      })
       setMessage(`✓ Izločilni žreb opravljen: mreža ${res.bracket} (${res.teams} ekip)`)
       await load()
     } catch (err) {
@@ -1517,7 +1530,9 @@ export default function TournamentEdit() {
                                 value={editForm.player2}
                                 onChange={e => setEditForm(f => ({ ...f, player2: e.target.value }))}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-bocce-green outline-none">
-                                <option value="">— brez partnerja —</option>
+                                {/* Samo pri posamični disciplini: pri parni bi
+                                    bila to pot do tihega brisanja polovice ekipe. */}
+                                {!isPair && <option value="">— brez partnerja —</option>}
                                 {players.map(p => (
                                   <option key={p.id} value={p.id} disabled={p.id === editForm.player1}>
                                     {oznakaIgralca(p, { klub: true })}
