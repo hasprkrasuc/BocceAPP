@@ -78,9 +78,15 @@ describe('prehod iz parne v posamično disciplino', () => {
       .toMatch(/OBA igralca/)
   })
 
-  it('pove, da partnerja ni mogoče odstraniti', () => {
-    expect(posledicaSpremembeDiscipline(parno, 'posamezno', okolica()).opozorila.join(' '))
-      .toMatch(/ni mogoče odstraniti/)
+  it('pove, KJE se partner odstrani — in ne napoti k izbrisu prijave', () => {
+    // Prva različica je trdila, da partnerja ni mogoče odstraniti drugače kot
+    // z izbrisom prijave. Odkar ima obrazec za urejanje možnost »— brez
+    // partnerja —«, to ni več res, napotek k izbrisu pa bi prek CASCADE
+    // pobrisal še mesto v skupini — torej prav škodo, pred katero svari.
+    const t = posledicaSpremembeDiscipline(parno, 'posamezno', okolica()).opozorila.join(' ')
+    expect(t).toMatch(/urejanju prijave/)
+    expect(t).toMatch(/brez partnerja/)
+    expect(t, 'opozorilo ne sme napotiti k brisanju prijave').not.toMatch(/ni mogoče odstraniti/)
   })
 
   it('ednina je ednina', () => {
@@ -109,10 +115,20 @@ describe('prehod iz posamične v parno disciplino', () => {
     expect(p.opozorila.join(' ')).toMatch(/10 potrjenih prijav pa je brez partnerja/)
   })
 
-  it('že žrebane skupine dobijo svojo vrstico o nosilcih', () => {
-    const z = posledicaSpremembeDiscipline(
+  it('že žrebane skupine dobijo vrstico o nosilcih — po smeri', () => {
+    // Nosilna vrednost se ravna po disciplini (`nosilnaVrednost`), zato je
+    // trditev o seštevanju resnična SAMO v tej smeri. Prva različica je bila
+    // zunaj veje in je v nasprotni smeri obljubila nasprotje dogajanja.
+    const vParno = posledicaSpremembeDiscipline(
       stanje({ disciplina: 'krog', stPrijav: 10, imaSkupine: true }), 'dvojka', okolica())
-    expect(z.opozorila.join(' ')).toMatch(/nosilni žreb sešteva/i)
+    expect(vParno.opozorila.join(' ')).toMatch(/odslej sešteva rang točke obeh igralcev/i)
+
+    const vPosamicno = posledicaSpremembeDiscipline(
+      stanje({ disciplina: 'dvojka', stPrijav: 10, stPrijavSPartnerjem: 10, imaSkupine: true }),
+      'posamezno', okolica())
+    const t = vPosamicno.opozorila.join(' ')
+    expect(t).toMatch(/odslej upošteva samo prvega igralca/i)
+    expect(t, 'v tej smeri se nosilna vrednost NE sešteva').not.toMatch(/odslej sešteva/i)
   })
 })
 

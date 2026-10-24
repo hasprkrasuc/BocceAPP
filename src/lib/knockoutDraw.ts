@@ -54,7 +54,7 @@ export async function propagateKnockout(tournamentId: string): Promise<void> {
 export async function insertKnockoutBracket(
   tournamentId: string,
   pairs: Array<[string | null, string | null]>,
-  opts: { thirdPlace?: boolean } = {},
+  opts: { thirdPlace?: boolean; jePar?: boolean } = {},
 ): Promise<void> {
   const planned = buildBracketFromFirstRound(pairs, opts)
   await supabase.from('matches').delete().eq('tournament_id', tournamentId).neq('stage', 'group')
@@ -82,7 +82,7 @@ export async function drawKnockout(
   tournamentId: string,
   confirmedRegs: SeedableReg[],
   rangPoints: Record<string, number>,
-  opts: { thirdPlace?: boolean } = {},
+  opts: { thirdPlace?: boolean; jePar?: boolean } = {},
 ): Promise<{ bracket: number; teams: number }> {
   const n = confirmedRegs.length
   const b = bracketSize(n) // vrže napako pri <2 ali >128
@@ -103,7 +103,7 @@ export async function drawKnockout(
   if (gErr) throw gErr
 
   // 3. Nosilci → group_teams (seed = mesto)
-  const orderedRegIds = seedRegistrations(confirmedRegs, rangPoints)
+  const orderedRegIds = seedRegistrations(confirmedRegs, rangPoints, opts.jePar ?? true)
   const { data: gts, error: gtErr } = await supabase
     .from('group_teams')
     .insert(orderedRegIds.map((regId, i) => ({ group_id: grp.id, registration_id: regId, seed: i + 1 })))

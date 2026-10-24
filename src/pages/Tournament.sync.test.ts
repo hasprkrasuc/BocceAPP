@@ -274,22 +274,55 @@ describe('urejanje prijave prenese prijavo brez partnerja', () => {
   })
 })
 
-describe('nosilna vrednost pozna disciplino', () => {
-  const koda = brezKomentarjev(virTE ?? '')
+/**
+ * Nosilna vrednost se je seštevala na ŠTIRIH mestih: seznam nosilcev, žreb
+ * skupin, žreb v živo in izločilni žreb. Prva različica tega varovala je
+ * pregledala le `TournamentEdit` in trdila »obe mesti« — žreb v živo je imel
+ * celo lokalno funkcijo z istim imenom kot izvoz iz motorja, zato sta zaslona
+ * istega tekmovanja o istem žrebu povedala različno.
+ */
+const nosilciViri = import.meta.glob(['./admin/*.tsx', '../engines/knockout.ts'], {
+  query: '?raw', import: 'default', eager: true,
+}) as Record<string, string>
 
-  test('pravilo pride iz motorja', () => {
-    expect(koda, 'TournamentEdit ne kliče nosilnaVrednost').toMatch(/nosilnaVrednost\s*\(/)
+describe('nosilna vrednost pozna disciplino povsod', () => {
+  test('glob je prebral tudi žreb v živo in izločilni žreb', () => {
+    expect(nosilciViri['./admin/ZivZreb.tsx'], 'ZivZreb mora biti v pregledu').toBeDefined()
+    expect(nosilciViri['../engines/knockout.ts'], 'knockout.ts mora biti v pregledu').toBeDefined()
   })
 
-  test('obe mesti gresta skozi isto pravilo', () => {
-    // Seznam nosilcev in handleDraw sta seštevek nekoč zapisala vsak zase.
-    const klici = koda.match(/nosilnaVrednost\s*\(/g) ?? []
-    expect(klici.length, 'seštevek mora iti skozi motor na OBEH mestih').toBeGreaterThanOrEqual(2)
+  test('golega seštevka rang točk dveh igralcev ni nikjer', () => {
+    // Vzorec lovi vsoto, v kateri nastopata obe mesti prijave v isti vrstici.
+    const krsitve: string[] = []
+    for (const [pot, vir] of Object.entries(nosilciViri)) {
+      const koda = brezKomentarjev(vir)
+      for (const v of koda.split('\n')) {
+        if (/player1_id[^\n]*\+[^\n]*player2_id/.test(v)) krsitve.push(`${pot}: ${v.trim().slice(0, 90)}`)
+      }
+    }
+    expect(krsitve, [
+      'Tu se rang točki obeh igralcev seštevata mimo discipline.',
+      'Star par na posamični disciplini obdrži partnerja, zato bi s tako vsoto',
+      'sedel v prvi boben nad prave posameznike. Uporabi nosilnaVrednost.',
+      '',
+      ...krsitve.map(k => `  ✗ ${k}`),
+    ].join('\n')).toEqual([])
   })
 
-  test('golega seštevka rang točk dveh igralcev ni več', () => {
-    expect(koda, 'vsota p1 + p2 mimo discipline se ne sme vrniti')
-      .not.toMatch(/rp!?\[r\.player1_id\][^\n]*\+[^\n]*rp!?\[r\.player2_id\]/)
+  test('vsa štiri mesta gredo skozi motor', () => {
+    const skozi = (pot: string) => /nosilnaVrednost(Motor)?\s*\(/.test(brezKomentarjev(nosilciViri[pot] ?? ''))
+    for (const pot of ['./admin/TournamentEdit.tsx', './admin/ZivZreb.tsx', '../engines/knockout.ts']) {
+      expect(skozi(pot), `${pot} ne kliče nosilnaVrednost`).toBe(true)
+    }
+    // Seznam nosilcev in žreb skupin sta oba v TournamentEdit.
+    const klici = (brezKomentarjev(nosilciViri['./admin/TournamentEdit.tsx'] ?? '')
+      .match(/nosilnaVrednost\s*\(/g) ?? []).length
+    expect(klici, 'seznam nosilcev IN žreb skupin morata skozi motor').toBeGreaterThanOrEqual(2)
+  })
+
+  test('izločilni žreb disciplino res dobi, ne privzame', () => {
+    expect(brezKomentarjev(nosilciViri['./admin/TournamentEdit.tsx'] ?? ''),
+      'drawKnockout mora dobiti jePar').toMatch(/jePar:\s*jeParnoTekmovanje\(/)
   })
 })
 

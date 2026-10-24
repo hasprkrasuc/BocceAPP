@@ -365,3 +365,26 @@ describe('knockoutPropagation', () => {
     expect(u.find(x => x.id === 'tp' && x.slot === 'team_b_id')).toBeUndefined()
   })
 })
+
+describe('seedRegistrations pozna disciplino', () => {
+  const pts: Record<string, number> = { a: 120, b: 80, c: 150 }
+  const regs: SeedableReg[] = [
+    { id: 'par', player1_id: 'a', player2_id: 'b' },
+    { id: 'posameznik', player1_id: 'c', player2_id: null },
+  ]
+
+  test('par sešteje oba igralca', () => {
+    // 120 + 80 = 200 > 150
+    expect(seedRegistrations(regs, pts, true)).toEqual(['par', 'posameznik'])
+  })
+
+  test('na posamični disciplini obstali partner ne šteje', () => {
+    // Star par na posamični disciplini obdrži partnerja; brez tega bi s 200
+    // dobil nosilca 1 in prosto mesto pred pravim posameznikom (150 > 120).
+    expect(seedRegistrations(regs, pts, false)).toEqual(['posameznik', 'par'])
+  })
+
+  test('privzetek ostane par, da se stara raba ne spremeni', () => {
+    expect(seedRegistrations(regs, pts)).toEqual(seedRegistrations(regs, pts, true))
+  })
+})

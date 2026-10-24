@@ -107,8 +107,9 @@ export function posledicaSpremembeDiscipline(
           + 'točkovana za OBA igralca — izpis in točkovanje se ravnata po vsebini prijave, ne po disciplini.',
         )
         opozorila.push(
-          'Partnerja iz obstoječe prijave zaenkrat ni mogoče odstraniti drugače kot z izbrisom '
-          + 'prijave, ta pa pobriše tudi mesto v skupini.',
+          'Partnerja lahko potem odstraniš v urejanju prijave: pri posamični disciplini se polje '
+          + '»Igralec 2« pokaže prav zato in ima možnost »— brez partnerja —«. Prijave ni treba '
+          + 'brisati — izbris bi pobrisal tudi mesto v skupini.',
         )
       } else {
         opozorila.push('Po spremembi se tekmuje posamično namesto v paru.')
@@ -120,7 +121,17 @@ export function posledicaSpremembeDiscipline(
       )
     }
     if (stanje.imaSkupine) {
-      opozorila.push('Skupine so že žrebane; nosilni žreb sešteva rang točke obeh igralcev prijave.')
+      // Smer je pomembna: nosilna vrednost se po spremembi RAVNA PO DISCIPLINI
+      // (`nosilnaVrednost`), zato je trditev o seštevanju v eni smeri resnična,
+      // v drugi pa ne. Prva različica tega opozorila je bila zunaj veje in je
+      // adminu obljubila nasprotje tega, kar se zgodi.
+      opozorila.push(
+        bilParno
+          ? 'Skupine so že žrebane. Nosilni žreb odslej upošteva samo prvega igralca, zato bi '
+            + 'ponoven žreb dal drugačne bobne; že žrebane skupine ostanejo nespremenjene.'
+          : 'Skupine so že žrebane. Nosilni žreb odslej sešteva rang točke obeh igralcev, zato bi '
+            + 'ponoven žreb dal drugačne bobne.',
+      )
     }
   }
 
