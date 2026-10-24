@@ -1,4 +1,5 @@
 import type { MatchStage } from '../types'
+import { nosilnaVrednost } from './tournamentPlacement'
 
 /** Vrstni red izločilnih krogov (od največjega do finala). */
 export const KO_STAGE_ORDER: MatchStage[] = ['r128', 'r64', 'r32', 'r16', 'qf', 'sf', 'final']
@@ -235,9 +236,24 @@ export interface SeedableReg {
 }
 
 /** Razvrsti prijave po nosilni vrednosti (vsota rang točk ekipe), padajoče. */
-export function seedRegistrations(regs: SeedableReg[], rangPoints: Record<string, number>): string[] {
-  const val = (r: SeedableReg) =>
-    (r.player1_id ? rangPoints[r.player1_id] ?? 0 : 0) + (r.player2_id ? rangPoints[r.player2_id] ?? 0 : 0)
+export function seedRegistrations(
+  regs: SeedableReg[],
+  rangPoints: Record<string, number>,
+  /**
+   * Ali ekipo sestavlja PAR. Privzeto `true`, ker je bil izločilni žreb doslej
+   * v rabi samo pri parnih in nedoločenih disciplinah.
+   *
+   * Brez tega je bil to ČETRTI zapis istega seštevka (poleg seznama nosilcev,
+   * žreba skupin in žreba v živo) in edini, ki discipline ni vprašal: star par
+   * na posamični disciplini obdrži partnerja, zato bi s seštevkom dveh igralcev
+   * dobil nosilca 1 in prosto mesto pred pravim posameznikom.
+   */
+  jePar = true,
+): string[] {
+  const val = (r: SeedableReg) => nosilnaVrednost(
+    r.player1_id ? rangPoints[r.player1_id] ?? 0 : 0,
+    r.player2_id ? rangPoints[r.player2_id] ?? 0 : 0,
+    jePar)
   return [...regs]
     .sort((a, b) => (val(b) - val(a)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map(r => r.id)

@@ -241,3 +241,103 @@ describe('napis o prijavljenih', () => {
       .toMatch(/jeDvojka\s*\?\s*'prijavljenih parov'/)
   })
 })
+
+/**
+ * DISCIPLINA MORA VELJATI TUDI TAM, KJER SE PRIJAVA BERE IN UREJA.
+ *
+ * Odkar je disciplino mogoče popraviti po ustvarjanju, star par na posamični
+ * disciplini obstane — in troje se je zato ravnalo po vsebini prijave namesto
+ * po disciplini:
+ *
+ *   - nosilni žreb je seštel rang točke obeh igralcev in par je sedel v prvi
+ *     boben nad prave posameznike (seštevek je bil zapisan na dveh mestih);
+ *   - urejanje prijave je prazen izbor poslalo kot prazen niz v stolpec
+ *     `uuid` in padlo z 22P02 — 84 potrjenih prijav v tem položaju;
+ *   - na javni strani nekdanji soigralec ni mogel vstopiti sam, ker ga je
+ *     `myReg` našel prek `player2_id`.
+ */
+const virTE = adminVir['./admin/TournamentEdit.tsx']
+
+describe('urejanje prijave prenese prijavo brez partnerja', () => {
+  const koda = brezKomentarjev(virTE ?? '')
+
+  test('prazen izbor se zapiše kot NULL in ne kot prazen niz', () => {
+    expect(koda, 'player2_id mora iti v bazo kot `editForm.player2 || null`')
+      .toMatch(/player2_id:\s*editForm\.player2\s*\|\|\s*null/)
+    expect(koda, 'golega `player2_id: editForm.player2` ne sme biti več')
+      .not.toMatch(/player2_id:\s*editForm\.player2\s*[,}]/)
+  })
+
+  test('obrazec ponuja možnost brez partnerja', () => {
+    expect(koda, 'brez prazne izbire partnerja ni mogoče odstraniti')
+      .toMatch(/<option value="">—\s*brez partnerja\s*—<\/option>/)
+  })
+})
+
+/**
+ * Nosilna vrednost se je seštevala na ŠTIRIH mestih: seznam nosilcev, žreb
+ * skupin, žreb v živo in izločilni žreb. Prva različica tega varovala je
+ * pregledala le `TournamentEdit` in trdila »obe mesti« — žreb v živo je imel
+ * celo lokalno funkcijo z istim imenom kot izvoz iz motorja, zato sta zaslona
+ * istega tekmovanja o istem žrebu povedala različno.
+ */
+const nosilciViri = import.meta.glob(['./admin/*.tsx', '../engines/knockout.ts'], {
+  query: '?raw', import: 'default', eager: true,
+}) as Record<string, string>
+
+describe('nosilna vrednost pozna disciplino povsod', () => {
+  test('glob je prebral tudi žreb v živo in izločilni žreb', () => {
+    expect(nosilciViri['./admin/ZivZreb.tsx'], 'ZivZreb mora biti v pregledu').toBeDefined()
+    expect(nosilciViri['../engines/knockout.ts'], 'knockout.ts mora biti v pregledu').toBeDefined()
+  })
+
+  test('golega seštevka rang točk dveh igralcev ni nikjer', () => {
+    // Vzorec lovi vsoto, v kateri nastopata obe mesti prijave v isti vrstici.
+    const krsitve: string[] = []
+    for (const [pot, vir] of Object.entries(nosilciViri)) {
+      const koda = brezKomentarjev(vir)
+      for (const v of koda.split('\n')) {
+        if (/player1_id[^\n]*\+[^\n]*player2_id/.test(v)) krsitve.push(`${pot}: ${v.trim().slice(0, 90)}`)
+      }
+    }
+    expect(krsitve, [
+      'Tu se rang točki obeh igralcev seštevata mimo discipline.',
+      'Star par na posamični disciplini obdrži partnerja, zato bi s tako vsoto',
+      'sedel v prvi boben nad prave posameznike. Uporabi nosilnaVrednost.',
+      '',
+      ...krsitve.map(k => `  ✗ ${k}`),
+    ].join('\n')).toEqual([])
+  })
+
+  test('vsa štiri mesta gredo skozi motor', () => {
+    const skozi = (pot: string) => /nosilnaVrednost(Motor)?\s*\(/.test(brezKomentarjev(nosilciViri[pot] ?? ''))
+    for (const pot of ['./admin/TournamentEdit.tsx', './admin/ZivZreb.tsx', '../engines/knockout.ts']) {
+      expect(skozi(pot), `${pot} ne kliče nosilnaVrednost`).toBe(true)
+    }
+    // Seznam nosilcev in žreb skupin sta oba v TournamentEdit.
+    const klici = (brezKomentarjev(nosilciViri['./admin/TournamentEdit.tsx'] ?? '')
+      .match(/nosilnaVrednost\s*\(/g) ?? []).length
+    expect(klici, 'seznam nosilcev IN žreb skupin morata skozi motor').toBeGreaterThanOrEqual(2)
+  })
+
+  test('izločilni žreb disciplino res dobi, ne privzame', () => {
+    expect(brezKomentarjev(nosilciViri['./admin/TournamentEdit.tsx'] ?? ''),
+      'drawKnockout mora dobiti jePar').toMatch(/jePar:\s*jeParnoTekmovanje\(/)
+  })
+})
+
+describe('javna stran loči posamično prijavo od parne', () => {
+  const koda = brezKomentarjev(stranT)
+
+  test('mesto partnerja šteje samo pri parni disciplini', () => {
+    expect(koda, 'myReg ne sme brezpogojno iskati po player2_id')
+      .not.toMatch(/x\.player1_id === user\.id \|\| x\.player2_id === user\.id/)
+    expect(koda, 'iskanje mora biti pogojeno z disciplino')
+      .toMatch(/parno\s*&&\s*x\.player2_id === user\.id/)
+  })
+
+  test('napis o soigralcu se izpiše samo, kadar soigralec je', () => {
+    expect(koda, 'napis mora biti pogojen z jeDvojka in obstojem soigralca')
+      .toMatch(/jeDvojka\s*&&\s*soigralec/)
+  })
+})
