@@ -2,7 +2,7 @@
  * BOCCE LEAGUE ENGINE
  * Izračun lestvic za ekipna tekmovanja.
  *
- * URADNO PRAVILO UVRSTITVE (velja za vse lestvice):
+ * URADNO PRAVILO UVRSTITVE — DRŽAVNE LIGE BZS (privzeto):
  *   1. točke — zmaga 2, remi 1, poraz 0 (seštevek končnih izidov tekem)
  *   2. medsebojni dvoboji             — seštevek match točk v tekmah med izenačenimi ekipami
  *   3. razlika točk posameznih iger   — boule/disciplinski score razlika v medsebojnih dvobojih
@@ -10,6 +10,13 @@
  *   (nato po imenu kluba, deterministično)
  *
  * Kriteriji 2–4 pridejo v poštev LE ob enakem številu točk (kriterij 1).
+ *
+ * PRAVILO OBZ (sezone s `tier === 'obz'`) ima drugačen vrstni red:
+ *   1. skupno število točk
+ *   2. dosežene točke po igrah        — vsota osvojenih točk iger (pointsFor)
+ *   3. punt razlika                   — skupna boule razlika (vse tekme)
+ *   4. medsebojne igre                — mini-liga med še vedno izenačenimi
+ *   (nato po imenu kluba, deterministično)
  *
  * KAZEN: `league_teams.penalty_points` se od točk ODŠTEJE, preden se lestvica
  * razvrsti — kazen po pravilu vpliva na mesto, ne le na prikazano številko.
@@ -79,25 +86,33 @@ function scoreTeam(s: TeamStats, winPts: number, drawPts: number, lossPts: numbe
 }
 
 /**
- * Razvrsti TeamStats po uradnem pravilu. Za izenačene (enak pointsFor) uporabi
- * mini-ligo medsebojnih dvobojev (kriterij 2 & 3), nato skupno boule razliko (4).
+ * Razvrsti TeamStats po uradnem pravilu. Za izenačene uporabi mini-ligo
+ * medsebojnih dvobojev; pri BZS je ta drugi kriterij, pri OBZ zadnji —
+ * tam imata prednost vsota točk po igrah in skupna punt razlika.
  */
 function sortStandings(
   statsArr: TeamStats[],
   fixtures: LeagueFixture[],
   boule: Record<string, { home: number; away: number }>,
+  obz = false,
 ): TeamStats[] {
   for (const s of statsArr) { s.difference = s.pointsFor - s.pointsAgainst; s.bouleDiff = s.boulesFor - s.boulesAgainst }
 
-  // primarno: točke (zmaga 2 / remi 1 / poraz 0), padajoče
-  const arr = [...statsArr].sort((a, b) => b.points - a.points)
+  // primarno: točke (zmaga 2 / remi 1 / poraz 0), padajoče; pri OBZ takoj za
+  // njimi dosežene točke po igrah in punt razlika (kriterija 2 in 3)
+  const arr = [...statsArr].sort((a, b) =>
+    (b.points - a.points) ||
+    (obz ? (b.pointsFor - a.pointsFor) || (b.bouleDiff - a.bouleDiff) : 0))
 
-  // mini-liga znotraj skupin z enakim številom točk
+  // mini-liga medsebojnih tekem znotraj skupin, ki jih zgornji kriteriji ne ločijo
+  const enaka = (a: TeamStats, b: TeamStats) =>
+    a.points === b.points &&
+    (!obz || (a.pointsFor === b.pointsFor && a.bouleDiff === b.bouleDiff))
   const out: TeamStats[] = []
   let i = 0
   while (i < arr.length) {
     let j = i + 1
-    while (j < arr.length && arr[j].points === arr[i].points) j++
+    while (j < arr.length && enaka(arr[j], arr[i])) j++
     const group = arr.slice(i, j)
     if (group.length > 1) rankTiedGroup(group, fixtures, boule)
     out.push(...group)
@@ -138,10 +153,16 @@ function rankTiedGroup(
 // ────────────────────────────────────────────────────────────────
 // CALCULATE STANDINGS FROM FIXTURE LIST
 // ────────────────────────────────────────────────────────────────
+/** Sezona, kolikor je razvrščanje potrebuje; `tier` izbere pravilo (OBZ ali BZS). */
+type SeasonZaLestvico = Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points'> &
+  Partial<Pick<LeagueSeason, 'tier'>>
+
+const jeObz = (season: SeasonZaLestvico | null) => season?.tier === 'obz'
+
 export function calculateStandings(
   teams: LeagueTeam[],
   fixtures: LeagueFixture[],
-  season: Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points' | 'rounds_count'> | null,
+  season: (SeasonZaLestvico & Pick<LeagueSeason, 'rounds_count'>) | null,
   matchResults?: MatchResultWithDisc[],
 ): TeamStats[] {
   const winPts  = season?.win_points  ?? 2
@@ -166,7 +187,7 @@ export function calculateStandings(
 
   // Točke: zmaga 2 / remi 1 / poraz 0 (kriterij 1), minus kazen
   for (const s of Object.values(stats)) scoreTeam(s, winPts, drawPts, lossPts)
-  return sortStandings(Object.values(stats), counted, boule)
+  return sortStandings(Object.values(stats), counted, boule, jeObz(season))
 }
 
 // Ligaški razpored po Bergerjevem sistemu je v engines/berger.ts.
@@ -197,7 +218,7 @@ export interface GroupStandings {
 export function calculateGroupStandings(
   teams: LeagueTeam[],
   fixtures: LeagueFixture[],
-  season: Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points'> | null,
+  season: SeasonZaLestvico | null,
   matchResults?: MatchResultWithDisc[],
 ): GroupStandings {
   const winPts  = season?.win_points  ?? 2
@@ -234,7 +255,7 @@ export function calculateGroupStandings(
       counted.push(f)
     }
     for (const s of Object.values(stats)) scoreTeam(s, winPts, drawPts, lossPts)
-    return sortStandings(Object.values(stats), counted, boule)
+    return sortStandings(Object.values(stats), counted, boule, jeObz(season))
   }
 
   const idsA    = getIds(phase1A)
@@ -287,7 +308,7 @@ export interface SplitStandings {
 export function calculateSplitStandings(
   teams: LeagueTeam[],
   fixtures: LeagueFixture[],
-  season: Pick<LeagueSeason, 'win_points' | 'draw_points' | 'loss_points'> | null,
+  season: SeasonZaLestvico | null,
   matchResults?: MatchResultWithDisc[],
 ): SplitStandings {
   const winPts  = season?.win_points  ?? 2
@@ -337,14 +358,14 @@ export function calculateSplitStandings(
 
     // Za izenačene šteje medsebojni dvoboj; rankTiedGroup sam odreže tekme
     // proti ekipam zunaj skupine, zato lahko podamo obe fazi skupaj.
-    return sortStandings(Object.values(s), [...p1Counted, ...groupFixtures], boule)
+    return sortStandings(Object.values(s), [...p1Counted, ...groupFixtures], boule, jeObz(season))
   }
 
   const hasPhase2 = top.length > 0 || bottom.length > 0
 
   return {
     hasSplit: true,
-    phase1: sortStandings(Object.values(p1), p1Counted, boule),
+    phase1: sortStandings(Object.values(p1), p1Counted, boule, jeObz(season)),
     phase2: hasPhase2 ? { '1-5': groupStats(top), '6-10': groupStats(bottom) } : null,
   }
 }
