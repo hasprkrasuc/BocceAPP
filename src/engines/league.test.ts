@@ -104,6 +104,57 @@ describe('calculateStandings — uvrstitev (točke po zmagah + tiebreaki)', () =
 })
 
 // ────────────────────────────────────────────────────────────────
+// PRAVILO OBZ (tier 'obz'): točke → dosežene točke po igrah →
+// punt razlika → medsebojne igre. Državne lige obdržijo pravilo BZS.
+// ────────────────────────────────────────────────────────────────
+describe('calculateStandings — kriteriji OBZ (tier obz)', () => {
+  it('kriterij 2: dosežene točke po igrah imajo prednost pred medsebojnimi', () => {
+    const teams = [makeTeam('a', 'A'), makeTeam('b', 'B'), makeTeam('c', 'C'), makeTeam('d', 'D')]
+    const fixtures = [
+      makeFixture('f1', 'a', 'b', 2, 4), // B dobi medsebojno
+      makeFixture('f2', 'a', 'c', 6, 0),
+      makeFixture('f3', 'a', 'd', 6, 0),
+      makeFixture('f4', 'b', 'c', 4, 2),
+      makeFixture('f5', 'b', 'd', 2, 4),
+      makeFixture('f6', 'c', 'd', 6, 0),
+    ]
+    // A in B imata po 4 točke; A 14 točk po igrah, B 10.
+    const bzs = calculateStandings(teams, fixtures, makeSeason())
+    expect(bzs.slice(0, 2).map(s => s.team.id)).toEqual(['b', 'a']) // BZS: medsebojna
+    const obz = calculateStandings(teams, fixtures, makeSeason({ tier: 'obz' }))
+    expect(obz.slice(0, 2).map(s => s.team.id)).toEqual(['a', 'b']) // OBZ: točke po igrah
+  })
+
+  it('kriterij 3: punt razlika pred medsebojnimi, ko so točke in točke po igrah enake', () => {
+    const teams = [makeTeam('a', 'A'), makeTeam('b', 'B'), makeTeam('c', 'C'), makeTeam('d', 'D')]
+    const fixtures = [
+      makeFixture('f1', 'a', 'b', 3, 3), // remi; punti 13:10 za A (medsebojno vodi A)
+      makeFixture('f2', 'a', 'c', 4, 2),
+      makeFixture('f3', 'b', 'd', 4, 2),
+    ]
+    const results = [makeResult('f1', 13, 10), makeResult('f2', 10, 10), makeResult('f3', 20, 10)]
+    // A in B: 3 točke, 7 točk po igrah; skupna punt razlika A +3, B +7.
+    const bzs = calculateStandings(teams, fixtures, makeSeason(), results)
+    expect(bzs.slice(0, 2).map(s => s.team.id)).toEqual(['a', 'b']) // BZS: medsebojni punti
+    const obz = calculateStandings(teams, fixtures, makeSeason({ tier: 'obz' }), results)
+    expect(obz.slice(0, 2).map(s => s.team.id)).toEqual(['b', 'a']) // OBZ: skupna punt razlika
+  })
+
+  it('kriterij 4: ob enakih točkah, točkah po igrah in punt razliki odloči medsebojna', () => {
+    const teams = [makeTeam('a', 'A'), makeTeam('b', 'B'), makeTeam('c', 'C'), makeTeam('d', 'D')]
+    const fixtures = [
+      makeFixture('f1', 'a', 'b', 4, 2), // A dobi medsebojno
+      makeFixture('f2', 'b', 'c', 4, 2),
+      makeFixture('f3', 'a', 'd', 2, 4),
+    ]
+    const results = [makeResult('f1', 12, 10), makeResult('f2', 12, 10), makeResult('f3', 10, 12)]
+    // A in B: 2 točki, 6 točk po igrah, punt razlika 0 — medsebojno je dobila A.
+    const obz = calculateStandings(teams, fixtures, makeSeason({ tier: 'obz' }), results)
+    expect(obz.slice(0, 2).map(s => s.team.id)).toEqual(['a', 'b'])
+  })
+})
+
+// ────────────────────────────────────────────────────────────────
 // RAZDELITVENI SISTEM (OBZ Nova Gorica): 10 ekip, 9 kol + 5 kol v skupinah
 // ────────────────────────────────────────────────────────────────
 describe('calculateSplitStandings — prenos točk iz faze 1 v skupini', () => {
