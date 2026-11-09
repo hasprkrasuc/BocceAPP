@@ -19,7 +19,7 @@ import { propagateKnockout } from '../lib/knockoutDraw'
 import IzlocilniPredogled from '../components/IzlocilniPredogled'
 import { teamDisplayName } from '../engines/tournament'
 import { jeParnoTekmovanje } from '../engines/tournamentPlacement'
-import { placementLabel } from '../lib/dpPlacement'
+import { samodejnoZapisiVrstniRed } from '../lib/samodejniVrstniRed'
 import type {
   Tournament, TournamentGroup, Match, TournamentRegistration,
   TournamentStatus, TournamentCategory, TournamentKind, UserProfile, GroupSize,
@@ -429,6 +429,10 @@ export function TournamentDetail() {
       await propagateKnockout(match.tournament_id)
     }
 
+    // Po zadnji tekmi državnega prvenstva se končni vrstni red zapiše sam;
+    // dokler prvenstvo ni odigrano, klic ne naredi ničesar.
+    await samodejnoZapisiVrstniRed(match.tournament_id)
+
     await load()
   }
 
@@ -715,7 +719,7 @@ export function TournamentDetail() {
                   ${mesto <= 3 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
                 <span className={`text-sm w-20 shrink-0 font-semibold
                   ${mesto <= 3 ? 'text-amber-700' : 'text-gray-500'}`}>
-                  {medalja ? `${medalja} ` : ''}{placementLabel(mesto)}
+                  {medalja ? `${medalja} ` : ''}{mesto}. mesto
                 </span>
                 <div>
                   <span className="font-medium text-gray-800">
