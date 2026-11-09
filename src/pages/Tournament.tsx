@@ -19,6 +19,7 @@ import { propagateKnockout } from '../lib/knockoutDraw'
 import IzlocilniPredogled from '../components/IzlocilniPredogled'
 import { teamDisplayName } from '../engines/tournament'
 import { jeParnoTekmovanje } from '../engines/tournamentPlacement'
+import { placementLabel } from '../lib/dpPlacement'
 import type {
   Tournament, TournamentGroup, Match, TournamentRegistration,
   TournamentStatus, TournamentCategory, TournamentKind, UserProfile, GroupSize,
@@ -230,7 +231,7 @@ export function TournamentDetail() {
   const [matches, setMatches] = useState<Match[]>([])
   const [registrations, setRegistrations] = useState<TournamentRegistration[]>([])
   const [myReg, setMyReg] = useState<TournamentRegistration | null>(null)
-  const [tab, setTab] = useState<'groups' | 'knockout' | 'registrations' | 'standings' | 'izbijanje'>('groups')
+  const [tab, setTab] = useState<'groups' | 'knockout' | 'registrations' | 'standings' | 'izbijanje' | 'vrstniRed'>('groups')
   const [izbijanje, setIzbijanje] = useState<IzbijanjeIzid[]>([])
   /** Id prijave, katere izid izbijanja se ravno shranjuje. */
   const [izbijanjeBusy, setIzbijanjeBusy] = useState<string | null>(null)
@@ -251,6 +252,16 @@ export function TournamentDetail() {
   /** Admin ali glavni sodnik / vodja TEGA tekmovanja. */
   const smeVpisovatiIzbijanje = isAdmin
     || (!!tournament?.chief_judge_id && tournament.chief_judge_id === user?.id)
+  /**
+   * Končni vrstni red prvenstva — prijave z vpisano uvrstitvijo
+   * (`final_rank` zapiše admin v TournamentEdit, bere ga tudi rang lestvica).
+   * Deljena mesta (3., 5.–8., 9.–16.) se znotraj mesta uredijo po imenu.
+   */
+  const uvrstitve = registrations
+    .filter(r => r.final_rank != null)
+    .sort((a, b) => (a.final_rank! - b.final_rank!)
+      || (a.player1?.full_name ?? a.guest1?.full_name ?? a.player1_name ?? '')
+        .localeCompare(b.player1?.full_name ?? b.guest1?.full_name ?? b.player1_name ?? ''))
   const [players, setPlayers] = useState<PlayerOption[]>([])
   const [judges, setJudges] = useState<JudgeOption[]>([])
   const [regLoading, setRegLoading] = useState(false)
@@ -579,8 +590,9 @@ export function TournamentDetail() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {(tournament.format === 'knockout'
+      <div className="flex gap-1 mb-6 border-b border-gray-200 flex-wrap">
+        {[
+          ...(tournament.format === 'knockout'
           ? [
               { key: 'knockout' as const, label: 'Izločilni del' },
               { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
@@ -599,8 +611,12 @@ export function TournamentDetail() {
               { key: 'groups' as const, label: `Skupine (${groups.length})` },
               { key: 'knockout' as const, label: 'Izločilni del' },
               { key: 'registrations' as const, label: `Prijave (${registrations.length})` },
-            ]
-        ).map(t => (
+            ]),
+          // Zavihek obstaja šele, ko je končni vrstni red zapisan (TournamentEdit).
+          ...(uvrstitve.length > 0
+            ? [{ key: 'vrstniRed' as const, label: 'Končni vrstni red' }]
+            : []),
+        ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px
               ${tab === t.key ? 'border-bocce-green text-bocce-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
@@ -686,6 +702,33 @@ export function TournamentDetail() {
           groups={groups}
           judges={judges}
         />
+      )}
+
+      {tab === 'vrstniRed' && (
+        <div className="space-y-2">
+          {uvrstitve.map(r => {
+            const mesto = r.final_rank!
+            const medalja = mesto === 1 ? '🥇' : mesto === 2 ? '🥈' : mesto === 3 ? '🥉' : null
+            return (
+              <div key={r.id}
+                className={`border rounded-lg px-4 py-3 flex items-center gap-3
+                  ${mesto <= 3 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+                <span className={`text-sm w-20 shrink-0 font-semibold
+                  ${mesto <= 3 ? 'text-amber-700' : 'text-gray-500'}`}>
+                  {medalja ? `${medalja} ` : ''}{placementLabel(mesto)}
+                </span>
+                <div>
+                  <span className="font-medium text-gray-800">
+                    {r.player1?.full_name ?? r.guest1?.full_name ?? r.player1_name}{(r.player2_id || r.player2 || r.player2_guest_id || r.guest2 || r.player2_name) ? ` / ${r.player2?.full_name ?? r.guest2?.full_name ?? r.player2_name}` : ''}
+                  </span>
+                  {(r.player1?.club || r.guest1?.club || r.player2?.club) && (
+                    <p className="text-xs text-gray-500">{r.player1?.club ?? r.guest1?.club ?? r.player2?.club}</p>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {tab === 'registrations' && (
