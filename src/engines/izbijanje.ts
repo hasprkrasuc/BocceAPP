@@ -35,14 +35,16 @@
  */
 
 /** Serije, kolikor jih tekmovanje sploh pozna. */
-export type KrogIzbijanja = 'kvalifikacije' | 'cetrtfinale' | 'finale'
+export type KrogIzbijanja = 'kvalifikacije' | 'cetrtfinale' | 'polfinale' | 'finale'
 
 /** Zaporedje krogov od prvega do finala, po vrsti. */
-export const VRSTNI_RED_KROGOV: readonly KrogIzbijanja[] = ['kvalifikacije', 'cetrtfinale', 'finale']
+export const VRSTNI_RED_KROGOV: readonly KrogIzbijanja[] =
+  ['kvalifikacije', 'cetrtfinale', 'polfinale', 'finale']
 
 export const IME_KROGA: Record<KrogIzbijanja, string> = {
   kvalifikacije: 'Kvalifikacije',
   cetrtfinale: 'Četrtfinale',
+  polfinale: 'Polfinale',
   finale: 'Finale',
 }
 
@@ -53,25 +55,36 @@ export interface Sistem {
   napreduje: number[]
 }
 
-/** Meji med sistemi — šestica še spada k eni sami seriji. */
+/** Meje med sistemi — šestica še spada k eni sami seriji. */
 export const MEJA_ENA_SERIJA = 6
-export const MEJA_CETRTFINALE = 16
+/** Do vključno te meje gresta iz kvalifikacij v finale 4 (brez vmesnega kroga). */
+export const MEJA_SAMO_FINALE = 9
+/** Do vključno te meje napreduje v polfinale 8; nad njo še četrtfinale s 16. */
+export const MEJA_POLFINALE = 32
 
 /**
- * Sistem tekmovanja glede na število prijavljenih.
+ * Sistem tekmovanja glede na število prijavljenih:
  *
- * Zgornje meje ni: pravilo govori o 16 do 32, a tekmovanje s 33 prijavljenimi
- * ne sme ostati brez sistema — od 16 naprej velja isti trojni sistem.
+ *   do 6        — ena sama (finalna) serija
+ *   7 do 9      — kvalifikacije, v finale 4
+ *   10 do 32    — kvalifikacije, v polfinale 8, v finale 4
+ *   33 naprej   — kvalifikacije, v četrtfinale 16, v polfinale 8, v finale 4
+ *
+ * Zgornje meje ni: pravilo govori o 32 do 64, a tekmovanje s 65 prijavljenimi
+ * ne sme ostati brez sistema — od 33 naprej velja isti štiristopenjski sistem.
  */
 export function sistemIzbijanja(stTekmovalcev: number): Sistem {
   if (!Number.isInteger(stTekmovalcev) || stTekmovalcev < 1) {
     throw new Error(`Število tekmovalcev mora biti pozitivno celo število, dobil ${stTekmovalcev}`)
   }
   if (stTekmovalcev <= MEJA_ENA_SERIJA) return { krogi: ['finale'], napreduje: [] }
-  if (stTekmovalcev < MEJA_CETRTFINALE) {
+  if (stTekmovalcev <= MEJA_SAMO_FINALE) {
     return { krogi: ['kvalifikacije', 'finale'], napreduje: [4] }
   }
-  return { krogi: ['kvalifikacije', 'cetrtfinale', 'finale'], napreduje: [8, 4] }
+  if (stTekmovalcev <= MEJA_POLFINALE) {
+    return { krogi: ['kvalifikacije', 'polfinale', 'finale'], napreduje: [8, 4] }
+  }
+  return { krogi: ['kvalifikacije', 'cetrtfinale', 'polfinale', 'finale'], napreduje: [16, 8, 4] }
 }
 
 /** Nastop enega tekmovalca: žrebana številka in izidi po krogih. */
