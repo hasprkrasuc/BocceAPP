@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   sistemIzbijanja, napredovali, koncniVrstniRed, jeNastopil,
-  MEJA_ENA_SERIJA, MEJA_CETRTFINALE, izenacenjaZaRazresiti,
+  MEJA_ENA_SERIJA, MEJA_SAMO_FINALE, MEJA_POLFINALE, izenacenjaZaRazresiti,
   type Nastop, type KrogIzbijanja,
 } from './izbijanje'
 
@@ -15,22 +15,30 @@ describe('sistemIzbijanja', () => {
     }
   })
 
-  test('od sedem do petnajst: kvalifikacije in finale štirih', () => {
-    for (const st of [7, 8, 9, 15]) {
+  test('od sedem do devet: kvalifikacije in finale štirih', () => {
+    for (const st of [7, 8, MEJA_SAMO_FINALE]) {
       expect(sistemIzbijanja(st)).toEqual({ krogi: ['kvalifikacije', 'finale'], napreduje: [4] })
     }
   })
 
-  test('šestnajst in več: kvalifikacije, četrtfinale osmih, finale štirih', () => {
-    for (const st of [MEJA_CETRTFINALE, 17, 32]) {
+  test('od deset do 32: kvalifikacije, polfinale osmih, finale štirih', () => {
+    for (const st of [10, 15, 16, MEJA_POLFINALE]) {
       expect(sistemIzbijanja(st)).toEqual({
-        krogi: ['kvalifikacije', 'cetrtfinale', 'finale'], napreduje: [8, 4],
+        krogi: ['kvalifikacije', 'polfinale', 'finale'], napreduje: [8, 4],
       })
     }
   })
 
-  test('nad 32 tekmovanje ne ostane brez sistema', () => {
-    expect(sistemIzbijanja(33).krogi).toHaveLength(3)
+  test('od 33 naprej: kvalifikacije, četrtfinale šestnajstih, polfinale, finale', () => {
+    for (const st of [33, 48, 64]) {
+      expect(sistemIzbijanja(st)).toEqual({
+        krogi: ['kvalifikacije', 'cetrtfinale', 'polfinale', 'finale'], napreduje: [16, 8, 4],
+      })
+    }
+  })
+
+  test('nad 64 tekmovanje ne ostane brez sistema', () => {
+    expect(sistemIzbijanja(65).krogi).toHaveLength(4)
   })
 
   test('nesmiselno število vrže napako', () => {
@@ -120,44 +128,44 @@ describe('DP natančno člani 2025 — vrstni red iz grafikona', () => {
   const sistem = sistemIzbijanja(19)
   const nastopi: Nastop[] = [
     n('Urban Završnik', 1, { kvalifikacije: 3 }),
-    n('Jure Fabjan', 2, { kvalifikacije: 13, cetrtfinale: 8 }),
+    n('Jure Fabjan', 2, { kvalifikacije: 13, polfinale: 8 }),
     n('Damir Pintarič', 3, { kvalifikacije: 6 }),
-    n('Žan Štunf', 4, { kvalifikacije: 14, cetrtfinale: 5 }),
-    n('Sandi Žuran', 5, { kvalifikacije: 19, cetrtfinale: 20, finale: 15 }),
-    n('Primož Markočič', 6, { kvalifikacije: 12, cetrtfinale: 9 }),
+    n('Žan Štunf', 4, { kvalifikacije: 14, polfinale: 5 }),
+    n('Sandi Žuran', 5, { kvalifikacije: 19, polfinale: 20, finale: 15 }),
+    n('Primož Markočič', 6, { kvalifikacije: 12, polfinale: 9 }),
     n('Drago Štunf', 7, { kvalifikacije: 4 }),
     n('Luka Močnik', 8, { kvalifikacije: 1 }),
     n('Simon Možina', 9, { kvalifikacije: 8 }),
-    n('Blaž Janev', 10, { kvalifikacije: 10, cetrtfinale: 13, finale: 5 }),
-    n('Klemen Podgoršek', 11, { kvalifikacije: 10, cetrtfinale: 8 }),
+    n('Blaž Janev', 10, { kvalifikacije: 10, polfinale: 13, finale: 5 }),
+    n('Klemen Podgoršek', 11, { kvalifikacije: 10, polfinale: 8 }),
     n('Žiga Moličnik', 12, { kvalifikacije: 7 }),
     n('Jože Unetič', 13, { kvalifikacije: 0 }),
-    n('Tomaž Bogataj', 14, { kvalifikacije: 14, cetrtfinale: 14, finale: 14 }),
+    n('Tomaž Bogataj', 14, { kvalifikacije: 14, polfinale: 14, finale: 14 }),
     n('Žiga Štunf', 15, { kvalifikacije: 5 }),
     n('Alen Kariž', 16, {}),
-    n('Gregor Korošec', 17, { kvalifikacije: 11, cetrtfinale: 14, finale: 27 }),
+    n('Gregor Korošec', 17, { kvalifikacije: 11, polfinale: 14, finale: 27 }),
     n('Miha Tomše', 18, {}),
     n('Jan Kreševič', 19, { kvalifikacije: 3 }),
   ]
 
   test('devetnajst prijavljenih igra tri serije', () => {
-    expect(sistem.krogi).toEqual(['kvalifikacije', 'cetrtfinale', 'finale'])
+    expect(sistem.krogi).toEqual(['kvalifikacije', 'polfinale', 'finale'])
   })
 
-  test('v četrtfinale gre osem najboljših iz kvalifikacij', () => {
+  test('v polfinale gre osem najboljših iz kvalifikacij', () => {
     const { napreduje, izenaceni } = napredovali(nastopi, 'kvalifikacije', 8, sistem)
     expect(napreduje.sort()).toEqual([
       'Blaž Janev', 'Gregor Korošec', 'Jure Fabjan', 'Klemen Podgoršek',
       'Primož Markočič', 'Sandi Žuran', 'Tomaž Bogataj', 'Žan Štunf',
     ].sort())
     expect(izenaceni).toEqual([])   // deseti ima 8, osmi 10 — meja je čista
-    // natanko ti so v grafikonu dobili četrtfinalni izid
+    // natanko ti so v grafikonu dobili izid vmesnega kroga
     expect(napreduje.sort()).toEqual(
-      nastopi.filter(x => jeNastopil(x, 'cetrtfinale')).map(x => x.id).sort())
+      nastopi.filter(x => jeNastopil(x, 'polfinale')).map(x => x.id).sort())
   })
 
-  test('v finale gredo štirje najboljši iz četrtfinala', () => {
-    const { napreduje } = napredovali(nastopi, 'cetrtfinale', 4, sistem)
+  test('v finale gredo štirje najboljši iz polfinala', () => {
+    const { napreduje } = napredovali(nastopi, 'polfinale', 4, sistem)
     expect(napreduje.sort()).toEqual(
       nastopi.filter(x => jeNastopil(x, 'finale')).map(x => x.id).sort())
   })
@@ -172,7 +180,7 @@ describe('DP natančno člani 2025 — vrstni red iz grafikona', () => {
     ])
   })
 
-  test('izenačena Fabjan in Podgoršek (oba 8 v četrtfinalu) loči kvalifikacijski izid', () => {
+  test('izenačena Fabjan in Podgoršek (oba 8 v polfinalu) loči kvalifikacijski izid', () => {
     const red = koncniVrstniRed(nastopi, sistem)
     const mesto = (id: string) => red.find(u => u.id === id)!.mesto
     expect(mesto('Jure Fabjan')).toBe(6)      // kvalifikacije 13
