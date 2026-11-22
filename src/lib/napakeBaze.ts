@@ -36,16 +36,27 @@ const IMENOVALNIK: Readonly<Record<Akcija, string>> = {
  * Sporočilo za zaslon. `kaj` je samostalnik v rodilniku, ker se v vse stavke
  * usede brez sklanjanja — na primer `Discipline "DVOJKA"`.
  */
-export function sporociloNapake(napaka: NapakaBaze, kaj: string, akcija: Akcija): string {
+export function sporociloNapake(
+  napaka: NapakaBaze,
+  kaj: string,
+  akcija: Akcija,
+  /**
+   * Neobvezen namig za `23503`, ki pove, KAJ je vezano in kako to odpraviti.
+   * Kadar je podan, nadomesti splošno razlago — ta je sicer pisana za
+   * rezultate tekem in bi drugod zavajala.
+   */
+  namig?: string,
+): string {
   const koda = napaka.code ?? ''
   const besedilo = napaka.message ?? 'neznana napaka'
 
   // 23503 = foreign_key_violation. Pri brisanju pomeni, da je na zapis vezano
   // nekaj drugega; pri dodajanju, da se zapis sklicuje na nekaj neobstoječega.
   if (koda === '23503') {
-    return akcija === 'brisanje'
-      ? `⚠ ${kaj} ni mogoče izbrisati: nanj so vezani drugi zapisi (npr. vpisani rezultati tekem). Najprej odstrani te zapise — ali pa obstoječi zapis obdrži in mu le spremeni nastavitve.`
-      : `⚠ ${kaj} ni mogoče shraniti: sklicuje se na zapis, ki ne obstaja.`
+    if (akcija !== 'brisanje') return `⚠ ${kaj} ni mogoče shraniti: sklicuje se na zapis, ki ne obstaja.`
+    return namig
+      ? `⚠ ${kaj} ni mogoče izbrisati: ${namig}`
+      : `⚠ ${kaj} ni mogoče izbrisati: nanj so vezani drugi zapisi (npr. vpisani rezultati tekem). Najprej odstrani te zapise — ali pa obstoječi zapis obdrži in mu le spremeni nastavitve.`
   }
 
   // 23505 = unique_violation.

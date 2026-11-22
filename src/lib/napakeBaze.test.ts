@@ -24,6 +24,23 @@ describe('sporociloNapake', () => {
     expect(s).not.toContain('vezani drugi zapisi')
   })
 
+  it('namig pri brisanju nadomesti splošno razlago, ne pa je podvoji', () => {
+    const s = sporociloNapake(
+      { code: '23503' },
+      'Prijave',
+      'brisanje',
+      'Igralec je že v žrebani skupini — najprej razveljavi žreb.',
+    )
+    expect(s).toContain('najprej razveljavi žreb')
+    // Splošna razlaga govori o rezultatih tekem in bi tu zavajala.
+    expect(s).not.toContain('vpisani rezultati tekem')
+  })
+
+  it('namig na drugih kodah ničesar ne spremeni', () => {
+    const z = sporociloNapake({ code: '23505' }, 'Prijave', 'brisanje', 'namig')
+    expect(z).not.toContain('namig')
+  })
+
   it('pozna podvojitev, omejitev in manjkajoč podatek', () => {
     expect(sporociloNapake({ code: '23505' }, 'Ekipe', 'dodajanje')).toContain('že obstaja')
     expect(sporociloNapake({ code: '23514' }, 'Sezone', 'urejanje')).toContain('ne ustreza pravilom')
