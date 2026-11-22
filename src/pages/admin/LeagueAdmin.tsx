@@ -25,6 +25,7 @@ import { toDateTimeLocal, skupniTerminKola, povzetekTerminovKola } from '../../l
 import { useAuth } from '../../contexts/AuthContext'
 import { opozoriloOZamenjavah } from '../../lib/rocneZamenjave'
 import { oznakaIgralca } from '../../lib/playerNames'
+import { sporociloNapake, brezUcinka } from '../../lib/napakeBaze'
 import { jePokalniFormat } from '../../engines/rangSistem'
 import { najdiKlub, predlagajPovezave, type KlubZaUjemanje } from '../../engines/ujemanjeKlubov'
 import KlubskiGrb, { logoEkipe } from '../../components/KlubskiGrb'
@@ -211,26 +212,42 @@ export default function LeagueAdmin() {
 
   async function seedDisciplines(seasonId: string, tier: LeagueTier) {
     const templates = DEFAULT_DISCIPLINES[tier]
-    await supabase.from('league_season_disciplines').insert(
+    const { error } = await supabase.from('league_season_disciplines').insert(
       templates.map(t => ({ season_id: seasonId, ...t }))
     )
+    if (error) setMessage(sporociloNapake(error, 'Privzetih disciplin', 'dodajanje'))
   }
 
   async function toggleDiscipline(disc: LeagueSeasonDiscipline) {
-    if (window.confirm(`Izbriši disciplino "${disc.name}"?`)) {
-      await supabase.from('league_season_disciplines').delete().eq('id', disc.id)
-      loadDisciplines()
-    }
+    if (!window.confirm(`Izbriši disciplino "${disc.name}"?`)) return
+    const kaj = `Discipline "${disc.name}"`
+    // `select` je nujen: kadar brisanje zavrne RLS, PostgREST ne vrne napake,
+    // ampak nič vrstic. Brez tega je zavrnitev videti natanko kot uspeh.
+    const { data, error } = await supabase
+      .from('league_season_disciplines')
+      .delete()
+      .eq('id', disc.id)
+      .select('id')
+    if (error) { setMessage(sporociloNapake(error, kaj, 'brisanje')); return }
+    if (!data || data.length === 0) { setMessage(brezUcinka(kaj, 'brisanje')); return }
+    setMessage(`✓ Disciplina "${disc.name}" izbrisana`)
+    await loadDisciplines()
   }
 
   async function addDiscipline(e: React.FormEvent) {
     e.preventDefault()
     if (!selectedSeason) return
     setLoading(true)
-    await supabase.from('league_season_disciplines').insert({
+    const { error } = await supabase.from('league_season_disciplines').insert({
       season_id: selectedSeason.id,
       ...discForm,
     })
+    if (error) {
+      // Obrazec ostane odprt z vnesenim, da admin popravi in poskusi znova.
+      setMessage(sporociloNapake(error, `Discipline "${discForm.name}"`, 'dodajanje'))
+      setLoading(false)
+      return
+    }
     setShowAddDisc(false)
     setDiscForm({ name: '', discipline_type: 'posamezno', players_per_side: 1, has_reserve: false, block_number: 1, order_num: disciplines.length + 2 })
     await loadDisciplines()
@@ -252,10 +269,32 @@ export default function LeagueAdmin() {
       setLoading(false)
       return
     }
-    await supabase.from('league_season_disciplines').delete().eq('season_id', selectedSeason.id)
-    await supabase.from('league_season_disciplines').insert(
-      src.map(d => ({ ...d, season_id: selectedSeason.id }))
-    )
+    // Brisanje MORA uspeti, preden vstavimo kopije. Če pade — tipično na tujem
+    // ključu, ker so na kakšno disciplino že vezani rezultati — in bi kljub temu
+    // vstavili, bi sezona dobila podvojene discipline. Zato tu prekinemo.
+    const { data: izbrisane, error: napakaBrisanja } = await supabase
+      .from('league_season_disciplines').delete().eq('season_id', selectedSeason.id).select('id')
+    if (napakaBrisanja) {
+      setMessage(sporociloNapake(napakaBrisanja, 'Obstoječih disciplin sezone', 'brisanje'))
+      setLoading(false)
+      return
+    }
+    // Tiha zavrnitev RLS: nič izbrisanih vrstic je pravilno le, če sezona
+    // disciplin sploh ni imela. Sicer bi vstavljanje podvojilo, kar je ostalo.
+    if (disciplines.length > 0 && (izbrisane?.length ?? 0) === 0) {
+      setMessage(brezUcinka('Obstoječih disciplin sezone', 'brisanje'))
+      setLoading(false)
+      return
+    }
+    const { error: napakaVstavljanja } = await supabase
+      .from('league_season_disciplines').insert(
+        src.map(d => ({ ...d, season_id: selectedSeason.id }))
+      )
+    if (napakaVstavljanja) {
+      setMessage(sporociloNapake(napakaVstavljanja, 'Kopiranih disciplin', 'dodajanje'))
+      setLoading(false)
+      return
+    }
     setMessage(`✓ Kopirano ${src.length} disciplin iz "${sourceName}"`)
     setCopyFromSeasonId('')
     await loadDisciplines()
