@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { zapisnikJePrazen, type Zapisnik } from './zapisnikPrazen'
+import { zapisnikJePrazen, disciplinaImaVsebino, type Zapisnik } from './zapisnikPrazen'
 
 /** Zapisnik, kakršen nastane ob odprtju »Uredi zapisnik«: glava prazna, pet praznih disciplin. */
 const svezZapisnik = (): Zapisnik => ({
@@ -92,5 +92,34 @@ describe('zapisnikJePrazen', () => {
   test('zapisnik brez seznama disciplin je prazen', () => {
     expect(zapisnikJePrazen([{ discipline_results: null }])).toBe(true)
     expect(zapisnikJePrazen([{}])).toBe(true)
+  })
+})
+
+// disciplinaImaVsebino je izvožena, ker isto merilo odloča tudi pri
+// SHRANJEVANJU zapisnika: vrstica brez vsebine v bazo ne sodi. Tu je merilo
+// pripeto z obeh strani — da prazno res izpustimo in vsebine nikoli ne.
+describe('disciplinaImaVsebino', () => {
+  test('popolnoma prazna disciplina nima vsebine', () => {
+    expect(disciplinaImaVsebino({})).toBe(false)
+    expect(disciplinaImaVsebino({
+      home_score: null, away_score: null,
+      home_match_points: null, away_match_points: null,
+      playground_number: null, home_players: [], away_players: [],
+    })).toBe(false)
+  })
+
+  test('prazni nizi v postavi ne štejejo za vsebino', () => {
+    expect(disciplinaImaVsebino({ home_players: ['', '  '], away_players: [null] })).toBe(false)
+  })
+
+  test('sama postava JE vsebina — zapisnik se shranjuje tudi pred tekmo', () => {
+    expect(disciplinaImaVsebino({ home_players: ['Novak'] })).toBe(true)
+    expect(disciplinaImaVsebino({ away_players: ['R: Kovač'] })).toBe(true)
+  })
+
+  test('izid 0 je vsebina, ne odsotnost vnosa', () => {
+    expect(disciplinaImaVsebino({ home_score: 0 })).toBe(true)
+    expect(disciplinaImaVsebino({ away_match_points: 0 })).toBe(true)
+    expect(disciplinaImaVsebino({ playground_number: 0 })).toBe(true)
   })
 })
