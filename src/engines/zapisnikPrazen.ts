@@ -63,8 +63,15 @@ function glavaImaVsebino(z: GlavaZapisnika): boolean {
   return false
 }
 
-/** Ali ima disciplina karkoli vpisanega. */
-function disciplinaImaVsebino(d: VrsticaDiscipline): boolean {
+/**
+ * Ali ima disciplina karkoli vpisanega.
+ *
+ * Izvožena, ker isto merilo potrebuje tudi SHRANJEVANJE zapisnika: vrstica
+ * brez vsebine v bazo sploh ne sodi. Dokler se je zapisovala, je vsaka
+ * disciplina po prvem shranjevanju veljala za »v uporabi« in je ni bilo več
+ * mogoče izbrisati — tudi pomotoma dodane ne.
+ */
+export function disciplinaImaVsebino(d: VrsticaDiscipline): boolean {
   if (d.home_score !== null && d.home_score !== undefined) return true
   if (d.away_score !== null && d.away_score !== undefined) return true
   if (d.home_match_points !== null && d.home_match_points !== undefined) return true

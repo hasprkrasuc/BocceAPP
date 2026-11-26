@@ -22,6 +22,7 @@ import {
   sistemIzbijanja, koncniVrstniRed, jeNastopil, type KrogIzbijanja, type Nastop,
 } from '../../engines/izbijanje'
 import { oznakaIgralca } from '../../lib/playerNames'
+import { sporociloNapake, brezUcinka } from '../../lib/napakeBaze'
 import { useAuth } from '../../contexts/AuthContext'
 import type { JudgeOption } from '../../components/GroupBracket'
 
@@ -448,24 +449,37 @@ export default function TournamentEdit() {
 
   async function rejectRegistration(regId: string) {
     setMessage('')
-    const { error: err } = await supabase
+    // Tudi tu `select`: RLS zavrne urejanje brez napake, le brez vrstic.
+    const { data, error: err } = await supabase
       .from('tournament_registrations')
       .update({ status: 'rejected' })
       .eq('id', regId)
-    if (err) { setMessage(`❌ Napaka: ${err.message}`); return }
+      .select('id')
+    if (err) { setMessage(sporociloNapake(err, 'Prijave', 'urejanje')); return }
+    if (!data || data.length === 0) { setMessage(brezUcinka('Prijave', 'urejanje')); return }
     setMessage('✓ Prijava zavrnjena')
     await load()
   }
 
   async function deleteRegistration(regId: string) {
-    // Trajni izbris (napačna prijava). group_teams se počisti prek ON DELETE CASCADE.
+    // Trajni izbris (napačna prijava). group_teams se počisti prek ON DELETE
+    // CASCADE — matches.team_a_id/team_b_id pa kažeta na group_teams BREZ
+    // ON DELETE, zato izbris prijave igralca, ki je že vžreban, pade na 23503.
+    // Baza to zavrne v angleščini, zato napako prevedemo v uporaben napotek.
     if (!window.confirm('Trajno izbrišem to prijavo? Tega ni mogoče razveljaviti.')) return
     setMessage('')
-    const { error: err } = await supabase
+    // `select` je nujen: kadar brisanje zavrne RLS, napake ni, vrne se nič vrstic.
+    const { data, error: err } = await supabase
       .from('tournament_registrations')
       .delete()
       .eq('id', regId)
-    if (err) { setMessage(`❌ Napaka: ${err.message}`); return }
+      .select('id')
+    if (err) {
+      setMessage(sporociloNapake(err, 'Prijave', 'brisanje',
+        'igralec je že razporejen v žrebano skupino ali na tekmo. Najprej razveljavi žreb, nato izbriši prijavo.'))
+      return
+    }
+    if (!data || data.length === 0) { setMessage(brezUcinka('Prijave', 'brisanje')); return }
     setMessage('✓ Prijava izbrisana')
     if (editingRegId === regId) setEditingRegId(null)
     await load()

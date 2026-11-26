@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { tockeDiscipline, stanjeZapisnika } from '../../engines/zapisnikStanje'
+import { disciplinaImaVsebino } from '../../engines/zapisnikPrazen'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -441,7 +442,7 @@ export default function LeagueMatchScoresheet() {
       if (disc.has_reserve && f.homeReserve) homePlayers.push(`R: ${f.homeReserve}`)
       const awayPlayers = f.awayPlayers.filter(Boolean)
       if (disc.has_reserve && f.awayReserve) awayPlayers.push(`R: ${f.awayReserve}`)
-      return {
+      const vrstica = {
         match_result_id: resultId, discipline_id: disc.id,
         playground_number: null,
         home_score: f.homeScore ? Number(f.homeScore) : null,
@@ -449,6 +450,13 @@ export default function LeagueMatchScoresheet() {
         home_match_points: pts ? pts[0] : null, away_match_points: pts ? pts[1] : null,
         home_players: homePlayers, away_players: awayPlayers,
       }
+      // Discipline brez vsake vsebine ne zapišemo — enako kot kartone brez
+      // osebe nekaj vrstic nižje. Merilo NI »ni izida«: zapisnik se shranjuje
+      // tudi pred tekmo in vrstica s samo postavo je povsem legitimna. Dokler
+      // smo pisali vse, je bila vsaka disciplina po prvem shranjevanju videti
+      // »v uporabi« in je tuji ključ ni pustil izbrisati niti, če je bila
+      // dodana pomotoma. Isto merilo uporablja zapisnikJePrazen.
+      return disciplinaImaVsebino(vrstica) ? vrstica : null
     }).filter(Boolean)
     if (inserts.length) {
       const { error } = await supabase.from('league_match_discipline_results').insert(inserts)
